@@ -1,0 +1,268 @@
+package main
+
+import (
+	"fmt"
+	"image/color"
+	"math"
+	"strings"
+
+	"github.com/hajimehoshi/ebiten/v2"
+
+	"orb/levelgen"
+)
+
+var nodeColors = []color.RGBA{{150, 150, 170, 255}, {200, 90, 255, 255}, {255, 210, 80, 255}, {90, 220, 255, 255}, {120, 230, 150, 255}, {255, 150, 150, 255}, {255, 80, 60, 255}}
+
+// bar draws a polished meter: recessed well, damage trail, gloss, tick
+// marks every `tick` units of `maxv`, and a themed rim.
+func (u *UI) bar(dst *ebiten.Image, x, y, w, h, frac, trail float64, col color.RGBA, maxv, tick float64) {
+	S := u.S
+	th := u.theme()
+	frac = clamp01(frac)
+	trail = clamp01(math.Max(trail, frac))
+	r := h / 2
+	fillPath(dst, boxPath(u.X(x-3), u.Y(y-3), (w+6)*S, (h+6)*S, (r+3)*S, false), rgba(0, 0, 0, 190), rgba(0, 0, 0, 120), vgrad(u.Y(y-3), u.Y(y+h+3)), false)
+	well := boxPath(u.X(x), u.Y(y), w*S, h*S, r*S, false)
+	fillPath(dst, well, ca(darken(col, 0.14), 0.95), ca(darken(col, 0.3), 0.95), vgrad(u.Y(y), u.Y(y+h)), false)
+	if trail > frac+0.002 {
+		tw := math.Max(h, w*trail)
+		fillPath(dst, boxPath(u.X(x), u.Y(y), tw*S, h*S, r*S, false), rgba(255, 240, 210, 235), rgba(255, 176, 120, 235), vgrad(u.Y(y), u.Y(y+h)), false)
+	}
+	if frac > 0 {
+		fw := math.Max(h, w*frac)
+		fillPath(dst, boxPath(u.X(x), u.Y(y), fw*S, h*S, r*S, false), lighten(col, 0.28), darken(col, 0.68), vgrad(u.Y(y), u.Y(y+h)), false)
+		if fw > 12 {
+			fillPath(dst, boxPath(u.X(x+5), u.Y(y+2.5), (fw-10)*S, h*0.38*S, h*0.19*S, false), rgba(255, 255, 255, 90), rgba(255, 255, 255, 10), vgrad(u.Y(y+2), u.Y(y+2+h*0.38)), false)
+		}
+	}
+	if tick > 0 && maxv/tick < 40 {
+		for v := tick; v < maxv-0.01; v += tick {
+			tx := x + w*v/maxv
+			fillRect(dst, u.X(tx)-0.75*S, u.Y(y+3), 1.5*S, (h-6)*S, rgba(0, 0, 0, 80))
+		}
+	}
+	strokePath(dst, well, 1.6*S, ca(th.Edge, 0.8), false)
+}
+
+// medallion is a framed round badge used for map nodes and the legend.
+func (u *UI) medallion(dst *ebiten.Image, x, y, rad float64, c color.RGBA) {
+	S := u.S
+	th := u.theme()
+	cx, cy := u.X(x), u.Y(y)
+	fillPath(dst, circlePath(cx, cy+4*S, (rad+6)*S), ca(cBlack, 0.4), ca(cBlack, 0.4), grad{}, false)
+	fillPath(dst, circlePath(cx, cy, (rad+6)*S), lighten(th.Edge, 0.35), darken(th.Edge, 0.45), vgrad(cy-(rad+6)*S, cy+(rad+6)*S), false)
+	fillPath(dst, circlePath(cx, cy, (rad+2)*S), rgba(12, 9, 22, 255), rgba(12, 9, 22, 255), grad{}, false)
+	fillPath(dst, circlePath(cx, cy, rad*S), lighten(c, 0.3), darken(c, 0.5), vgrad(cy-rad*S, cy+rad*S), false)
+	fillPath(dst, circlePath(cx, cy-rad*0.35*S, rad*0.6*S), rgba(255, 255, 255, 60), rgba(255, 255, 255, 0), vgrad(cy-rad*S, cy), false)
+}
+
+// drawHUD renders the in-level overlay.
+func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
+	u := g.ui
+	r := g.run
+	dt := u.DT
+	th := u.theme()
+	S := u.S
+
+	// ---- animated readouts
+	hp := math.Max(0, r.HP)
+	if g.hudLevel != L {
+		g.hudLevel = L
+		g.hudHP = hp
+		g.hudGold = float64(r.Gold)
+		g.lastGold = r.Gold
+		g.hudBoss = -1
+	}
+	if g.hudHP < hp {
+		g.hudHP = hp
+	}
+	g.hudHP += (hp - g.hudHP) * math.Min(1, dt*2.4)
+	if r.Gold > g.lastGold {
+		g.goldPop = 1
+	}
+	g.lastGold = r.Gold
+	g.hudGold += (float64(r.Gold) - g.hudGold) * math.Min(1, dt*9)
+	if math.Abs(g.hudGold-float64(r.Gold)) < 0.5 {
+		g.hudGold = float64(r.Gold)
+	}
+	g.goldPop = math.Max(0, g.goldPop-dt*3)
+
+	// ---- vitals plate (top-left)
+	u.frame(screen, 22, 18, 478, 112, 0.92)
+	frac := hp / r.Stats.MaxHP
+	beat := 1.0
+	if frac < 0.3 {
+		beat = 1 + 0.14*math.Max(0, math.Sin(L.T*9))
+		drawSprite(screen, sprSoft, u.X(64-40), u.Y(56-40), 80*S, 80*S, ca(rgba(255, 60, 90, 255), 0.5*(beat-1)/0.14), true)
+	}
+	u.icon(screen, icHeart, 64, 57, 42*beat, 1)
+	u.bar(screen, 100, 42, 376, 28, frac, g.hudHP/r.Stats.MaxHP, rgba(236, 62, 96, 255), r.Stats.MaxHP, 10)
+	u.textOutlined(screen, fmt.Sprintf("%.0f / %.0f", hp, r.Stats.MaxHP), fBold, 18, 288, 44, cWhite, alignCenter)
+	pop := g.goldPop
+	u.icon(screen, icCoin, 64, 101, 30*(1+0.25*pop), 1)
+	gs := 26 * (1 + 0.16*pop)
+	u.textOutlined(screen, itoa(int(math.Round(g.hudGold))), fBold, gs, 92, 101-gs*0.64, mixc(cGold, cWhite, pop*0.6), alignLeft)
+	if L.Barrier > 0 {
+		x := 470.0
+		for i := 0; i < L.Barrier; i++ {
+			u.icon(screen, icShield, x, 101, 26, 1)
+			x -= 30
+		}
+		u.text(screen, "BARRIER", fBold, 14, x+8, 93, ca(rgba(190, 172, 255, 255), 0.9), alignRight)
+	}
+
+	// ---- location plaque (top-centre)
+	title := L.Biome.Name
+	node := strings.ToUpper(nodeNames[L.Node])
+	sub := L.Data.Name
+	if L.Boss == nil {
+		sub += "   ·   seed " + itoa(int(L.Data.Seed%100000000))
+	}
+	tW := u.measure(title, fTitle, 30)
+	nw := u.measure(node, fBold, 14) + 26
+	rowW := tW + 14 + nw
+	pw := math.Max(440, math.Max(rowW, u.measure(sub, fReg, 16))+110)
+	u.frame(screen, 960-pw/2, 16, pw, 82, 0.9)
+	tx := 960 - rowW/2
+	u.textOutlined(screen, title, fTitle, 30, tx, 24, cGold, alignLeft)
+	nc := nodeColors[L.Node]
+	chip := boxPath(u.X(tx+tW+14), u.Y(32), nw*S, 24*S, 12*S, false)
+	fillPath(screen, chip, ca(nc, 0.32), ca(darken(nc, 0.5), 0.32), vgrad(u.Y(32), u.Y(56)), false)
+	strokePath(screen, chip, 1.5*S, ca(nc, 0.9), false)
+	u.text(screen, node, fBold, 14, tx+tW+14+nw/2, 35, lighten(nc, 0.4), alignCenter)
+	u.text(screen, sub, fReg, 16, 960, 66, cDim, alignCenter)
+	if L.Data.Objective == levelgen.ObjCrystals && L.Boss == nil {
+		s := fmt.Sprintf("Shatter the crystals   ·   %d left", L.Crystals)
+		w := u.measure(s, fBold, 18) + 72
+		u.frame(screen, 960-w/2, 108, w, 42, 0.88)
+		u.icon(screen, icShard, 960-w/2+28, 129, 24, 1)
+		u.text(screen, s, fBold, 18, 960-w/2+48, 117, rgba(176, 222, 255, 255), alignLeft)
+	}
+
+	// ---- combo (top-right)
+	if L.Combo >= 3 {
+		g.comboShown = L.Combo
+	}
+	ck := u.anim("hudcombo", L.Combo >= 3, 10)
+	if ck > 0.01 {
+		heat := math.Min(1, float64(g.comboShown)/40)
+		c := mixc(rgba(255, 232, 140, 255), rgba(255, 84, 60, 255), heat)
+		w := 300.0
+		x := 1898 - w + (1-ck)*80
+		u.frame(screen, x, 18, w, 104, 0.92*ck)
+		u.text(screen, "COMBO", fBold, 17, x+28, 34, ca(lighten(th.Accent, 0.2), ck), alignLeft)
+		pulse := 1 + 0.07*math.Sin(L.T*14)*heat
+		size := 56 * pulse
+		num := itoa(g.comboShown)
+		nW := u.measure(num, fTitle, size)
+		u.textOutlined(screen, num, fTitle, size, x+w-26, 24-(size-56)*0.6, ca(c, ck), alignRight)
+		u.textOutlined(screen, "×", fBold, 32, x+w-34-nW, 46, ca(c, ck), alignRight)
+		bw := w - 56
+		fillPath(screen, boxPath(u.X(x+28), u.Y(98), bw*S, 7*S, 3.5*S, false), rgba(0, 0, 0, uint8(150*ck)), rgba(0, 0, 0, uint8(150*ck)), grad{}, false)
+		if L.Combo >= 3 {
+			fw := math.Max(7, bw*clamp01(L.comboT/3))
+			fillPath(screen, boxPath(u.X(x+28), u.Y(98), fw*S, 7*S, 3.5*S, false), ca(lighten(c, 0.3), ck), ca(darken(c, 0.6), ck), vgrad(u.Y(98), u.Y(105)), false)
+		}
+	}
+	if L.Frenzy > 0 {
+		s := fmt.Sprintf("FRENZY ×2   %.0fs", L.Frenzy)
+		w := u.measure(s, fBold, 20) + 74
+		y := 18.0
+		if ck > 0.01 {
+			y = 134
+		}
+		u.frame(screen, 1898-w, y, w, 46, 0.9)
+		u.icon(screen, icBolt, 1898-w+28, y+23, 26, 1)
+		u.text(screen, s, fBold, 20, 1898-w+50, y+10, rgba(255, 130, 222, 255), alignLeft)
+	}
+
+	// ---- boss bar
+	if L.Boss != nil {
+		bb := L.Boss
+		if g.hudBoss < bb.HP || g.hudBoss > bb.MaxHP {
+			g.hudBoss = bb.HP
+		}
+		g.hudBoss += (bb.HP - g.hudBoss) * math.Min(1, dt*2.4)
+		y := 110.0
+		u.frame(screen, 470, y, 980, 80, 0.92)
+		u.textOutlined(screen, strings.ToUpper(bb.Name), fTitle, 26, 960, y+8, rgba(255, 216, 194, 255), alignCenter)
+		col := mixc(rgba(226, 50, 60, 255), cWhite, bb.Hurt*0.5)
+		u.bar(screen, 504, y+46, 912, 20, bb.HP/bb.MaxHP, g.hudBoss/bb.MaxHP, col, 10, 1)
+		u.gem(screen, 488, y+56, 8, 11, th.Edge, 1)
+		u.gem(screen, 1432, y+56, 8, 11, th.Edge, 1)
+	}
+
+	// ---- active power-ups (bottom-left)
+	x := 24.0
+	for p := Power(0); p < numPowers; p++ {
+		if L.Timers[p] <= 0 || powerDefs[p].Dur == 0 {
+			continue
+		}
+		d := powerDefs[p]
+		k := clamp01(L.Timers[p] / d.Dur)
+		w := u.measure(d.Name, fBold, 17) + 76
+		y := 1014.0
+		u.frame(screen, x, y, w, 48, 0.9)
+		cx, cy := x+26, y+24
+		strokePath(screen, circlePath(u.X(cx), u.Y(cy), 17*S), 3*S, rgba(0, 0, 0, 140), false)
+		if k > 0.01 {
+			strokePath(screen, arcPath(u.X(cx), u.Y(cy), 17*S, -math.Pi/2, -math.Pi/2+2*math.Pi*k), 3*S, lighten(d.Col, 0.2), false)
+		}
+		fillPath(screen, circlePath(u.X(cx), u.Y(cy), 13*S), lighten(d.Col, 0.35), darken(d.Col, 0.55), vgrad(u.Y(cy-13), u.Y(cy+13)), false)
+		u.text(screen, d.Letter, fBold, 16, cx, cy-10, rgba(20, 16, 30, 255), alignCenter)
+		tc := cWhite
+		if !d.Good {
+			tc = cRed
+		}
+		u.text(screen, d.Name, fBold, 17, x+52, y+13, tc, alignLeft)
+		x += w + 10
+	}
+
+	// ---- relics (bottom-right)
+	rx := 1898.0
+	for i := len(r.Order) - 1; i >= 0; i-- {
+		m := modByID[r.Order[i]]
+		if m == nil || !m.Relic {
+			continue
+		}
+		rx -= 48
+		if rx < 1240 {
+			break
+		}
+		cx, cy := rx+22, 1038.0
+		rc := rarityColors[m.Rarity]
+		hex := ngonPath(u.X(cx), u.Y(cy), 22*S, 6, math.Pi/6)
+		fillPath(screen, ngonPath(u.X(cx), u.Y(cy+4), 22*S, 6, math.Pi/6), ca(cBlack, 0.4), ca(cBlack, 0.4), grad{}, false)
+		strokePath(screen, hex, 3.5*S, ca(cBlack, 0.55), false)
+		fillPath(screen, hex, lighten(rc, 0.2), darken(rc, 0.4), vgrad(u.Y(cy-22), u.Y(cy+22)), false)
+		strokePath(screen, hex, 1.6*S, ca(th.Edge, 0.95), false)
+		u.text(screen, string([]rune(m.Name)[0]), fBold, 18, cx, cy-12, rgba(22, 16, 32, 255), alignCenter)
+	}
+
+	// ---- launch prompt
+	if L.anyStuck() && !L.Cleared {
+		a := 0.75 + 0.25*math.Sin(L.T*4)
+		t2 := "or click to launch"
+		w1 := u.measure("SPACE", fBold, 16) + 28
+		w2 := u.measure(t2, fBold, 22)
+		x := 960 - (w1+14+w2)/2
+		u.keycap(screen, "SPACE", x, 960, a)
+		u.textOutlined(screen, t2, fBold, 22, x+w1+14, 962, ca(cWhite, a), alignLeft)
+	}
+
+	// ---- chamber cleared
+	if L.Cleared {
+		k := ease(L.clearT * 2.5)
+		w, h := 760.0, 236.0
+		y := 372 + (1-k)*36
+		u.frame(screen, 960-w/2, y, w, h, 0.95*k)
+		u.headingW(screen, "CHAMBER CLEARED", 58, y+28, rgba(255, 222, 128, 255), k, w/2-24)
+		u.iconLabel(screen, icCoin, fmt.Sprintf("+%d gold", L.GoldEarned), fBold, 28, 960, y+116, ca(cGold, k), alignCenter)
+		if L.clearT > 1.2 {
+			u.text(screen, "Click to continue", fReg, 20, 960, y+176, ca(cDim, k*(0.6+0.4*math.Sin(L.T*4))), alignCenter)
+		}
+	}
+	if g.settings.ShowFPS {
+		u.text(screen, fmt.Sprintf("%.0f FPS", ebiten.ActualFPS()), fReg, 16, 1894, 990, cDim, alignRight)
+	}
+}

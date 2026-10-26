@@ -1,0 +1,504 @@
+package main
+
+import (
+	"fmt"
+	"math"
+	"math/rand"
+	"sort"
+	"strings"
+	"time"
+
+	"orb/levelgen"
+)
+
+// ---------------------------------------------------------------- archetypes
+
+type Archetype struct {
+	ID, Name, Desc string
+	Cost           int // shards to unlock (0 = free)
+	Apply          func(s *Stats)
+}
+
+var archetypes = []Archetype{
+	{"guardian", "Guardian", "Wide paddle, 120 health and a barrier every level. Slightly weaker hits.", 0, func(s *Stats) {
+		s.PaddleWidth += 0.2
+		s.MaxHP += 20
+		s.BarrierPerLevel++
+		s.DmgMult *= 0.9
+	}},
+	{"berserker", "Berserker", "Narrow paddle but heavy, critical-focused strikes.", 0, func(s *Stats) {
+		s.PaddleWidth -= 0.15
+		s.CritChance += 0.1
+		s.CritMult += 0.5
+		s.Damage += 0.5
+	}},
+	{"arcane", "Arcanist", "Starts each run attuned to a random element.", 0, func(s *Stats) {
+		s.StartElement = "random"
+	}},
+	{"engineer", "Engineer", "Paddle-mounted lasers from the very first level.", 60, func(s *Stats) {
+		s.LaserInterval = 2.0
+	}},
+	{"lucky", "Gambler", "+40% gold, +60% power-ups and a free shop reroll.", 90, func(s *Stats) {
+		s.GoldMult += 0.4
+		s.Luck += 0.6
+		s.FreeRerolls++
+	}},
+}
+
+// ---------------------------------------------------------------- map
+
+type NodeType int
+
+const (
+	NCombat NodeType = iota
+	NElite
+	NShop
+	NTreasure
+	NEvent
+	NRest
+	NBoss
+)
+
+var nodeNames = []string{"Combat", "Elite", "Shop", "Treasure", "Event", "Rest", "Boss"}
+var nodeGlyph = []string{"⚔", "☠", "$", "◆", "?", "+", "♛"}
+
+type MapNode struct {
+	Row, Lane int
+	Type      NodeType
+	Next      []int
+	Visited   bool
+	Seed      int64
+}
+
+type ActMap struct {
+	Nodes []*MapNode
+	Rows  int
+}
+
+const mapRows = 7
+
+func genMap(r *rand.Rand, act int) *ActMap {
+	m := &ActMap{Rows: mapRows + 1}
+	rows := make([][]int, mapRows+1)
+	for row := 0; row < mapRows; row++ {
+		lanes := r.Perm(4)
+		n := 2 + r.Intn(3)
+		if row == 0 {
+			n = 3
+		}
+		lanes = lanes[:n]
+		sort.Ints(lanes)
+		for _, ln := range lanes {
+			t := NCombat
+			x := r.Float64()
+			switch {
+			case row == 0:
+				t = NCombat
+			case row == mapRows-1:
+				if x < 0.5 {
+					t = NRest
+				} else {
+					t = NShop
+				}
+			case row >= 2 && x < 0.16:
+				t = NElite
+			case x < 0.3:
+				t = NEvent
+			case x < 0.4:
+				t = NShop
+			case x < 0.47:
+				t = NTreasure
+			case x < 0.52 && row >= 3:
+				t = NRest
+			}
+			m.Nodes = append(m.Nodes, &MapNode{Row: row, Lane: ln, Type: t, Seed: r.Int63()})
+			rows[row] = append(rows[row], len(m.Nodes)-1)
+		}
+	}
+	// guarantee one treasure mid-act
+	mid := rows[3]
+	m.Nodes[mid[r.Intn(len(mid))]].Type = NTreasure
+	m.Nodes = append(m.Nodes, &MapNode{Row: mapRows, Lane: 1, Type: NBoss, Seed: r.Int63()})
+	rows[mapRows] = []int{len(m.Nodes) - 1}
+	// edges
+	for row := 0; row < mapRows; row++ {
+		for _, i := range rows[row] {
+			a := m.Nodes[i]
+			for _, j := range rows[row+1] {
+				b := m.Nodes[j]
+				if b.Type == NBoss || abs(a.Lane-b.Lane) <= 1 {
+					a.Next = append(a.Next, j)
+				}
+			}
+			if len(a.Next) == 0 { // connect to nearest
+				best, bd := -1, 99
+				for _, j := range rows[row+1] {
+					if d := abs(m.Nodes[j].Lane - a.Lane); d < bd {
+						best, bd = j, d
+					}
+				}
+				a.Next = append(a.Next, best)
+			}
+		}
+		// every next-row node needs an incoming edge
+		for _, j := range rows[row+1] {
+			has := false
+			for _, i := range rows[row] {
+				for _, n := range m.Nodes[i].Next {
+					if n == j {
+						has = true
+					}
+				}
+			}
+			if !has {
+				best, bd := -1, 99
+				for _, i := range rows[row] {
+					if d := abs(m.Nodes[i].Lane - m.Nodes[j].Lane); d < bd {
+						best, bd = i, d
+					}
+				}
+				m.Nodes[best].Next = append(m.Nodes[best].Next, j)
+			}
+		}
+	}
+	return m
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// ---------------------------------------------------------------- run
+
+const numActs = 3
+
+type Run struct {
+	SeedCode    string
+	SeedN       int64
+	Daily       bool
+	Rng         *rand.Rand
+	Arch        *Archetype
+	Act         int
+	Map         *ActMap
+	Cur         int // current node index (-1 = start of act)
+	Depth       int // levels entered
+	HP          float64
+	Gold        int
+	Mods        map[string]int
+	Order       []string // acquisition order for display
+	Stats       Stats
+	Active      []string // active synergy names
+	PhoenixUsed bool
+	Cursed      bool
+	LastWorld   int
+	Element     string
+	Rerolls     int
+
+	// statistics
+	Bricks, Bosses, Elites, MaxCombo, Score int
+	Start                                   time.Time
+}
+
+func NewRun(code string, arch *Archetype, meta *SaveData, daily bool) *Run {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	n := levelgen.Mix(int64(len(code)), hashStr(code))
+	r := &Run{SeedCode: code, SeedN: n, Daily: daily, Rng: rand.New(rand.NewSource(n)), Arch: arch, LastWorld: -1,
+		Mods: map[string]int{}, Cur: -1, Start: time.Now()}
+	r.Act = 1
+	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(n, 1))), 1)
+	r.Recompute(meta)
+	if r.Stats.StartElement == "random" {
+		els := []string{"inferno", "staticfield", "frozenheart", "voidbounce"}
+		r.Add(els[r.Rng.Intn(len(els))], meta)
+	}
+	r.HP = r.Stats.MaxHP
+	r.Gold = 20 + 20*meta.Upg["purse"]
+	return r
+}
+
+func hashStr(s string) int64 {
+	var h uint64 = 1469598103934665603
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= 1099511628211
+	}
+	return int64(h >> 1)
+}
+
+func baseStats() Stats {
+	return Stats{MaxHP: 100, Damage: 1, DmgMult: 1, CritChance: 0.08, CritMult: 2, SpeedMult: 1, SizeMult: 1,
+		ChainCount: 2, ExplodeRadius: 1.4, GoldMult: 1, Luck: 1, PaddleWidth: 1, BallLossDmg: 20}
+}
+
+func (r *Run) Recompute(meta *SaveData) {
+	s := baseStats()
+	s.MaxHP += float64(10 * meta.Upg["vitality"])
+	s.FreeRerolls += meta.Upg["reroll"]
+	s.MaxHP -= 20 * float64(r.Mods["__hp"])
+	r.Arch.Apply(&s)
+	tags := map[string]int{}
+	for _, id := range r.Order {
+		m := modByID[id]
+		for k := 0; k < r.Mods[id]; k++ {
+			m.Apply(&s)
+		}
+		for _, t := range m.Tags {
+			tags[t] += r.Mods[id]
+		}
+	}
+	r.Active = r.Active[:0]
+	for _, sy := range synergies {
+		if tags[sy.Tag] >= 3 {
+			sy.Apply(&s)
+			r.Active = append(r.Active, sy.Name)
+		}
+	}
+	s.PaddleWidth = math.Max(0.5, s.PaddleWidth)
+	s.BallLossDmg = math.Max(4, s.BallLossDmg)
+	s.MaxHP = math.Max(20, s.MaxHP)
+	r.Stats = s
+	if r.HP > s.MaxHP {
+		r.HP = s.MaxHP
+	}
+}
+
+// Add grants a mod and returns any synergy that just activated.
+func (r *Run) Add(id string, meta *SaveData) string {
+	before := map[string]bool{}
+	for _, a := range r.Active {
+		before[a] = true
+	}
+	if r.Mods[id] == 0 {
+		r.Order = append(r.Order, id)
+	}
+	r.Mods[id]++
+	oldMax := r.Stats.MaxHP
+	r.Recompute(meta)
+	if r.Stats.MaxHP > oldMax {
+		r.HP += r.Stats.MaxHP - oldMax
+	}
+	for _, a := range r.Active {
+		if !before[a] {
+			return a
+		}
+	}
+	return ""
+}
+
+func (r *Run) Owned(id string) bool { return r.Mods[id] > 0 }
+
+func (r *Run) canTake(m *Mod) bool {
+	return m.Max == 0 || r.Mods[m.ID] < m.Max
+}
+
+// Offer draws n distinct mods (relics or upgrades) weighted by rarity.
+func (r *Run) Offer(n int, relic bool, minRarity int, rng *rand.Rand) []*Mod {
+	var pool []*Mod
+	for _, m := range modList {
+		if m.Relic == relic && m.Rarity >= minRarity && r.canTake(m) {
+			pool = append(pool, m)
+		}
+	}
+	var out []*Mod
+	luck := 1 + (r.Stats.Luck-1)*0.3 + float64(r.Act-1)*0.25
+	for len(out) < n && len(pool) > 0 {
+		total := 0.0
+		for _, m := range pool {
+			total += rarityWeights[m.Rarity] * math.Pow(luck, float64(m.Rarity))
+		}
+		x := rng.Float64() * total
+		for i, m := range pool {
+			w := rarityWeights[m.Rarity] * math.Pow(luck, float64(m.Rarity))
+			if x < w {
+				out = append(out, m)
+				pool = append(pool[:i], pool[i+1:]...)
+				break
+			}
+			x -= w
+		}
+	}
+	return out
+}
+
+func (r *Run) NodeSeed(i int) int64 {
+	return levelgen.Mix(r.SeedN, int64(r.Act), int64(i), 77)
+}
+
+func (r *Run) NextAct(meta *SaveData) bool {
+	if r.Act >= numActs {
+		return false
+	}
+	r.Act++
+	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(r.SeedN, int64(r.Act)))), r.Act)
+	r.Cur = -1
+	r.HP = math.Min(r.Stats.MaxHP, r.HP+r.Stats.MaxHP*0.3)
+	return true
+}
+
+func (r *Run) Reachable() []int {
+	if r.Cur < 0 {
+		var out []int
+		for i, n := range r.Map.Nodes {
+			if n.Row == 0 {
+				out = append(out, i)
+			}
+		}
+		return out
+	}
+	return r.Map.Nodes[r.Cur].Next
+}
+
+func modPrice(m *Mod, rng *rand.Rand) int {
+	base := []int{40, 65, 100, 150, 220, 320}[m.Rarity]
+	if m.Relic {
+		base = base * 13 / 10
+	}
+	return base + rng.Intn(12) - 6
+}
+
+// ---------------------------------------------------------------- events
+
+type EventChoice struct {
+	Label string
+	Do    func(g *Game) string // returns result text
+	Can   func(g *Game) bool
+}
+
+type Event struct {
+	Title, Text string
+	Choices     []EventChoice
+}
+
+func makeEvent(g *Game, rng *rand.Rand) *Event {
+	r := g.run
+	switch rng.Intn(6) {
+	case 0:
+		relic := r.Offer(1, true, Rare, rng)
+		if len(relic) == 0 {
+			break
+		}
+		m := relic[0]
+		return &Event{"Mysterious Merchant", "A hooded figure offers you " + m.Name + " — \"" + m.Desc + "\" — in exchange for a little of your life force.",
+			[]EventChoice{
+				{"Pay 20 max health", func(g *Game) string {
+					g.run.Mods["__hp"]++
+					g.run.Add(m.ID, &g.save)
+					return "You feel weaker, but " + m.Name + " hums in your hand."
+				}, func(g *Game) bool { return g.run.Stats.MaxHP > 40 }},
+				{"Walk away", func(g *Game) string { return "The merchant fades into the dark." }, nil},
+			}}
+	case 1:
+		return &Event{"Gambling Den", "Spectral dice clatter across a stone table. \"Double or nothing?\"",
+			[]EventChoice{
+				{"Bet half your gold", func(g *Game) string {
+					bet := g.run.Gold / 2
+					if rng.Float64() < 0.5 {
+						g.run.Gold += bet
+						g.snd.Play("coinbig")
+						return fmt.Sprintf("Fortune smiles! You win %d gold.", bet)
+					}
+					g.run.Gold -= bet
+					return fmt.Sprintf("The dice turn cold. You lose %d gold.", bet)
+				}, func(g *Game) bool { return g.run.Gold >= 10 }},
+				{"Roll for a relic (60 gold)", func(g *Game) string {
+					g.run.Gold -= 60
+					if rng.Float64() < 0.55 {
+						rl := g.run.Offer(1, true, Common, rng)
+						if len(rl) > 0 {
+							g.run.Add(rl[0].ID, &g.save)
+							return "The dice spell a name: " + rl[0].Name + "!"
+						}
+					}
+					return "Snake eyes. The house keeps your gold."
+				}, func(g *Game) bool { return g.run.Gold >= 60 }},
+				{"Leave", func(g *Game) string { return "You keep your coins close." }, nil},
+			}}
+	case 2:
+		return &Event{"Upgrade Shrine", "An altar of humming crystal. Offerings placed here are reforged into something greater.",
+			[]EventChoice{
+				{"Sacrifice a random upgrade for a rare relic", func(g *Game) string {
+					var ups []string
+					for _, id := range g.run.Order {
+						if m := modByID[id]; m != nil && !m.Relic && g.run.Mods[id] > 0 {
+							ups = append(ups, id)
+						}
+					}
+					lost := ups[rng.Intn(len(ups))]
+					g.run.Mods[lost]--
+					rl := g.run.Offer(1, true, Rare, rng)
+					msg := "You offer " + modByID[lost].Name + "."
+					if len(rl) > 0 {
+						g.run.Add(rl[0].ID, &g.save)
+						msg += " The shrine returns " + rl[0].Name + "!"
+					}
+					g.run.Recompute(&g.save)
+					return msg
+				}, func(g *Game) bool {
+					for _, id := range g.run.Order {
+						if m := modByID[id]; m != nil && !m.Relic && g.run.Mods[id] > 0 {
+							return true
+						}
+					}
+					return false
+				}},
+				{"Pray (heal 25%)", func(g *Game) string {
+					g.run.HP = math.Min(g.run.Stats.MaxHP, g.run.HP+g.run.Stats.MaxHP*0.25)
+					return "Warm light washes over you."
+				}, nil},
+			}}
+	case 3:
+		return &Event{"Cursed Room", "Black runes crawl across the next chamber's walls. The bricks within are stronger — and richer.",
+			[]EventChoice{
+				{"Accept the curse (next fight: +50% brick health, double gold)", func(g *Game) string {
+					g.run.Cursed = true
+					return "The runes flare. Your next battle will be brutal, and lucrative."
+				}, nil},
+				{"Seal the door", func(g *Game) string { return "You bar the door and move on." }, nil},
+			}}
+	case 4:
+		return &Event{"Abandoned Forge", "An anvil still glows with heat. You could temper something here.",
+			[]EventChoice{
+				{"Temper your orb (+0.5 damage)", func(g *Game) string {
+					g.run.Add("heavy", &g.save)
+					return "The orb rings like a bell."
+				}, nil},
+				{"Salvage scrap (+40 gold)", func(g *Game) string {
+					g.run.Gold += 40
+					return "You pocket a handful of gilded scrap."
+				}, nil},
+			}}
+	}
+	return &Event{"Wandering Spirit", "A friendly wisp circles your paddle and leaves a small gift.",
+		[]EventChoice{
+			{"Accept (+30 gold)", func(g *Game) string { g.run.Gold += 30; return "The wisp giggles and vanishes." }, nil},
+			{"Ask for healing (+20 health)", func(g *Game) string {
+				g.run.HP = math.Min(g.run.Stats.MaxHP, g.run.HP+20)
+				return "You feel refreshed."
+			}, nil},
+		}}
+}
+
+// baseMaxPenalty applies permanent max-HP penalties stored as pseudo-mod "__hp".
+func baseMaxPenalty(r *Run) {
+	r.Stats.MaxHP = math.Max(20, r.Stats.MaxHP)
+	if r.HP > r.Stats.MaxHP {
+		r.HP = r.Stats.MaxHP
+	}
+}
+
+// pickWorld chooses this level's world from the act pool, never repeating
+// the previous one, so every chamber feels like a new place.
+func (r *Run) pickWorld(seed int64) int {
+	pool := acts[r.Act-1].Pool
+	rng := rand.New(rand.NewSource(seed ^ 0x3a7))
+	for i := 0; i < 8; i++ {
+		w := pool[rng.Intn(len(pool))]
+		if w != r.LastWorld {
+			return w
+		}
+	}
+	return pool[0]
+}
