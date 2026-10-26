@@ -64,7 +64,7 @@ func (g *Game) themeWorld() int {
 		}
 	}
 	if g.run != nil {
-		return biomes[g.run.Act-1].ID
+		return biomes[g.run.AI()].ID
 	}
 	return WNeon
 }

@@ -179,25 +179,27 @@ type Boss struct {
 // ---------------------------------------------------------------- level
 
 type Level struct {
-	g        *Game
-	Data     *levelgen.Level
-	Biome    *Biome
-	Node     NodeType
-	Grid     [levelgen.MaxRows][levelgen.Cols]*Brick
-	Bricks   []*Brick
-	Left     int
-	Crystals int
-	Balls    []*Ball
-	Drops    []*Drop
-	Coins    []*Coin
-	Bolts    []*Bolt
-	Rocks    []*Rock
-	Parts    []*Particle
-	Rings    []*Ring
-	Arcs     []*Arc
-	Floats   []*FloatText
-	Boss     *Boss
-	rng      *rand.Rand
+	igniteN               int
+	abilReadyT, abilFlash float64
+	g                     *Game
+	Data                  *levelgen.Level
+	Biome                 *Biome
+	Node                  NodeType
+	Grid                  [levelgen.MaxRows][levelgen.Cols]*Brick
+	Bricks                []*Brick
+	Left                  int
+	Crystals              int
+	Balls                 []*Ball
+	Drops                 []*Drop
+	Coins                 []*Coin
+	Bolts                 []*Bolt
+	Rocks                 []*Rock
+	Parts                 []*Particle
+	Rings                 []*Ring
+	Arcs                  []*Arc
+	Floats                []*FloatText
+	Boss                  *Boss
+	rng                   *rand.Rand
 
 	PaddleX, PaddleW float64
 	tempSize         int
@@ -238,14 +240,14 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 		wi = forceWorld
 	}
 	if node == NBoss {
-		wi = acts[act-1].Signature
+		wi = acts[r.AI()].Signature
 	}
 	r.LastWorld = wi
 	g.snd.World = wi
 	b, vis := levelLook(&worlds[wi], seed)
 	if node == NBoss {
 		bc := worlds[wi]
-		bc.BossName = acts[act-1].BossName
+		bc.BossName = acts[r.AI()].BossName
 		b, vis = &bc, Visuals{}
 	}
 	L := &Level{g: g, Biome: b, Node: node, Vis: vis, rng: rand.New(rand.NewSource(seed ^ 0x5eed))}
@@ -256,7 +258,7 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 		L.Data = levelgen.Generate(levelgen.Params{Seed: seed, Depth: r.Depth + (act-1)*2, Act: act, Elite: node == NElite})
 		L.Designed = strings.HasPrefix(L.Data.Formation, "design")
 	}
-	hpMul := (1.0 + float64(act-1)*0.35) * (1 + 0.02*float64(r.Depth)) * ascHP(r.Asc, node == NElite, false)
+	hpMul := (1.0 + float64(act-1)*0.35) * (1 + 0.02*float64(r.Depth)) * ascHP(r.Asc, node == NElite, false) * math.Pow(1.25, float64(r.Loop()))
 	if r.Cursed && node != NBoss {
 		hpMul *= 1.5
 	}
@@ -454,6 +456,8 @@ func (L *Level) Update(dt float64, in Input) {
 			}
 		}
 	}
+	L.updateAbility(dt, in)
+	L.abilFlash = math.Max(0, L.abilFlash-dt*2)
 	L.stun -= dt
 	L.hurtFlash = math.Max(0, L.hurtFlash-dt*2)
 	L.paddleBounce = math.Max(0, L.paddleBounce-dt*6)
@@ -1108,7 +1112,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 		L.g.snd.ComboMilestone(L.Combo)
 	}
 	// procs
-	if b.Alive && L.rng.Float64() < s.BurnChance || fire && b.Alive {
+	if b.Alive && (L.rng.Float64() < s.BurnChance || fire || L.classIgnite()) {
 		if b.Burn <= 0 {
 			L.text(V3{bx, 1.2, bz}, "BURN", color.RGBA{255, 140, 40, 255}, false)
 		}

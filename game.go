@@ -33,6 +33,7 @@ const (
 	StActIntro
 	StHelp
 	StCodex
+	StStory
 )
 
 type Input struct {
@@ -41,6 +42,7 @@ type Input struct {
 	KeyDir  float64
 	Fast    bool
 	Fire    bool
+	Ability bool
 }
 
 type rewardSet struct {
@@ -111,6 +113,11 @@ type Game struct {
 	heartT     float64
 
 	codexTab    int
+	endlessMode bool // next run starts in Endless
+	storyIdx    int
+	storySkip   float64
+	storyTick   [8]bool
+	boardRank   int // leaderboard placement of the run just ended
 	xpBefore    int
 	xpGained    int
 	rankBefore  int
@@ -169,7 +176,7 @@ func (g *Game) setState(s State) {
 	switch s {
 	case StActIntro:
 		if g.run != nil {
-			g.snd.Play("actstart." + itoa(g.run.Act-1))
+			g.snd.Play("actstart." + itoa(g.run.AI()))
 			g.snd.Duck(0.6, 3)
 		}
 	case StReward:
@@ -222,7 +229,7 @@ func (g *Game) Update() error {
 		g.snd.SetIntensity(0.25)
 	default:
 		if g.run != nil {
-			g.snd.SetTrack(g.run.Act - 1)
+			g.snd.SetTrack(g.run.AI())
 		}
 		if g.state == StLevel && g.level != nil {
 			v := math.Min(1, float64(g.level.Combo)/25)
@@ -332,6 +339,7 @@ func (g *Game) readInput() Input {
 	in.UseKeys = g.useKeys
 	in.Fast = ebiten.IsKeyPressed(ebiten.KeyShift)
 	in.Fire = g.ui.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace)
+	in.Ability = inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) || inpututil.IsKeyJustPressed(ebiten.KeyE)
 	return in
 }
 
@@ -375,9 +383,15 @@ func (g *Game) startRun(arch *Archetype) {
 		code = randomSeedCode(g.rng)
 	}
 	g.run = NewRun(code, arch, &g.save, g.daily)
+	g.run.Endless = g.endlessMode
+	g.run.EndlessStart = g.endlessMode
 	g.save.Runs++
 	writeSave(&g.save)
-	g.setState(StActIntro)
+	if g.endlessMode || g.daily {
+		g.setState(StActIntro)
+	} else {
+		g.startStory(0)
+	}
 }
 
 func (g *Game) enterNode(i int) {
@@ -429,7 +443,15 @@ func (g *Game) finishRewards() {
 	r := g.run
 	if r.Cur >= 0 && r.Map.Nodes[r.Cur].Type == NBoss {
 		if !r.NextAct(&g.save) {
-			g.endRun(true)
+			if r.storyOn() {
+				g.startStory(len(storyCards) - 1)
+			} else {
+				g.endRun(true)
+			}
+			return
+		}
+		if r.storyOn() && r.Act <= numActs && r.Act-1 < len(storyCards)-1 {
+			g.startStory(r.Act - 1)
 			return
 		}
 		g.setState(StActIntro)
@@ -477,18 +499,26 @@ func (g *Game) openShop(rng *rand.Rand) {
 func (g *Game) endRun(win bool) {
 	r := g.run
 	g.victory = win
+	won := win || (r.Endless && r.Loop() > 0)
 	sh := r.Depth*3 + r.Bosses*20 + r.Elites*4
-	if win {
+	if won {
 		sh += 60
+	}
+	if win {
 		g.save.Wins++
 	}
-	sh = int(float64(sh) * ascShardMult(r.Asc))
+	sh = int(float64(sh)*ascShardMult(r.Asc)) - r.shardsPaid
+	r.shardsPaid += sh
 	g.shardsWon = sh
 	g.save.Shards += sh
 	g.xpBefore = g.save.XP
 	g.rankBefore = rankOf(g.save.XP)
-	g.xpGained = runXP(r, win)
+	g.xpGained = runXP(r, won) - r.xpPaid
+	r.xpPaid += g.xpGained
 	g.save.XP += g.xpGained
+	if r.Endless {
+		g.save.BestLoop = max(g.save.BestLoop, r.Loop())
+	}
 	g.ascUnlocked = false
 	if win && r.Asc >= g.save.AscMax && g.save.AscMax < len(ascensions) {
 		g.save.AscMax++
@@ -501,9 +531,13 @@ func (g *Game) endRun(win bool) {
 	g.save.Bricks += r.Bricks
 	g.save.BestAct = max(g.save.BestAct, r.Act)
 	g.save.MaxCombo = max(g.save.MaxCombo, r.MaxCombo)
-	score := r.Score + r.Gold*5 + r.Depth*200
-	r.Score = score
+	score := r.Score + r.Gold*5 + r.Depth*200 + r.Loop()*2500
+	r.FinalScore = score
 	g.save.BestScore = max(g.save.BestScore, score)
+	g.boardRank = 0
+	if r.Endless && !win {
+		g.boardRank = g.save.addToBoard(EndlessEntry{Score: score, Loop: r.Loop(), Depth: r.Depth, Class: r.Arch.Name, Asc: r.Asc, Date: time.Now().Format("2006-01-02")})
+	}
 	if r.Daily {
 		k := r.SeedCode
 		g.save.Daily[k] = max(g.save.Daily[k], score)
@@ -549,7 +583,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 		fillRect(screen, 0, 0, sw, sh, color.RGBA{6, 4, 14, 170})
 	default:
-		g.ensureSky(&biomes[act-1], int64(act)*7)
+		g.ensureSky(&biomes[(act-1)%numActs], int64(act)*7)
 		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		op.GeoM.Scale(sw/float64(g.sky.Bounds().Dx()), sh/float64(g.sky.Bounds().Dy()))
 		screen.DrawImage(g.sky, op)
@@ -586,6 +620,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.drawSettings(screen)
 	case StActIntro:
 		g.drawActIntro(screen)
+	case StStory:
+		g.drawStory(screen)
 	}
 	if g.bannerT > 0 {
 		u := g.ui
@@ -658,34 +694,51 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 	}
 	g.chromeTitle(s, "ARCANE ORB", 150, 960, 70+bob, glow)
 	u.textOutlined(s, "~ a roguelite brick-breaker ~", fBold, 30, 960, 262, color.RGBA{120, 240, 255, 255}, alignCenter)
+	endlessLabel := "Endless Mode"
+	if g.save.Wins == 0 {
+		endlessLabel = "Endless Mode  ·  locked"
+	}
 	items := []struct {
 		label string
 		do    func()
 	}{
-		{"New Run", func() { g.seedText = ""; g.daily = false; g.setState(StArch) }},
-		{"Daily Challenge", func() { g.daily = true; g.seedText = ""; g.setState(StArch) }},
-		{"Play a Seed", func() { g.seedText = ""; g.setState(StSeed) }},
+		{"Story Mode", func() { g.seedText = ""; g.daily = false; g.endlessMode = false; g.setState(StArch) }},
+		{endlessLabel, func() {
+			if g.save.Wins > 0 {
+				g.seedText = ""
+				g.daily = false
+				g.endlessMode = true
+				g.setState(StArch)
+			} else {
+				g.snd.Play("deny")
+			}
+		}},
+		{"Daily Challenge", func() { g.daily = true; g.seedText = ""; g.endlessMode = false; g.setState(StArch) }},
+		{"Play a Seed", func() { g.seedText = ""; g.endlessMode = false; g.setState(StSeed) }},
 		{"Sanctum  ·  " + itoa(g.save.Shards) + " shards", func() { g.setState(StSanctum) }},
 		{"Codex", func() { g.codexTab = 0; g.setState(StCodex) }},
 		{"How to Play", func() { g.setState(StHelp) }},
 		{"Settings", func() { g.setState(StSettings) }},
 		{"Quit", func() { g.quit = true }},
 	}
-	y := 360.0
+	y := 340.0
 	for i, it := range items {
 		if g.neonItem(s, "menu"+itoa(i), it.label, 960, y, glow, true) {
 			it.do()
 		}
-		y += 66
+		y += 64
 	}
 	g.drawRankBadge(s, 36, 32)
 	stats := fmt.Sprintf("Runs %d   ·   Wins %d   ·   Best act %d   ·   Best score %d   ·   Best combo %d",
 		g.save.Runs, g.save.Wins, g.save.BestAct, g.save.BestScore, g.save.MaxCombo)
+	if g.save.BestLoop > 0 {
+		stats += fmt.Sprintf("   ·   Endless loop %d", g.save.BestLoop)
+	}
 	u.textOutlined(s, stats, fReg, 18, 960, 1012, cDim, alignCenter)
 	if best, ok := g.save.Daily[dailyCode()]; ok {
 		u.textOutlined(s, fmt.Sprintf("Today's daily best: %d", best), fBold, 18, 960, 1040, cGold, alignCenter)
 	}
-	u.text(s, "v0.5", fReg, 16, 1890, 1048, cDim, alignRight)
+	u.text(s, "v0.6", fReg, 16, 1890, 1048, cDim, alignRight)
 }
 
 func (g *Game) drawArch(s *ebiten.Image) {
@@ -698,39 +751,56 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	}
 	u.heading(s, title, 60, 70, cGold, 1)
 	n := len(archetypes)
-	w := 330.0
-	x0 := 960 - (float64(n)*w+float64(n-1)*20)/2
+	w, gap, h := 254.0, 12.0, 540.0
+	x0 := 960 - (float64(n)*w+float64(n-1)*gap)/2
 	for i := range archetypes {
 		a := &archetypes[i]
-		x := x0 + float64(i)*(w+20)
-		y := 230.0
+		x := x0 + float64(i)*(w+gap)
+		y := 196.0
 		locked := a.Cost > 0 && !g.save.Unlocked[a.ID]
-		hv := u.hover(x, y, w, 500)
+		hv := u.hover(x, y, w, h)
 		k := u.anim("arch"+a.ID, hv, 12)
 		if k > 0.01 {
-			drawSprite(s, sprSoft, u.X(x-70), u.Y(y-70), (w+140)*u.S, 640*u.S, ca(u.theme().Accent, 0.28*k), true)
+			drawSprite(s, sprSoft, u.X(x-60), u.Y(y-60), (w+120)*u.S, (h+120)*u.S, ca(u.theme().Accent, 0.28*k), true)
 		}
-		u.panel(s, x, y-8*k, w, 500, 0.9)
+		yy := y - 8*k
+		u.panel(s, x, yy, w, h, 0.9)
 		if k > 0.01 {
 			r, ch := styleShape(u.theme().Style)
-			strokePath(s, boxPath(u.X(x), u.Y(y-8*k), w*u.S, 500*u.S, r*u.S, ch), 3*u.S, ca(lighten(u.theme().Accent, 0.3), k), false)
+			strokePath(s, boxPath(u.X(x), u.Y(yy), w*u.S, h*u.S, r*u.S, ch), 3*u.S, ca(lighten(u.theme().Accent, 0.3), k), false)
 		}
-		u.text(s, a.Name, fTitle, 44, x+w/2, y+30-8*k, cWhite, alignCenter)
-		u.paragraph(s, a.Desc, fReg, 21, x+w/2, y+104-8*k, w-40, cDim, alignCenter)
-		g.archPreview(s, a, x, y-8*k, w)
+		u.text(s, a.Name, fTitle, 34, x+w/2, yy+26, cWhite, alignCenter)
+		u.paragraph(s, a.Desc, fReg, 17, x+w/2, yy+82, w-32, cDim, alignCenter)
+		g.archPreview(s, a, x, yy, w)
+		// active ability strip
+		ay := yy + 398
+		if a.Ability != "" {
+			col, gl := rgba(255, 140, 60, 255), "flame"
+			if a.ID == "storm" {
+				col, gl = rgba(140, 200, 255, 255), "bolt"
+			}
+			fillPath(s, boxPath(u.X(x+14), u.Y(ay), (w-28)*u.S, 54*u.S, 10*u.S, false), ca(darken(col, 0.25), 0.55), ca(darken(col, 0.12), 0.55), vgrad(u.Y(ay), u.Y(ay+54)), false)
+			strokePath(s, boxPath(u.X(x+14), u.Y(ay), (w-28)*u.S, 54*u.S, 10*u.S, false), 1.4*u.S, ca(col, 0.8), false)
+			u.drawEmblem(s, glyphImage(gl, col), x+40, ay+27, 34, 1)
+			u.text(s, strings.ToUpper(a.Ability), fBold, 16, x+62, ay+8, lighten(col, 0.45), alignLeft)
+			u.text(s, fmt.Sprintf("Right-click / E  ·  %.0fs", a.Cooldown), fReg, 13, x+62, ay+30, cDim, alignLeft)
+		} else {
+			u.text(s, "No active ability", fReg, 15, x+w/2, ay+18, ca(cDim, 0.6), alignCenter)
+		}
+		by := yy + 466
 		if locked {
 			can := g.save.Shards >= a.Cost
-			if u.button(s, "unlock"+a.ID, fmt.Sprintf("Unlock · %d shards", a.Cost), x+30, y+410, w-60, 60, cGold, can) {
+			if u.button(s, "unlock"+a.ID, fmt.Sprintf("Unlock · %d", a.Cost), x+20, by, w-40, 56, cGold, can) {
 				g.save.Shards -= a.Cost
 				g.save.Unlocked[a.ID] = true
 				writeSave(&g.save)
 				g.snd.Play("buy")
 			}
-		} else if u.button(s, "pick"+a.ID, "Begin", x+30, y+410, w-60, 60, cGreen, true) {
+		} else if u.button(s, "pick"+a.ID, "Begin", x+20, by, w-40, 56, cGreen, true) {
 			g.startRun(a)
 		}
 	}
-	g.drawAscSelector(s, 772)
+	g.drawAscSelector(s, 760)
 	if u.button(s, "back", "Back", 860, 910, 200, 56, cAcc, true) {
 		g.setState(StMenu)
 	}
@@ -743,8 +813,8 @@ func (g *Game) archPreview(s *ebiten.Image, a *Archetype, x, y, w float64) {
 	S := u.S
 	st := baseStats()
 	a.Apply(&st)
-	cx, py := x+w/2, y+238
-	pw := 170 * st.PaddleWidth
+	cx, py := x+w/2, y+236
+	pw := 140 * st.PaddleWidth
 	drawSprite(s, sprSoft, u.X(cx-pw*0.8), u.Y(py-40), pw*1.6*S, 80*S, ca(th.Accent, 0.35), true)
 	fillPath(s, boxPath(u.X(cx-pw/2), u.Y(py-10), pw*S, 20*S, 6*S, false), rgba(120, 104, 180, 255), rgba(46, 38, 84, 255), vgrad(u.Y(py-10), u.Y(py+10)), false)
 	for _, ex := range []float64{cx - pw/2 - 4, cx + pw/2 - 22} {
@@ -767,9 +837,9 @@ func (g *Game) archPreview(s *ebiten.Image, a *Archetype, x, y, w float64) {
 		{"Fortune", (st.GoldMult - 0.8) / 0.8, rgba(255, 214, 90, 255)},
 	}
 	for i, r := range rows {
-		ry := y + 290 + float64(i)*28
-		u.text(s, r.label, fBold, 16, x+34, ry, cDim, alignLeft)
-		u.meter(s, x+124, ry+5, w-158, r.v, r.col)
+		ry := y + 280 + float64(i)*27
+		u.text(s, r.label, fBold, 15, x+24, ry, cDim, alignLeft)
+		u.meter(s, x+104, ry+5, w-128, r.v, r.col)
 	}
 }
 
@@ -836,7 +906,7 @@ func (g *Game) runPanel(s *ebiten.Image) {
 	u.text(s, r.Arch.Name, fTitle, 36, 50, 42, cGold, alignLeft)
 	u.iconLabel(s, icHeart, fmt.Sprintf("%.0f / %.0f", r.HP, r.Stats.MaxHP), fBold, 26, 52, 100, color.RGBA{255, 130, 140, 255}, alignLeft)
 	u.iconLabel(s, icCoin, fmt.Sprintf("%d gold", r.Gold), fBold, 26, 52, 140, cGold, alignLeft)
-	u.text(s, fmt.Sprintf("%s  ·  Act %d", biomes[r.Act-1].Name, r.Act), fReg, 21, 50, 186, cDim, alignLeft)
+	u.text(s, fmt.Sprintf("%s  ·  Act %d", biomes[r.AI()].Name, r.Act), fReg, 21, 50, 186, cDim, alignLeft)
 	u.text(s, "Seed  "+r.SeedCode, fReg, 21, 50, 218, cDim, alignLeft)
 	u.text(s, fmt.Sprintf("Damage %.1f  ·  Crit %.0f%%", r.Stats.Damage*r.Stats.DmgMult, r.Stats.CritChance*100), fReg, 19, 50, 256, cDim, alignLeft)
 	if len(r.Active) > 0 {
@@ -880,7 +950,11 @@ func (g *Game) drawMap(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
 	g.runPanel(s)
-	u.heading(s, biomes[r.Act-1].Name, 56, 30, cGold, 1)
+	title := biomes[r.AI()].Name
+	if l := r.Loop(); l > 0 {
+		title = fmt.Sprintf("Endless %d  ·  %s", l, title)
+	}
+	u.heading(s, title, 56, 30, cGold, 1)
 	pos := func(n *MapNode) (float64, float64) {
 		x := 960 + (float64(n.Lane)-1.5)*230
 		if n.Type == NBoss {
@@ -1272,11 +1346,21 @@ func (g *Game) drawRest(s *ebiten.Image) {
 func (g *Game) drawActIntro(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
-	b := biomes[r.Act-1]
+	b := biomes[r.AI()]
 	a := math.Min(1, g.stateT*1.5)
-	u.textOutlined(s, strings.ToUpper(b.Subtitle), fBold, 30, 960, 330-(1-a)*20, alpha(lighten(u.theme().Accent, 0.3), a), alignCenter)
+	sub := strings.ToUpper(b.Subtitle)
+	if l := r.Loop(); l > 0 {
+		sub = fmt.Sprintf("ENDLESS  ·  LOOP %d", l)
+	} else if r.Endless {
+		sub = "ENDLESS  ·  " + sub
+	}
+	u.textOutlined(s, sub, fBold, 30, 960, 330-(1-a)*20, alpha(lighten(u.theme().Accent, 0.3), a), alignCenter)
 	u.heading(s, strings.ToUpper(b.Name), 110, 384, cGold, a)
 	u.text(s, "Guardian:  "+b.BossName, fBold, 26, 960, 548, alpha(cWhite, a), alignCenter)
+	if l := r.Loop(); l > 0 {
+		u.text(s, fmt.Sprintf("Bricks ×%.2f health   ·   orbs +%d%% speed   ·   orb loss +%d damage", math.Pow(1.25, float64(l)), 6*l, 3*l),
+			fReg, 22, 960, 596, alpha(rgba(255, 140, 120, 255), a), alignCenter)
+	}
 	if g.stateT > 0.8 {
 		u.text(s, "Click to continue", fReg, 22, 960, 640, alpha(cDim, 0.6+0.4*math.Sin(g.stateT*4)), alignCenter)
 		if u.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) {

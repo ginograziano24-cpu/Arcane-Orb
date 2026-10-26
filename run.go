@@ -17,6 +17,9 @@ type Archetype struct {
 	ID, Name, Desc string
 	Cost           int // shards to unlock (0 = free)
 	Apply          func(s *Stats)
+	Ability        string // active ability on right-click / E ("" = none)
+	AbilityDesc    string
+	Cooldown       float64 // seconds
 }
 
 var archetypes = []Archetype{
@@ -25,24 +28,34 @@ var archetypes = []Archetype{
 		s.MaxHP += 20
 		s.BarrierPerLevel++
 		s.DmgMult *= 0.9
-	}},
+	}, "", "", 0},
 	{"berserker", "Berserker", "Narrow paddle but heavy, critical-focused strikes.", 0, func(s *Stats) {
 		s.PaddleWidth -= 0.15
 		s.CritChance += 0.1
 		s.CritMult += 0.5
 		s.Damage += 0.5
-	}},
+	}, "", "", 0},
 	{"arcane", "Arcanist", "Starts each run attuned to a random element.", 0, func(s *Stats) {
 		s.StartElement = "random"
-	}},
+	}, "", "", 0},
 	{"engineer", "Engineer", "Paddle-mounted lasers from the very first level.", 60, func(s *Stats) {
 		s.LaserInterval = 2.0
-	}},
+	}, "", "", 0},
 	{"lucky", "Gambler", "+40% gold, +60% power-ups and a free shop reroll.", 90, func(s *Stats) {
 		s.GoldMult += 0.4
 		s.Luck += 0.6
 		s.FreeRerolls++
-	}},
+	}, "", "", 0},
+	{"pyro", "Pyromancer", "Every 4th hit ignites. Fire burns 50% hotter.", 120, func(s *Stats) {
+		s.ClassIgnite = 4
+		s.BurnMult += 0.5
+		s.BurnChance += 0.06
+	}, "Firestorm", "Set the two lowest rows ablaze.", 22},
+	{"storm", "Stormcaller", "Every paddle bounce arcs lightning. Lightning +30%.", 120, func(s *Stats) {
+		s.StaticPaddle = true
+		s.ChainMult += 0.3
+		s.ChainCount++
+	}, "Thunderstrike", "Smite the toughest brick; it chains to 4 more.", 18},
 }
 
 // ---------------------------------------------------------------- map
@@ -176,30 +189,36 @@ func abs(x int) int {
 const numActs = 3
 
 type Run struct {
-	SeedCode    string
-	SeedN       int64
-	Daily       bool
-	Rng         *rand.Rand
-	Arch        *Archetype
-	Act         int
-	Map         *ActMap
-	Cur         int // current node index (-1 = start of act)
-	Depth       int // levels entered
-	HP          float64
-	Gold        int
-	Mods        map[string]int
-	Order       []string // acquisition order for display
-	Stats       Stats
-	Active      []string // active synergy names
-	PhoenixUsed bool
-	Cursed      bool
-	LastWorld   int
-	Element     string
-	Rerolls     int
-	Fused       []string // fusions formed this run
-	NewFusions  []string // formed since last announced
-	Rank, Asc   int      // player rank and ascension level at run start
-	metaLuck    int
+	SeedCode     string
+	SeedN        int64
+	Daily        bool
+	Rng          *rand.Rand
+	Arch         *Archetype
+	AbilT        float64 // class ability cooldown remaining
+	Act          int
+	Map          *ActMap
+	Cur          int // current node index (-1 = start of act)
+	Depth        int // levels entered
+	HP           float64
+	Gold         int
+	Mods         map[string]int
+	Order        []string // acquisition order for display
+	Stats        Stats
+	Active       []string // active synergy names
+	PhoenixUsed  bool
+	Cursed       bool
+	LastWorld    int
+	Element      string
+	Rerolls      int
+	Fused        []string // fusions formed this run
+	NewFusions   []string // formed since last announced
+	Rank, Asc    int      // player rank and ascension level at run start
+	Endless      bool     // continued past the final boss
+	EndlessStart bool     // started from the Endless menu (no story)
+	FinalScore   int
+	xpPaid       int // XP already awarded (victory before endless)
+	shardsPaid   int
+	metaLuck     int
 
 	// statistics
 	Bricks, Bosses, Elites, MaxCombo, Score int
@@ -257,6 +276,11 @@ func baseStats() Stats {
 func (r *Run) Recompute(meta *SaveData) {
 	s := baseStats()
 	applyMeta(&s, meta, r.Asc)
+	if l := r.Loop(); l > 0 {
+		// endless escalation: faster orbs, harsher losses
+		s.SpeedMult += 0.06 * float64(l)
+		s.BallLossDmg += 3 * float64(l)
+	}
 	s.MaxHP -= 20 * float64(r.Mods["__hp"])
 	r.Arch.Apply(&s)
 	tags := map[string]int{}
@@ -320,6 +344,13 @@ func (r *Run) Add(id string, meta *SaveData) string {
 
 func (r *Run) Owned(id string) bool { return r.Mods[id] > 0 }
 
+// AI is the act index used for worlds, bosses and music; endless loops
+// cycle through the three acts again.
+func (r *Run) AI() int { return (r.Act - 1) % numActs }
+
+// Loop is the endless loop number (0 before endless).
+func (r *Run) Loop() int { return max(0, r.Act-numActs) }
+
 // choices is how many cards a reward offers.
 func (r *Run) choices() int { return 3 + r.Stats.ExtraChoices }
 
@@ -348,7 +379,7 @@ func (r *Run) Offer(n int, relic bool, minRarity int, rng *rand.Rand) []*Mod {
 		}
 	}
 	var out []*Mod
-	luck := 1 + (r.Stats.Luck-1)*0.3 + float64(r.Act-1)*0.25 + 0.04*float64(r.metaLuck)
+	luck := 1 + (r.Stats.Luck-1)*0.3 + float64(min(r.Act-1, 4))*0.25 + 0.04*float64(r.metaLuck)
 	weight := func(m *Mod) float64 {
 		w := rarityWeights[m.Rarity] * math.Pow(luck, float64(m.Rarity))
 		if r.fusionWith(m.ID) != nil {
@@ -380,7 +411,7 @@ func (r *Run) NodeSeed(i int) int64 {
 }
 
 func (r *Run) NextAct(meta *SaveData) bool {
-	if r.Act >= numActs {
+	if r.Act >= numActs && !r.Endless {
 		return false
 	}
 	r.Act++
@@ -544,7 +575,7 @@ func baseMaxPenalty(r *Run) {
 // pickWorld chooses this level's world from the act pool, never repeating
 // the previous one, so every chamber feels like a new place.
 func (r *Run) pickWorld(seed int64) int {
-	pool := acts[r.Act-1].Pool
+	pool := acts[r.AI()].Pool
 	rng := rand.New(rand.NewSource(seed ^ 0x3a7))
 	for i := 0; i < 8; i++ {
 		w := pool[rng.Intn(len(pool))]

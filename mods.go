@@ -59,6 +59,7 @@ type Stats struct {
 	ExtraChoices, ShopRerolls, SunderMult                         int
 	StaticPaddle, FreezeSpread, Blessed, ThornWard, OpeningPower  bool
 	BlackHole, InfiniteCombo, DragonHeart                         bool
+	ClassIgnite                                                   int // ignite every Nth hit (Pyromancer)
 	// fusions
 	PlasmaStorm, SteamEngine, CryoCharge, GoldRush, Thunderclap    bool
 	Berserker, TeslaCoil, VoidPrism, Sanctuary, Cataclysm, Volcano bool

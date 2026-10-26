@@ -1,4 +1,4 @@
-ARCANE ORB  -  build 0.5
+ARCANE ORB  -  build 0.6
 =====================================
 
 Run ArcaneOrb.exe. No install needed. Starts fullscreen at your
@@ -9,6 +9,26 @@ CONTROLS
   Mouse ............ move paddle        A/D or Arrows ... move paddle
   Click / Space .... launch orb, fire   Shift ........... faster keyboard move
   Esc / P .......... pause              F11 ............. fullscreen
+  Right-click / E .. class ability (Pyromancer, Stormcaller)
+
+NEW IN 0.6  -  story, endless mode and classes
+  - Story Mode: the three acts are now the main story, with a prologue,
+    chapter cards between acts and an epilogue after the Crystal Warden
+    (click to reveal, Esc to skip)
+  - Endless Mode: beat the story once to unlock it from the main menu.
+    The worlds loop forever with generated levels; every loop bricks get
+    25% tougher, orbs 6% faster and dropped orbs hurt more. Each loop
+    is worth 2,500 bonus score. You can also keep going straight from
+    the victory screen.
+  - Endless Records: a local top-10 leaderboard (Codex > Endless Records)
+  - Two new classes with an active ability on Right-click / E:
+      * Pyromancer: every 4th hit ignites, fire burns 50% hotter.
+        FIRESTORM sets the two lowest rows ablaze (22s cooldown)
+      * Stormcaller: every paddle bounce arcs lightning, lightning +30%.
+        THUNDERSTRIKE smites the toughest brick (or the boss core) and
+        chains to 4 more (18s cooldown)
+    Ability medallion with cooldown ring on the HUD; new sounds for both
+  - Class select redesigned to fit all 7 paddles
 
 NEW IN 0.5  -  progression, items, fusions and sound
   - 102 upgrades and relics (46 new), each with its own hand-built emblem

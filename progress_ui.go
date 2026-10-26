@@ -94,18 +94,26 @@ func (g *Game) drawSanctum(s *ebiten.Image) {
 func (g *Game) drawCodex(s *ebiten.Image) {
 	u := g.ui
 	u.heading(s, "THE CODEX", 72, 40, cGold, 1)
-	tabs := []string{"Upgrades", "Relics", "Fusions"}
+	tabs := []string{"Upgrades", "Relics", "Fusions", "Endless Records"}
 	for i, t := range tabs {
 		acc := cAcc
 		if g.codexTab == i {
 			acc = cGold
 		}
-		if u.button(s, "ctab"+itoa(i), t, 960-345+float64(i)*240, 140, 210, 50, acc, true) {
+		tx := 960 - 470 + float64(i)*240
+		if u.button(s, "ctab"+itoa(i), t, tx, 140, 220, 50, acc, true) {
 			g.codexTab = i
 		}
 		if g.codexTab == i {
-			u.glowLine(s, 960-345+float64(i)*240+20, 960-345+float64(i)*240+190, 198, 3, cGold, 1)
+			u.glowLine(s, tx+20, tx+200, 198, 3, cGold, 1)
 		}
+	}
+	if g.codexTab == 3 {
+		g.drawRecords(s, 236)
+		if u.button(s, "cback", "Back", 60, 990, 200, 56, cAcc, true) {
+			g.setState(StMenu)
+		}
+		return
 	}
 	rank := rankOf(g.save.XP)
 	tile, gap, cols := 108.0, 14.0, 12
@@ -257,14 +265,16 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 	title, col := "RUN OVER", cRed
 	if g.victory {
 		title, col = "VICTORY!", cGold
+	} else if r.Endless {
+		title, col = fmt.Sprintf("ENDLESS  ·  LOOP %d", r.Loop()), rgba(255, 140, 120, 255)
 	}
 	u.panel(s, 400, 60, 1120, 960, 0.92)
 	u.heading(s, title, 90, 80, col, 1)
 	lines := []string{
 		fmt.Sprintf("%s   ·   Seed %s   ·   Ascension %d", r.Arch.Name, r.SeedCode, r.Asc),
-		fmt.Sprintf("Reached %s (Act %d), %d chambers deep", biomes[r.Act-1].Name, r.Act, r.Depth),
+		fmt.Sprintf("Reached %s (Act %d), %d chambers deep", biomes[r.AI()].Name, r.Act, r.Depth),
 		fmt.Sprintf("Bricks %d   ·   Elites %d   ·   Bosses %d   ·   Best combo ×%d", r.Bricks, r.Elites, r.Bosses, r.MaxCombo),
-		fmt.Sprintf("Final score  %d", r.Score),
+		fmt.Sprintf("Final score  %d", r.FinalScore),
 	}
 	y := 220.0
 	for _, l := range lines {
@@ -319,6 +329,36 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 	if g.ascUnlocked {
 		u.textOutlined(s, fmt.Sprintf("Ascension %d unlocked!", g.save.AscMax), fBold, 26, 960, y+50, rgba(255, 140, 120, 255), alignCenter)
 	}
+	if r.Endless && !g.victory {
+		ty := y + 50
+		if g.ascUnlocked {
+			ty += 40
+		}
+		if g.boardRank == 1 {
+			pulse := 0.75 + 0.25*math.Sin(g.stateT*6)
+			u.textOutlined(s, "NEW ENDLESS RECORD!", fTitle, 38, 960, ty, ca(cGold, pulse), alignCenter)
+		} else if g.boardRank > 0 {
+			u.textOutlined(s, fmt.Sprintf("Endless leaderboard  ·  #%d", g.boardRank), fBold, 26, 960, ty, rgba(255, 170, 130, 255), alignCenter)
+		}
+	}
+	if g.victory && !r.Endless {
+		pulse := 0.5 + 0.5*math.Sin(g.stateT*4)
+		drawSprite(s, sprSoft, u.X(990-80), u.Y(930-60), 580*u.S, 184*u.S, ca(rgba(255, 120, 90, 255), 0.25+0.2*pulse), true)
+		if u.button(s, "endless", "Continue: Endless Mode", 1000, 930, 420, 64, rgba(255, 120, 90, 255), g.stateT > 0.8) {
+			r.Endless = true
+			r.NextAct(&g.save)
+			r.Recompute(&g.save)
+			g.victory = false
+			g.setState(StActIntro)
+			return
+		}
+		if u.button(s, "summenu", "Main menu", 500, 930, 420, 64, cAcc, g.stateT > 0.8) {
+			g.run = nil
+			g.level = nil
+			g.setState(StMenu)
+		}
+		return
+	}
 	if u.button(s, "summenu", "Main menu", 760, 930, 400, 64, cAcc, g.stateT > 0.8) {
 		g.run = nil
 		g.level = nil
@@ -345,3 +385,47 @@ func (g *Game) announceFusions() {
 }
 
 var _ = color.RGBA{}
+
+// drawRecords shows the local Endless leaderboard.
+func (g *Game) drawRecords(s *ebiten.Image, y float64) {
+	u := g.ui
+	w := 1100.0
+	x := 960 - w/2
+	u.panel(s, x, y, w, 700, 0.92)
+	u.text(s, "ENDLESS RECORDS", fBold, 22, 960, y+24, lighten(u.theme().Accent, 0.3), alignCenter)
+	if len(g.save.Board) == 0 {
+		msg := "No Endless runs yet. Finish the story to unlock Endless Mode, then see how far you can go."
+		if g.save.Wins > 0 {
+			msg = "No Endless runs yet. Start one from the main menu and set the first record."
+		}
+		u.paragraph(s, msg, fReg, 24, 960, y+300, 760, cDim, alignCenter)
+		return
+	}
+	cols := []struct {
+		label string
+		x     float64
+		al    align
+	}{{"#", x + 60, alignCenter}, {"SCORE", x + 260, alignRight}, {"LOOP", x + 380, alignCenter}, {"DEPTH", x + 500, alignCenter},
+		{"CLASS", x + 600, alignLeft}, {"ASC", x + 840, alignCenter}, {"DATE", x + w - 50, alignRight}}
+	hy := y + 76
+	for _, c := range cols {
+		u.text(s, c.label, fBold, 16, c.x, hy, cDim, c.al)
+	}
+	u.glowLine(s, x+30, x+w-30, hy+30, 1.5, u.theme().Edge, 0.8)
+	for i, e := range g.save.Board {
+		ry := hy + 50 + float64(i)*56
+		col := cWhite
+		if i < 3 {
+			col = []color.RGBA{cGold, rgba(220, 226, 240, 255), rgba(230, 160, 110, 255)}[i]
+			fillPath(s, boxPath(u.X(x+24), u.Y(ry-10), (w-48)*u.S, 48*u.S, 10*u.S, false), ca(col, 0.1), ca(col, 0.04), vgrad(u.Y(ry-10), u.Y(ry+38)), false)
+		}
+		vals := []string{itoa(i + 1), itoa(e.Score), itoa(e.Loop), itoa(e.Depth), e.Class, itoa(e.Asc), e.Date}
+		for j, c := range cols {
+			f := fReg
+			if j < 2 {
+				f = fBold
+			}
+			u.text(s, vals[j], f, 22, c.x, ry, col, c.al)
+		}
+	}
+}

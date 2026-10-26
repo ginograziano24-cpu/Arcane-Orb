@@ -70,6 +70,11 @@ func debugKeys(g *Game) {
 		g.rewards = []rewardSet{{Title: "Choose an upgrade", Mods: []*Mod{modByID["blast"], modByID["excalibur"], modByID["hive"]}, Skip: 15}}
 		g.setState(StReward)
 	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyF12) && g.run != nil {
+		g.run.Act = 3
+		g.run.Bosses = 3
+		g.endRun(true)
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyF7) {
 		g.run.Gold += 200
 	}

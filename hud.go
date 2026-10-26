@@ -192,6 +192,11 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		u.gem(screen, 1432, y+56, 8, 11, th.Edge, 1)
 	}
 
+	// ---- class ability (bottom-left, above power-ups)
+	if r.hasAbility() {
+		g.drawAbility(screen, L)
+	}
+
 	// ---- active power-ups (bottom-left)
 	x := 24.0
 	for p := Power(0); p < numPowers; p++ {
@@ -264,5 +269,59 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	}
 	if g.settings.ShowFPS {
 		u.text(screen, fmt.Sprintf("%.0f FPS", ebiten.ActualFPS()), fReg, 16, 1894, 990, cDim, alignRight)
+	}
+}
+
+// drawAbility renders the class ability medallion with its cooldown ring.
+func (g *Game) drawAbility(screen *ebiten.Image, L *Level) {
+	u := g.ui
+	r := g.run
+	S := u.S
+	th := u.theme()
+	a := r.Arch
+	col, gl := rgba(255, 140, 60, 255), "flame"
+	if a.ID == "storm" {
+		col, gl = rgba(140, 200, 255, 255), "bolt"
+	}
+	frac := r.abilityFrac()
+	ready := frac == 0
+	cx, cy, rad := 74.0, 934.0, 40.0
+	w := 250.0
+	u.frame(screen, 22, cy-46, w, 92, 0.9)
+	if ready {
+		p := 0.5 + 0.5*math.Sin(L.T*5)
+		drawSprite(screen, sprSoft, u.X(cx-rad*2), u.Y(cy-rad*2), rad*4*S, rad*4*S, ca(col, 0.25+0.2*p+0.5*L.abilReadyT), true)
+	}
+	if L.abilFlash > 0 {
+		drawSprite(screen, sprSoft, u.X(cx-rad*3), u.Y(cy-rad*3), rad*6*S, rad*6*S, ca(cWhite, 0.6*L.abilFlash), true)
+	}
+	fillPath(screen, circlePath(u.X(cx), u.Y(cy+3), (rad+4)*S), ca(cBlack, 0.45), ca(cBlack, 0.45), grad{}, false)
+	fillPath(screen, circlePath(u.X(cx), u.Y(cy), (rad+4)*S), lighten(th.Edge, 0.3), darken(th.Edge, 0.45), vgrad(u.Y(cy-rad-4), u.Y(cy+rad+4)), false)
+	inner := darken(col, 0.3)
+	if !ready {
+		inner = darken(col, 0.12)
+	}
+	fillPath(screen, circlePath(u.X(cx), u.Y(cy), rad*S), inner, darken(inner, 0.5), vgrad(u.Y(cy-rad), u.Y(cy+rad)), false)
+	// cooldown: dark sweep shrinking clockwise, bright ring filling
+	strokePath(screen, circlePath(u.X(cx), u.Y(cy), (rad-3)*S), 5*S, rgba(0, 0, 0, 150), false)
+	prog := 1 - frac
+	if prog > 0.01 {
+		strokePath(screen, arcPath(u.X(cx), u.Y(cy), (rad-3)*S, -math.Pi/2, -math.Pi/2+2*math.Pi*prog), 5*S, lighten(col, 0.25), false)
+	}
+	ea := 1.0
+	if !ready {
+		ea = 0.45
+	}
+	u.drawEmblem(screen, glyphImage(gl, col), cx, cy, 52, ea)
+	if !ready {
+		u.textOutlined(screen, fmt.Sprintf("%.0f", math.Ceil(r.AbilT)), fTitle, 30, cx, cy-20, cWhite, alignCenter)
+	}
+	tx := cx + rad + 16
+	u.text(screen, strings.ToUpper(a.Ability), fBold, 18, tx, cy-30, lighten(col, 0.4), alignLeft)
+	if ready {
+		kw := u.keycap(screen, "E", tx, cy-2, 1)
+		u.text(screen, "or right-click", fReg, 15, tx+kw+8, cy+6, cDim, alignLeft)
+	} else {
+		u.text(screen, "recharging", fReg, 15, tx, cy+6, cDim, alignLeft)
 	}
 }

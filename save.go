@@ -19,6 +19,37 @@ type Settings struct {
 	NoBloom    bool    `json:"no_bloom"`
 }
 
+// EndlessEntry is one line of the local Endless leaderboard.
+type EndlessEntry struct {
+	Score int    `json:"score"`
+	Loop  int    `json:"loop"`
+	Depth int    `json:"depth"`
+	Class string `json:"class"`
+	Asc   int    `json:"asc"`
+	Date  string `json:"date"`
+}
+
+// addToBoard inserts an entry and returns its 1-based rank (0 = didn't place).
+func (s *SaveData) addToBoard(e EndlessEntry) int {
+	pos := len(s.Board)
+	for i, b := range s.Board {
+		if e.Score > b.Score {
+			pos = i
+			break
+		}
+	}
+	if pos >= 10 {
+		return 0
+	}
+	s.Board = append(s.Board, EndlessEntry{})
+	copy(s.Board[pos+1:], s.Board[pos:])
+	s.Board[pos] = e
+	if len(s.Board) > 10 {
+		s.Board = s.Board[:10]
+	}
+	return pos + 1
+}
+
 type SaveData struct {
 	Version   int             `json:"version"`
 	Shards    int             `json:"shards"`
@@ -38,6 +69,9 @@ type SaveData struct {
 	AscSel    int             `json:"asc"`     // ascension chosen for new runs
 	Fusions   map[string]bool `json:"fusions"` // fusions ever formed
 	TotalGold int             `json:"total_gold"`
+	BestLoop  int             `json:"best_endless_loop"`
+	Board     []EndlessEntry  `json:"endless_board"` // local top-10
+	StorySeen bool            `json:"story_seen"`
 	Settings  Settings        `json:"settings"`
 }
 

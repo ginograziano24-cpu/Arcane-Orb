@@ -971,6 +971,69 @@ var recipes = map[string]recipe{
 			b.noise(0.18, 0.05, expEnv(0, 60), fBP, cst(2500), 1.5, 0.4)
 		})
 	}},
+	// ---- class abilities ------------------------------------------
+	"firestorm": {2, func(p []int, v int, r *rand.Rand) []byte {
+		return one(2.6, r.Int63(), verbBig.with(0.95), func(b *sb) {
+			b.sub(0, 90, 38, 1.0, 1.1)
+			b.whoosh(0, 0.55, 200, 4200, 1.0)
+			// roaring flame body: low-passed noise that opens up then settles
+			b.noise(0.05, 1.9, expEnv(0.08, 1.6), fLP, sweep(900, 3800, 0.5), 0.9, 1.3)
+			b.noise(0.05, 1.6, expEnv(0.1, 2.2), fBP, sweep(400, 1400, 1.2), 2.0, 0.6)
+			// crackles
+			for i := 0; i < 40; i++ {
+				b.noise(0.1+r.Float64()*1.8, 0.012, expEnv(0, 180), fHP, cst(2500+r.Float64()*4000), 1, 0.35)
+			}
+			b.brass(0.04, 0.9, 110, 0.35)
+		})
+	}},
+	"thunder": {2, func(p []int, v int, r *rand.Rand) []byte {
+		return one(3.4, r.Int63(), verbBig.with(1.0), func(b *sb) {
+			// the crack
+			b.noise(0, 0.08, expEnv(0, 40), fHP, cst(1800), 0.7, 1.4)
+			b.gen(0, 0.25, func(t float64) float64 {
+				c := 0.0
+				if r.Float64() < 0.05 {
+					c = (r.Float64()*2 - 1) * 2.5
+				}
+				return c * math.Exp(-t*12)
+			})
+			// the rolling boom
+			b.sub(0.02, 70, 30, 1.6, 1.3)
+			b.noise(0.06, 2.8, expEnv(0.12, 1.3), fLP, sweep(1400, 160, 2.6), 0.8, 1.4)
+			for i := 0; i < 6; i++ {
+				b.noise(0.3+r.Float64()*1.8, 0.4, expEnv(0.05, 5), fLP, cst(200+r.Float64()*300), 1.2, 0.5)
+			}
+			b.fm(0, 0.6, 3200, 1.41, 4, 6, 0, 6, 0.25)
+		})
+	}},
+	"story": {1, func(p []int, v int, r *rand.Rand) []byte {
+		k := arg(p, 0, 0)
+		root := keyRoots[k]
+		return one(5.0, r.Int63(), verbBig.with(0.55), func(b *sb) {
+			b.sub(0, 70, 50, 2.5, 0.5)
+			for _, st := range []int{0, 7, 12, 16} {
+				b.pad(0.05, 4.2, semis(root, st), 0.13)
+			}
+			b.fm(0.2, 3.5, semis(root*4, 7), 3.5, 2.2, 1.5, 0, 1.2, 0.22)
+			b.sparkle(0.3, 2.5, 18, 2500, 7000, 0.12)
+		})
+	}},
+	"storyline": {3, func(p []int, v int, r *rand.Rand) []byte {
+		k := arg(p, 0, 0)
+		root := keyRoots[k] * 4
+		return one(2.6, r.Int63(), verbBig.with(0.32), func(b *sb) {
+			n := []int{0, 4, 7}[v%3]
+			b.glass(0, semis(root, n), 0.5)
+			b.pluck(0.02, semis(root/2, n), 0.998, 0.35, 0.35)
+		})
+	}},
+	"abilready": {1, func(p []int, v int, r *rand.Rand) []byte {
+		return one(1.2, r.Int63(), verbMid.with(0.4), func(b *sb) {
+			b.glass(0, 1318.5, 0.5)
+			b.glass(0.08, 1975.5, 0.45)
+			b.sparkle(0.05, 0.4, 10, 3000, 8000, 0.25)
+		})
+	}},
 	"deny": {1, func(p []int, v int, r *rand.Rand) []byte {
 		return one(0.5, r.Int63(), verbSmall.with(0.35), func(b *sb) {
 			for i := 0; i < 2; i++ {
@@ -1088,7 +1151,7 @@ func prewarmNames() []string {
 	}
 	for _, n := range []string{"crit", "steel", "shieldhit", "pad.0", "wall", "launch", "laser", "boom", "zap",
 		"thump", "coinbig", "hover", "click", "cardhover", "deal", "mapenter", "lose.0", "clear.0", "pick.0.0", "pick.1.0",
-		"pick.2.0", "pick.3.0", "pick.4.0", "synergy.0", "actstart.0", "heartbeat"} {
+		"pick.2.0", "pick.3.0", "pick.4.0", "synergy.0", "actstart.0", "heartbeat", "firestorm", "thunder", "abilready"} {
 		out = append(out, n)
 	}
 	for i := 0; i < 12; i++ {
