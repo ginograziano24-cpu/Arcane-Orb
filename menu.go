@@ -93,12 +93,6 @@ func (g *Game) drawMenuScene(screen *ebiten.Image, dt float64) {
 		}
 		B.DecalBelow(c.x, c.z, 0.02, c.s*3, c.s*2, sprSoft, alpha(c.col, 0.25))
 	}
-	// the orb
-	op2 := V3{-15, 7.5 + math.Sin(m.t*1.2)*0.4, 36}
-	B.Billboard(op2, 16, sprSoft, alpha(b.Trim, 0.35), true)
-	B.Billboard(op2, 7.2, sprSphere, color.RGBA{235, 225, 255, 255}, false)
-	B.Billboard(op2, 9.5+math.Sin(m.t*2)*0.4, sprRing, alpha(lighten(b.Trim, 0.3), 0.8), true)
-	B.Decal(-15, 36, 0.03, 9, 5, sprShadow, color.RGBA{0, 0, 0, 160}, false)
 	// sparkles
 	pr := rand.New(rand.NewSource(m.seed))
 	for i := 0; i < 70; i++ {

@@ -84,6 +84,10 @@ type Game struct {
 	mouseHeld  bool
 
 	archSel     int
+	archShown   int
+	archPrev    int
+	archFade    float64
+	archGlow    color.RGBA
 	seedText    string
 	daily       bool
 	rewards     []rewardSet
@@ -692,8 +696,16 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 	if g.menu != nil {
 		glow = g.menu.biome.Trim
 	}
-	g.chromeTitle(s, "ARCANE ORB", 150, 960, 70+bob, glow)
-	u.textOutlined(s, "~ a roguelite brick-breaker ~", fBold, 30, 960, 262, color.RGBA{120, 240, 255, 255}, alignCenter)
+	// soft shade behind the menu column for legibility
+	drawSprite(s, sprSoft, u.X(-500), u.Y(140), 1400*u.S, 1020*u.S, color.RGBA{0, 0, 0, 200}, false)
+	const ox = 1290.0
+	ot := g.stateT
+	if g.menu != nil {
+		ot = g.menu.t
+	}
+	g.drawTitleOrb(s, ox, 610, 150, ot)
+	g.chromeTitle(s, "ARCANE ORB", 140, ox, 52+bob, glow)
+	u.textOutlined(s, "~ a roguelite brick-breaker ~", fBold, 30, ox, 232, color.RGBA{120, 240, 255, 255}, alignCenter)
 	endlessLabel := "Endless Mode"
 	if g.save.Wins == 0 {
 		endlessLabel = "Endless Mode  ·  locked"
@@ -721,12 +733,13 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 		{"Settings", func() { g.setState(StSettings) }},
 		{"Quit", func() { g.quit = true }},
 	}
-	y := 340.0
+	y := 300.0
 	for i, it := range items {
-		if g.neonItem(s, "menu"+itoa(i), it.label, 960, y, glow, true) {
+		w := u.measure(it.label, fBold, 34) + 80
+		if g.neonItem(s, "menu"+itoa(i), it.label, 110+w/2, y, glow, true) {
 			it.do()
 		}
-		y += 64
+		y += 66
 	}
 	g.drawRankBadge(s, 36, 32)
 	stats := fmt.Sprintf("Runs %d   ·   Wins %d   ·   Best act %d   ·   Best score %d   ·   Best combo %d",
@@ -734,76 +747,11 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 	if g.save.BestLoop > 0 {
 		stats += fmt.Sprintf("   ·   Endless loop %d", g.save.BestLoop)
 	}
-	u.textOutlined(s, stats, fReg, 18, 960, 1012, cDim, alignCenter)
+	u.textOutlined(s, stats, fReg, 18, ox, 1000, cDim, alignCenter)
 	if best, ok := g.save.Daily[dailyCode()]; ok {
-		u.textOutlined(s, fmt.Sprintf("Today's daily best: %d", best), fBold, 18, 960, 1040, cGold, alignCenter)
+		u.textOutlined(s, fmt.Sprintf("Today's daily best: %d", best), fBold, 18, ox, 1030, cGold, alignCenter)
 	}
-	u.text(s, "v0.6", fReg, 16, 1890, 1048, cDim, alignRight)
-}
-
-func (g *Game) drawArch(s *ebiten.Image) {
-	u := g.ui
-	title := "Choose your paddle"
-	if g.daily {
-		title = "Daily Challenge — " + dailyCode()
-	} else if g.seedText != "" {
-		title = "Seeded run — " + g.seedText
-	}
-	u.heading(s, title, 60, 70, cGold, 1)
-	n := len(archetypes)
-	w, gap, h := 254.0, 12.0, 540.0
-	x0 := 960 - (float64(n)*w+float64(n-1)*gap)/2
-	for i := range archetypes {
-		a := &archetypes[i]
-		x := x0 + float64(i)*(w+gap)
-		y := 196.0
-		locked := a.Cost > 0 && !g.save.Unlocked[a.ID]
-		hv := u.hover(x, y, w, h)
-		k := u.anim("arch"+a.ID, hv, 12)
-		if k > 0.01 {
-			drawSprite(s, sprSoft, u.X(x-60), u.Y(y-60), (w+120)*u.S, (h+120)*u.S, ca(u.theme().Accent, 0.28*k), true)
-		}
-		yy := y - 8*k
-		u.panel(s, x, yy, w, h, 0.9)
-		if k > 0.01 {
-			r, ch := styleShape(u.theme().Style)
-			strokePath(s, boxPath(u.X(x), u.Y(yy), w*u.S, h*u.S, r*u.S, ch), 3*u.S, ca(lighten(u.theme().Accent, 0.3), k), false)
-		}
-		u.text(s, a.Name, fTitle, 34, x+w/2, yy+26, cWhite, alignCenter)
-		u.paragraph(s, a.Desc, fReg, 17, x+w/2, yy+82, w-32, cDim, alignCenter)
-		g.archPreview(s, a, x, yy, w)
-		// active ability strip
-		ay := yy + 398
-		if a.Ability != "" {
-			col, gl := rgba(255, 140, 60, 255), "flame"
-			if a.ID == "storm" {
-				col, gl = rgba(140, 200, 255, 255), "bolt"
-			}
-			fillPath(s, boxPath(u.X(x+14), u.Y(ay), (w-28)*u.S, 54*u.S, 10*u.S, false), ca(darken(col, 0.25), 0.55), ca(darken(col, 0.12), 0.55), vgrad(u.Y(ay), u.Y(ay+54)), false)
-			strokePath(s, boxPath(u.X(x+14), u.Y(ay), (w-28)*u.S, 54*u.S, 10*u.S, false), 1.4*u.S, ca(col, 0.8), false)
-			u.drawEmblem(s, glyphImage(gl, col), x+40, ay+27, 34, 1)
-			u.text(s, strings.ToUpper(a.Ability), fBold, 16, x+62, ay+8, lighten(col, 0.45), alignLeft)
-			u.text(s, fmt.Sprintf("Right-click / E  ·  %.0fs", a.Cooldown), fReg, 13, x+62, ay+30, cDim, alignLeft)
-		} else {
-			u.text(s, "No active ability", fReg, 15, x+w/2, ay+18, ca(cDim, 0.6), alignCenter)
-		}
-		by := yy + 466
-		if locked {
-			can := g.save.Shards >= a.Cost
-			if u.button(s, "unlock"+a.ID, fmt.Sprintf("Unlock · %d", a.Cost), x+20, by, w-40, 56, cGold, can) {
-				g.save.Shards -= a.Cost
-				g.save.Unlocked[a.ID] = true
-				writeSave(&g.save)
-				g.snd.Play("buy")
-			}
-		} else if u.button(s, "pick"+a.ID, "Begin", x+20, by, w-40, 56, cGreen, true) {
-			g.startRun(a)
-		}
-	}
-	g.drawAscSelector(s, 760)
-	if u.button(s, "back", "Back", 860, 910, 200, 56, cAcc, true) {
-		g.setState(StMenu)
-	}
+	u.text(s, "v0.7", fReg, 16, 1890, 1048, cDim, alignRight)
 }
 
 // archPreview draws a paddle silhouette and stat meters on a paddle card.

@@ -1,4 +1,4 @@
-ARCANE ORB  -  build 0.6
+ARCANE ORB  -  build 0.7
 =====================================
 
 Run ArcaneOrb.exe. No install needed. Starts fullscreen at your
@@ -10,6 +10,17 @@ CONTROLS
   Click / Space .... launch orb, fire   Shift ........... faster keyboard move
   Esc / P .......... pause              F11 ............. fullscreen
   Right-click / E .. class ability (Pyromancer, Stormcaller)
+
+NEW IN 0.7  -  title screen and origins
+  - New title screen: a hovering arcane orb rendered live by a shader,
+    swirling violet energy, crackling surface arcs, a glass rim with
+    glints, a flickering corona, an orbiting rune ring and drifting motes
+  - Menu moved to a left-hand column beside the orb
+  - New "Choose your Origin" screen: origin list on the left, a large
+    character portrait in the centre, attributes, passive, active
+    ability and unlock/Begin on the right (arrow keys + Enter work too)
+  - Character portraits for all 7 classes, rendered by the included
+    tools/portraits renderer (go run ./tools/portraits)
 
 NEW IN 0.6  -  story, endless mode and classes
   - Story Mode: the three acts are now the main story, with a prologue,
