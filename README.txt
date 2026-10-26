@@ -1,4 +1,4 @@
-ARCANE ORB  -  build 0.4
+ARCANE ORB  -  build 0.5
 =====================================
 
 Run ArcaneOrb.exe. No install needed. Starts fullscreen at your
@@ -9,6 +9,25 @@ CONTROLS
   Mouse ............ move paddle        A/D or Arrows ... move paddle
   Click / Space .... launch orb, fire   Shift ........... faster keyboard move
   Esc / P .......... pause              F11 ............. fullscreen
+
+NEW IN 0.5  -  progression, items, fusions and sound
+  - 102 upgrades and relics (46 new), each with its own hand-built emblem
+    art shown on cards, the HUD, your build list and the Codex
+  - 18 FUSIONS: own two specific items and they forge a new one with its
+    own effect and visuals (Plasma Storm, Cryo Charge, Volcano, Gold Rush,
+    Cataclysm, Absolute Zero, Tesla Coil and more). Cards show which item
+    completes a fusion, and partners appear more often once you own one.
+  - Arcane Rank: every run earns XP; ranking up unlocks new items into
+    the pool (35 items unlock between ranks 1 and 10)
+  - New Sanctum with 15 permanent upgrades, several ranks each
+  - Ascension 1-10: win a run to unlock harder difficulty tiers with
+    bigger shard and XP rewards
+  - The Codex: a collection of every item and fusion you have discovered
+  - Rebuilt sound: brick hits play melodies that climb with your combo
+    in the key of the music, a signature instrument per world, layered
+    impacts, rarity fanfares, fusion and synergy stingers, low-health
+    heartbeat, and music that ducks under big moments
+  - Balance: brick and boss health scale with depth, more shards per run
 
 NEW IN 0.4  -  art and interface pass
   - Painted panoramic backdrops for every world, two variants each

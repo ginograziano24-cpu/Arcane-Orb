@@ -32,6 +32,7 @@ const (
 	StSanctum
 	StActIntro
 	StHelp
+	StCodex
 )
 
 type Input struct {
@@ -108,6 +109,15 @@ type Game struct {
 	toasts     []toastMsg
 	fadeT      float64
 	heartT     float64
+
+	codexTab    int
+	xpBefore    int
+	xpGained    int
+	rankBefore  int
+	ascUnlocked bool
+	bannerIcon  *ebiten.Image
+	bannerCol   color.RGBA
+	shopFree    int
 }
 
 func NewGame() *Game {
@@ -205,7 +215,7 @@ func (g *Game) Update() error {
 
 	// music
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StSettings:
+	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StSettings:
 		if g.run == nil || g.state != StSettings || g.prevState == StMenu {
 			g.snd.SetTrack(3)
 		}
@@ -226,10 +236,11 @@ func (g *Game) Update() error {
 	}
 
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp:
+	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex:
 		if g.state == StSeed {
 			g.updateSeedInput()
 		}
+		debugMenuKeys(g)
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 			if g.state == StMenu {
 				g.quit = true
@@ -386,7 +397,7 @@ func (g *Game) enterNode(i int) {
 	case NShop:
 		g.openShop(rng)
 	case NTreasure:
-		g.rewards = []rewardSet{{Title: "Treasure Room — choose a relic", Mods: r.Offer(3, true, Common, rng), Skip: 25}}
+		g.rewards = []rewardSet{{Title: "Treasure Room — choose a relic", Mods: r.Offer(r.choices(), true, Common, rng), Skip: 25}}
 		g.setState(StReward)
 	case NEvent:
 		g.event = makeEvent(g, rng)
@@ -404,12 +415,12 @@ func (g *Game) afterLevel() {
 	g.rewards = nil
 	switch L.Node {
 	case NElite:
-		g.rewards = append(g.rewards, rewardSet{Title: "Elite reward — choose a relic", Mods: r.Offer(3, true, Uncommon, rng), Skip: 30})
-		g.rewards = append(g.rewards, rewardSet{Title: "Choose an upgrade", Mods: r.Offer(3, false, Common, rng), Skip: 15})
+		g.rewards = append(g.rewards, rewardSet{Title: "Elite reward — choose a relic", Mods: r.Offer(r.choices(), true, Uncommon, rng), Skip: 30})
+		g.rewards = append(g.rewards, rewardSet{Title: "Choose an upgrade", Mods: r.Offer(r.choices(), false, Common, rng), Skip: 15})
 	case NBoss:
-		g.rewards = append(g.rewards, rewardSet{Title: "Boss treasure — choose a relic", Mods: r.Offer(3, true, Rare, rng), Skip: 60})
+		g.rewards = append(g.rewards, rewardSet{Title: "Boss treasure — choose a relic", Mods: r.Offer(r.choices(), true, Rare, rng), Skip: 60})
 	default:
-		g.rewards = append(g.rewards, rewardSet{Title: "Choose an upgrade", Mods: r.Offer(3, false, Common, rng), Skip: 15})
+		g.rewards = append(g.rewards, rewardSet{Title: "Choose an upgrade", Mods: r.Offer(r.choices(), false, Common, rng), Skip: 15})
 	}
 	g.setState(StReward)
 }
@@ -431,45 +442,61 @@ func (g *Game) take(m *Mod) {
 	r := g.run
 	g.save.Seen[m.ID] = true
 	if m.Relic {
-		g.toast("Relic acquired", m.Name+" — "+m.Desc, rarityColors[m.Rarity], icShard)
+		g.toastImg("Relic acquired", m.Name+" — "+m.Desc, rarityColors[m.Rarity], modEmblem(m))
 	} else {
-		g.toast("Upgrade gained", m.Name+" — "+m.Desc, rarityColors[m.Rarity], icStar)
+		g.toastImg("Upgrade gained", m.Name+" — "+m.Desc, rarityColors[m.Rarity], modEmblem(m))
 	}
 	if syn := r.Add(m.ID, &g.save); syn != "" {
 		for _, s := range synergies {
 			if s.Name == syn {
 				g.banner, g.bannerDesc, g.bannerT = "SYNERGY: "+strings.ToUpper(syn), s.Desc, 4
+				g.bannerIcon, g.bannerCol = nil, cGold
 				g.snd.PlayKeyed("synergy")
 				g.snd.Duck(0.7, 3.5)
 			}
 		}
 	}
+	g.announceFusions()
 }
 
 func (g *Game) openShop(rng *rand.Rand) {
 	r := g.run
 	g.shop = nil
 	for _, m := range r.Offer(3, false, Common, rng) {
-		g.shop = append(g.shop, shopItem{Mod: m, Kind: "mod", Price: modPrice(m, rng)})
+		g.shop = append(g.shop, shopItem{Mod: m, Kind: "mod", Price: r.price(modPrice(m, rng))})
 	}
 	for _, m := range r.Offer(2, true, Common, rng) {
-		g.shop = append(g.shop, shopItem{Mod: m, Kind: "mod", Price: modPrice(m, rng)})
+		g.shop = append(g.shop, shopItem{Mod: m, Kind: "mod", Price: r.price(modPrice(m, rng))})
 	}
-	g.shop = append(g.shop, shopItem{Kind: "heal", Price: 35})
-	g.rerollCost = 20
+	g.shop = append(g.shop, shopItem{Kind: "heal", Price: r.price(35)})
+	g.rerollCost = r.price(20)
+	g.shopFree = r.Stats.ShopRerolls
 	g.setState(StShop)
 }
 
 func (g *Game) endRun(win bool) {
 	r := g.run
 	g.victory = win
-	sh := r.Depth*2 + r.Bosses*15 + r.Elites*3
+	sh := r.Depth*3 + r.Bosses*20 + r.Elites*4
 	if win {
-		sh += 50
+		sh += 60
 		g.save.Wins++
 	}
+	sh = int(float64(sh) * ascShardMult(r.Asc))
 	g.shardsWon = sh
 	g.save.Shards += sh
+	g.xpBefore = g.save.XP
+	g.rankBefore = rankOf(g.save.XP)
+	g.xpGained = runXP(r, win)
+	g.save.XP += g.xpGained
+	g.ascUnlocked = false
+	if win && r.Asc >= g.save.AscMax && g.save.AscMax < len(ascensions) {
+		g.save.AscMax++
+		g.ascUnlocked = true
+	}
+	for _, f := range r.Fused {
+		g.save.Fusions[f] = true
+	}
 	g.save.Bosses += r.Bosses
 	g.save.Bricks += r.Bricks
 	g.save.BestAct = max(g.save.BestAct, r.Act)
@@ -501,7 +528,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		act = g.run.Act
 	}
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp:
+	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex:
 		tgt := g.post.Target(int(sw), int(sh))
 		g.drawMenuScene(tgt, ddt)
 		g.post.Apply(screen, worldGrades[WNeon], !g.settings.NoBloom)
@@ -539,6 +566,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.drawSanctum(screen)
 	case StHelp:
 		g.drawHelp(screen)
+	case StCodex:
+		g.drawCodex(screen)
 	case StMap:
 		g.drawMap(screen)
 	case StPause:
@@ -561,13 +590,23 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.bannerT > 0 {
 		u := g.ui
 		a := ease(math.Min(g.bannerT, 4-g.bannerT) * 3)
-		w := math.Max(760, u.measure(g.banner, fTitle, 44)+260)
+		w := math.Min(1500, math.Max(760, math.Max(u.measure(g.banner, fTitle, 44), u.measure(g.bannerDesc, fReg, 22))+300))
 		y := 150 - (1-a)*24
-		drawSprite(screen, sprSoft, u.X(960-w*0.7), u.Y(y-90), w*1.4*u.S, 300*u.S, ca(cGold, 0.25*a), true)
+		bc := g.bannerCol
+		if bc.A == 0 {
+			bc = cGold
+		}
+		drawSprite(screen, sprSoft, u.X(960-w*0.7), u.Y(y-90), w*1.4*u.S, 300*u.S, ca(bc, 0.25*a), true)
 		u.frame(screen, 960-w/2, y, w, 128, 0.96*a)
-		u.icon(screen, icStar, 960-w/2+64, y+64, 58, a)
-		u.icon(screen, icStar, 960+w/2-64, y+64, 58, a)
-		u.textOutlined(screen, g.banner, fTitle, 44, 960, y+14, ca(rgba(255, 216, 120, 255), a), alignCenter)
+		if g.bannerIcon != nil {
+			drawSprite(screen, sprSoft, u.X(960-w/2+70-70), u.Y(y+64-70), 140*u.S, 140*u.S, ca(bc, 0.5*a), true)
+			u.drawEmblem(screen, g.bannerIcon, 960-w/2+70, y+64, 104, a)
+			u.drawEmblem(screen, g.bannerIcon, 960+w/2-70, y+64, 104, a)
+		} else {
+			u.icon(screen, icStar, 960-w/2+64, y+64, 58, a)
+			u.icon(screen, icStar, 960+w/2-64, y+64, 58, a)
+		}
+		u.textOutlined(screen, g.banner, fTitle, 44, 960, y+14, ca(lighten(bc, 0.2), a), alignCenter)
 		u.text(screen, g.bannerDesc, fReg, 22, 960, y+76, ca(cWhite, a), alignCenter)
 	}
 	g.drawToasts(screen, ddt)
@@ -627,6 +666,7 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 		{"Daily Challenge", func() { g.daily = true; g.seedText = ""; g.setState(StArch) }},
 		{"Play a Seed", func() { g.seedText = ""; g.setState(StSeed) }},
 		{"Sanctum  ·  " + itoa(g.save.Shards) + " shards", func() { g.setState(StSanctum) }},
+		{"Codex", func() { g.codexTab = 0; g.setState(StCodex) }},
 		{"How to Play", func() { g.setState(StHelp) }},
 		{"Settings", func() { g.setState(StSettings) }},
 		{"Quit", func() { g.quit = true }},
@@ -638,13 +678,14 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 		}
 		y += 66
 	}
+	g.drawRankBadge(s, 36, 32)
 	stats := fmt.Sprintf("Runs %d   ·   Wins %d   ·   Best act %d   ·   Best score %d   ·   Best combo %d",
 		g.save.Runs, g.save.Wins, g.save.BestAct, g.save.BestScore, g.save.MaxCombo)
 	u.textOutlined(s, stats, fReg, 18, 960, 1012, cDim, alignCenter)
 	if best, ok := g.save.Daily[dailyCode()]; ok {
 		u.textOutlined(s, fmt.Sprintf("Today's daily best: %d", best), fBold, 18, 960, 1040, cGold, alignCenter)
 	}
-	u.text(s, "v0.4", fReg, 16, 1890, 1048, cDim, alignRight)
+	u.text(s, "v0.5", fReg, 16, 1890, 1048, cDim, alignRight)
 }
 
 func (g *Game) drawArch(s *ebiten.Image) {
@@ -689,7 +730,8 @@ func (g *Game) drawArch(s *ebiten.Image) {
 			g.startRun(a)
 		}
 	}
-	if u.button(s, "back", "Back", 860, 900, 200, 56, cAcc, true) {
+	g.drawAscSelector(s, 772)
+	if u.button(s, "back", "Back", 860, 910, 200, 56, cAcc, true) {
 		g.setState(StMenu)
 	}
 }
@@ -751,44 +793,6 @@ func (g *Game) drawSeed(s *ebiten.Image) {
 	}
 }
 
-var metaUpgrades = []struct {
-	ID, Name, Desc string
-	Cost, Max      int
-}{
-	{"vitality", "Vitality", "+10 starting max health per rank.", 40, 3},
-	{"purse", "Heavy Purse", "+20 starting gold per rank.", 30, 3},
-	{"reroll", "Fortune's Favour", "+1 free shop reroll each run.", 80, 2},
-}
-
-func (g *Game) drawSanctum(s *ebiten.Image) {
-	u := g.ui
-	u.heading(s, "THE SANCTUM", 80, 80, cGold, 1)
-	u.iconLabel(s, icShard, fmt.Sprintf("%d shards   ·   earned at the end of every run", g.save.Shards), fBold, 26, 960, 200, rgba(200, 180, 255, 255), alignCenter)
-	y := 290.0
-	for _, m := range metaUpgrades {
-		rank := g.save.Upg[m.ID]
-		u.panel(s, 460, y, 1000, 110, 0.85)
-		u.text(s, fmt.Sprintf("%s  (%d/%d)", m.Name, rank, m.Max), fBold, 30, 490, y+18, cWhite, alignLeft)
-		u.text(s, m.Desc, fReg, 22, 490, y+62, cDim, alignLeft)
-		can := rank < m.Max && g.save.Shards >= m.Cost
-		label := fmt.Sprintf("%d shards", m.Cost)
-		if rank >= m.Max {
-			label = "Maxed"
-		}
-		if u.button(s, "meta"+m.ID, label, 1220, y+25, 210, 60, cGold, can) {
-			g.save.Shards -= m.Cost
-			g.save.Upg[m.ID]++
-			writeSave(&g.save)
-			g.snd.Play("buy")
-		}
-		y += 130
-	}
-	u.text(s, "New paddles can be unlocked from the paddle selection screen.", fReg, 22, 960, y+20, cDim, alignCenter)
-	if u.button(s, "sback", "Back", 860, 900, 200, 56, cAcc, true) {
-		g.setState(StMenu)
-	}
-}
-
 func (g *Game) drawHelp(s *ebiten.Image) {
 	u := g.ui
 	u.panel(s, 200, 60, 1520, 960, 0.92)
@@ -842,6 +846,15 @@ func (g *Game) runPanel(s *ebiten.Image) {
 	u.panel(s, 1530, 30, 360, 1020, 0.85)
 	u.text(s, "Build", fTitle, 36, 1550, 42, cGold, alignLeft)
 	y := 100.0
+	for _, id := range r.Fused {
+		f := fusionByID[id]
+		u.drawEmblem(s, fusionEmblem(f), 1562, y+13, 30, 1)
+		u.text(s, f.Name, fBold, 19, 1582, y, f.Col, alignLeft)
+		if u.hover(1540, y-4, 340, 28) {
+			g.tooltip = "FUSION — " + f.Name + ": " + f.Desc
+		}
+		y += 30
+	}
 	for _, id := range r.Order {
 		m := modByID[id]
 		if m == nil || r.Mods[id] == 0 {
@@ -851,11 +864,7 @@ func (g *Game) runPanel(s *ebiten.Image) {
 		if r.Mods[id] > 1 {
 			label += fmt.Sprintf(" ×%d", r.Mods[id])
 		}
-		if m.Relic {
-			u.gem(s, 1560, y+12, 6, 8, rarityColors[m.Rarity], 1)
-		} else {
-			fillPath(s, circlePath(u.X(1560), u.Y(y+12), 4*u.S), lighten(rarityColors[m.Rarity], 0.3), darken(rarityColors[m.Rarity], 0.6), vgrad(u.Y(y+8), u.Y(y+16)), false)
-		}
+		u.drawEmblem(s, modEmblem(m), 1560, y+12, 26, 1)
 		u.text(s, label, fBold, 19, 1576, y, rarityColors[m.Rarity], alignLeft)
 		if u.hover(1540, y-4, 340, 28) {
 			g.tooltip = m.Name + " (" + rarityNames[m.Rarity] + ") — " + m.Desc + "  [" + strings.Join(m.Tags, ", ") + "]"
@@ -1024,10 +1033,23 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 			u.gem(s, x+w/2+math.Cos(a)*62.5, y+130+math.Sin(a)*62.5, 3.5, 3.5, rc, 1)
 		}
 	}
-	u.textOutlined(s, string([]rune(m.Name)[0]), fTitle, 66, x+w/2, y+88, lighten(tagc, 0.55), alignCenter)
+	u.drawEmblem(s, modEmblem(m), x+w/2, y+130, 104, 1)
 	nameY := u.paragraph(s, m.Name, fTitle, 34, x+w/2, y+212, w-40, cWhite, alignCenter)
 	u.glowLine(s, x+w*0.2, x+w*0.8, nameY+8, 1.5, rc, 0.7)
 	u.paragraph(s, m.Desc, fReg, 22, x+w/2, nameY+20, w-50, cDim, alignCenter)
+	// fusion hint
+	if f := g.run.fusionWith(m.ID); f != nil {
+		fy := y + h - 96
+		pulse := 0.75 + 0.25*math.Sin(g.stateT*5)
+		fp := boxPath(u.X(x+18), u.Y(fy), (w-36)*S, 36*S, 18*S, false)
+		drawSprite(s, sprSoft, u.X(x), u.Y(fy-30), w*S, 96*S, ca(f.Col, 0.35*pulse), true)
+		fillPath(s, fp, ca(f.Col, 0.3), ca(darken(f.Col, 0.4), 0.3), vgrad(u.Y(fy), u.Y(fy+36)), false)
+		strokePath(s, fp, 1.6*S, ca(f.Col, pulse), false)
+		u.drawEmblem(s, fusionEmblem(f), x+40, fy+18, 34, 1)
+		u.text(s, "FORGES "+strings.ToUpper(f.Name), fBold, 15, x+62, fy+9, lighten(f.Col, 0.3), alignLeft)
+	} else if ps := fusionPartners(m.ID); len(ps) > 0 {
+		u.text(s, "Fuses with "+modByID[ps[0]].Name, fReg, 15, x+w/2, y+h-86, ca(cDim, 0.8), alignCenter)
+	}
 	// tags
 	tx := x + 22
 	for _, t := range m.Tags {
@@ -1069,6 +1091,9 @@ func (g *Game) drawReward(s *ebiten.Image) {
 	g.statLine(s, 960, 172)
 	n := len(rs.Mods)
 	w, h := 400.0, 560.0
+	if n > 3 {
+		w = math.Min(400, (1800-float64(n-1)*40)/float64(n))
+	}
 	x0 := 960 - (float64(n)*w+float64(n-1)*40)/2
 	for i, m := range rs.Mods {
 		if g.drawCard(s, m, x0+float64(i)*(w+40), 250, w, h, 0, true) && g.stateT > 0.3 {
@@ -1085,9 +1110,9 @@ func (g *Game) drawReward(s *ebiten.Image) {
 		g.rewards = g.rewards[1:]
 		g.stateT = 0
 	}
-	if g.run.Stats.FreeRerolls > 0 && !rs.isRerolled() {
+	if g.run.freeRerolls() > 0 && !rs.isRerolled() {
 		if u.button(s, "rr", "Reroll (free)", 1180, 900, 260, 60, cGold, true) {
-			g.run.Stats.FreeRerolls--
+			g.run.Rerolls++
 			rng := rand.New(rand.NewSource(g.rng.Int63()))
 			relic := len(rs.Mods) > 0 && rs.Mods[0].Relic
 			g.rewards[0].Mods = g.run.Offer(len(rs.Mods), relic, Common, rng)
@@ -1167,20 +1192,23 @@ func (g *Game) drawShop(s *ebiten.Image) {
 	}
 	cost := g.rerollCost
 	label := fmt.Sprintf("Reroll stock   ·   %d gold", cost)
-	if r.Stats.FreeRerolls > 0 {
+	if g.shopFree > 0 || r.freeRerolls() > 0 {
 		label = "Reroll stock   ·   free"
 		cost = 0
 	}
 	if u.button(s, "reroll", label, 1160, 790, 330, 64, cGold, r.Gold >= cost) {
-		if cost == 0 {
-			r.Stats.FreeRerolls--
-		} else {
+		switch {
+		case g.shopFree > 0:
+			g.shopFree--
+		case cost == 0:
+			r.Rerolls++
+		default:
 			r.Gold -= cost
-			g.rerollCost += 10
+			g.rerollCost += r.price(10)
 		}
-		rc := g.rerollCost
+		rc, sf := g.rerollCost, g.shopFree
 		g.openShop(rand.New(rand.NewSource(g.rng.Int63())))
-		g.rerollCost = rc
+		g.rerollCost, g.shopFree = rc, sf
 		g.snd.Play("buy")
 	}
 	if u.button(s, "leave", "Leave shop", 1160, 900, 330, 64, cAcc, true) {
@@ -1224,7 +1252,11 @@ func (g *Game) drawRest(s *ebiten.Image) {
 	g.runPanel(s)
 	u.heading(s, "A QUIET CAMPFIRE", 60, 200, cGold, 1)
 	u.text(s, "Rest your hands, or train your craft.", fReg, 26, 960, 300, cDim, alignCenter)
-	heal := math.Round(r.Stats.MaxHP * 0.35)
+	healPct := 0.35
+	if r.Asc >= 6 {
+		healPct = 0.25
+	}
+	heal := math.Round(r.Stats.MaxHP * healPct)
 	if u.button(s, "rest", fmt.Sprintf("Rest  (+%.0f health)", heal), 660, 420, 600, 80, cGreen, true) {
 		r.HP = math.Min(r.Stats.MaxHP, r.HP+heal)
 		g.snd.PlayKeyed("heal")
@@ -1232,7 +1264,7 @@ func (g *Game) drawRest(s *ebiten.Image) {
 	}
 	if u.button(s, "train", "Train  (choose an Uncommon+ upgrade)", 660, 530, 600, 80, cAcc, true) {
 		rng := rand.New(rand.NewSource(r.NodeSeed(r.Cur) + 5))
-		g.rewards = []rewardSet{{Title: "Training — choose an upgrade", Mods: r.Offer(3, false, Uncommon, rng), Skip: 10}}
+		g.rewards = []rewardSet{{Title: "Training — choose an upgrade", Mods: r.Offer(r.choices(), false, Uncommon, rng), Skip: 10}}
 		g.setState(StReward)
 	}
 }
@@ -1250,38 +1282,6 @@ func (g *Game) drawActIntro(s *ebiten.Image) {
 		if u.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 			g.setState(StMap)
 		}
-	}
-}
-
-func (g *Game) drawSummary(s *ebiten.Image) {
-	u := g.ui
-	r := g.run
-	title, col := "RUN OVER", cRed
-	if g.victory {
-		title, col = "VICTORY!", cGold
-	}
-	u.panel(s, 460, 100, 1000, 860, 0.9)
-	u.heading(s, title, 96, 130, col, 1)
-	lines := []string{
-		fmt.Sprintf("Paddle: %s   ·   Seed: %s", r.Arch.Name, r.SeedCode),
-		fmt.Sprintf("Reached %s (Act %d), %d chambers deep", biomes[r.Act-1].Name, r.Act, r.Depth),
-		fmt.Sprintf("Bricks broken: %d   ·   Elites: %d   ·   Bosses: %d", r.Bricks, r.Elites, r.Bosses),
-		fmt.Sprintf("Highest combo: ×%d   ·   Gold held: %d", r.MaxCombo, r.Gold),
-		fmt.Sprintf("Final score: %d", r.Score),
-	}
-	y := 300.0
-	for _, l := range lines {
-		u.text(s, l, fReg, 28, 960, y, cWhite, alignCenter)
-		y += 50
-	}
-	u.iconLabel(s, icShard, fmt.Sprintf("+%d shards earned for the Sanctum", g.shardsWon), fBold, 32, 960, y+30, rgba(200, 180, 255, 255), alignCenter)
-	if len(r.Active) > 0 {
-		u.text(s, "Synergies: "+strings.Join(r.Active, ", "), fBold, 24, 960, y+90, cGold, alignCenter)
-	}
-	if u.button(s, "summenu", "Main menu", 760, 840, 400, 64, cAcc, g.stateT > 0.8) {
-		g.run = nil
-		g.level = nil
-		g.setState(StMenu)
 	}
 }
 

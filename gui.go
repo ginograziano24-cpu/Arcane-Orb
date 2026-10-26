@@ -49,7 +49,7 @@ var themes = [6]Theme{
 // themeWorld picks which world's framing the current screen uses.
 func (g *Game) themeWorld() int {
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp:
+	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex:
 		return WNeon
 	case StLevel, StPause:
 		if g.level != nil {
@@ -663,6 +663,7 @@ type toastMsg struct {
 	Title, Desc string
 	Col         color.RGBA
 	Icon        iconKind
+	Img         *ebiten.Image // optional item emblem instead of an icon
 	T           float64
 }
 
@@ -673,6 +674,11 @@ func (g *Game) toast(title, desc string, col color.RGBA, ic iconKind) {
 	if len(g.toasts) > 4 {
 		g.toasts = g.toasts[len(g.toasts)-4:]
 	}
+}
+
+func (g *Game) toastImg(title, desc string, col color.RGBA, img *ebiten.Image) {
+	g.toast(title, desc, col, icStar)
+	g.toasts[len(g.toasts)-1].Img = img
 }
 
 func (g *Game) drawToasts(dst *ebiten.Image, dt float64) {
@@ -692,7 +698,11 @@ func (g *Game) drawToasts(dst *ebiten.Image, dt float64) {
 		x := 1896 - w + (1-k)*(w+60)
 		u.frame(dst, x, y, w, h, k)
 		fillPath(dst, boxPath(u.X(x+12), u.Y(y+16), 5*u.S, (h-32)*u.S, 2.5*u.S, false), ca(t.Col, k), ca(darken(t.Col, 0.6), k), vgrad(u.Y(y+16), u.Y(y+h-16)), false)
-		u.icon(dst, t.Icon, x+50, y+h/2, 40, k)
+		if t.Img != nil {
+			u.drawEmblem(dst, t.Img, x+50, y+h/2, 54, k)
+		} else {
+			u.icon(dst, t.Icon, x+50, y+h/2, 40, k)
+		}
 		u.text(dst, t.Title, fBold, 21, x+84, y+14, ca(lighten(t.Col, 0.2), k), alignLeft)
 		lines := u.wrap(t.Desc, fReg, 17, w-104)
 		line := ""

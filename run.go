@@ -196,6 +196,10 @@ type Run struct {
 	LastWorld   int
 	Element     string
 	Rerolls     int
+	Fused       []string // fusions formed this run
+	NewFusions  []string // formed since last announced
+	Rank, Asc   int      // player rank and ascension level at run start
+	metaLuck    int
 
 	// statistics
 	Bricks, Bosses, Elites, MaxCombo, Score int
@@ -208,6 +212,9 @@ func NewRun(code string, arch *Archetype, meta *SaveData, daily bool) *Run {
 	r := &Run{SeedCode: code, SeedN: n, Daily: daily, Rng: rand.New(rand.NewSource(n)), Arch: arch, LastWorld: -1,
 		Mods: map[string]int{}, Cur: -1, Start: time.Now()}
 	r.Act = 1
+	r.Rank = rankOf(meta.XP)
+	r.Asc = meta.AscSel
+	r.metaLuck = meta.Upg["fortune"]
 	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(n, 1))), 1)
 	r.Recompute(meta)
 	if r.Stats.StartElement == "random" {
@@ -216,6 +223,20 @@ func NewRun(code string, arch *Archetype, meta *SaveData, daily bool) *Run {
 	}
 	r.HP = r.Stats.MaxHP
 	r.Gold = 20 + 20*meta.Upg["purse"]
+	// Sanctum: start with relics / upgrades
+	rng := rand.New(rand.NewSource(levelgen.Mix(n, 9)))
+	for i := 0; i < meta.Upg["collector"]; i++ {
+		if ms := r.Offer(1, true, Common, rng); len(ms) > 0 {
+			r.Add(ms[0].ID, meta)
+		}
+	}
+	for i := 0; i < meta.Upg["armory"]; i++ {
+		if ms := r.Offer(1, false, Uncommon, rng); len(ms) > 0 {
+			r.Add(ms[0].ID, meta)
+		}
+	}
+	r.NewFusions = nil
+	r.HP = r.Stats.MaxHP
 	return r
 }
 
@@ -235,8 +256,7 @@ func baseStats() Stats {
 
 func (r *Run) Recompute(meta *SaveData) {
 	s := baseStats()
-	s.MaxHP += float64(10 * meta.Upg["vitality"])
-	s.FreeRerolls += meta.Upg["reroll"]
+	applyMeta(&s, meta, r.Asc)
 	s.MaxHP -= 20 * float64(r.Mods["__hp"])
 	r.Arch.Apply(&s)
 	tags := map[string]int{}
@@ -254,6 +274,16 @@ func (r *Run) Recompute(meta *SaveData) {
 		if tags[sy.Tag] >= 3 {
 			sy.Apply(&s)
 			r.Active = append(r.Active, sy.Name)
+		}
+	}
+	for i := range fusions {
+		f := &fusions[i]
+		if r.Owned(f.A) && r.Owned(f.B) {
+			f.Apply(&s)
+			if !r.HasFusion(f.ID) {
+				r.Fused = append(r.Fused, f.ID)
+				r.NewFusions = append(r.NewFusions, f.ID)
+			}
 		}
 	}
 	s.PaddleWidth = math.Max(0.5, s.PaddleWidth)
@@ -290,6 +320,21 @@ func (r *Run) Add(id string, meta *SaveData) string {
 
 func (r *Run) Owned(id string) bool { return r.Mods[id] > 0 }
 
+// choices is how many cards a reward offers.
+func (r *Run) choices() int { return 3 + r.Stats.ExtraChoices }
+
+// freeRerolls left this run.
+func (r *Run) freeRerolls() int { return r.Stats.FreeRerolls - r.Rerolls }
+
+// price applies shop discounts and ascension inflation.
+func (r *Run) price(p int) int {
+	m := math.Max(0.4, 1-r.Stats.ShopDiscount)
+	if r.Asc >= 3 {
+		m *= 1.15
+	}
+	return max(1, int(math.Round(float64(p)*m)))
+}
+
 func (r *Run) canTake(m *Mod) bool {
 	return m.Max == 0 || r.Mods[m.ID] < m.Max
 }
@@ -298,20 +343,27 @@ func (r *Run) canTake(m *Mod) bool {
 func (r *Run) Offer(n int, relic bool, minRarity int, rng *rand.Rand) []*Mod {
 	var pool []*Mod
 	for _, m := range modList {
-		if m.Relic == relic && m.Rarity >= minRarity && r.canTake(m) {
+		if m.Relic == relic && m.Rarity >= minRarity && r.canTake(m) && m.Unlock <= r.Rank && (m.Needs == "" || r.Owned(m.Needs)) {
 			pool = append(pool, m)
 		}
 	}
 	var out []*Mod
-	luck := 1 + (r.Stats.Luck-1)*0.3 + float64(r.Act-1)*0.25
+	luck := 1 + (r.Stats.Luck-1)*0.3 + float64(r.Act-1)*0.25 + 0.04*float64(r.metaLuck)
+	weight := func(m *Mod) float64 {
+		w := rarityWeights[m.Rarity] * math.Pow(luck, float64(m.Rarity))
+		if r.fusionWith(m.ID) != nil {
+			w *= 4 // completing a fusion is exciting: offer it more
+		}
+		return w
+	}
 	for len(out) < n && len(pool) > 0 {
 		total := 0.0
 		for _, m := range pool {
-			total += rarityWeights[m.Rarity] * math.Pow(luck, float64(m.Rarity))
+			total += weight(m)
 		}
 		x := rng.Float64() * total
 		for i, m := range pool {
-			w := rarityWeights[m.Rarity] * math.Pow(luck, float64(m.Rarity))
+			w := weight(m)
 			if x < w {
 				out = append(out, m)
 				pool = append(pool[:i], pool[i+1:]...)

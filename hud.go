@@ -234,9 +234,9 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		hex := ngonPath(u.X(cx), u.Y(cy), 22*S, 6, math.Pi/6)
 		fillPath(screen, ngonPath(u.X(cx), u.Y(cy+4), 22*S, 6, math.Pi/6), ca(cBlack, 0.4), ca(cBlack, 0.4), grad{}, false)
 		strokePath(screen, hex, 3.5*S, ca(cBlack, 0.55), false)
-		fillPath(screen, hex, lighten(rc, 0.2), darken(rc, 0.4), vgrad(u.Y(cy-22), u.Y(cy+22)), false)
+		fillPath(screen, hex, darken(rc, 0.5), darken(rc, 0.2), vgrad(u.Y(cy-22), u.Y(cy+22)), false)
 		strokePath(screen, hex, 1.6*S, ca(th.Edge, 0.95), false)
-		u.text(screen, string([]rune(m.Name)[0]), fBold, 18, cx, cy-12, rgba(22, 16, 32, 255), alignCenter)
+		u.drawEmblem(screen, modEmblem(m), cx, cy, 36, 1)
 	}
 
 	// ---- launch prompt

@@ -33,11 +33,16 @@ type SaveData struct {
 	MaxCombo  int             `json:"max_combo"`
 	Daily     map[string]int  `json:"daily_best"`
 	Seen      map[string]bool `json:"seen_mods"`
+	XP        int             `json:"xp"`
+	AscMax    int             `json:"asc_max"` // highest ascension unlocked
+	AscSel    int             `json:"asc"`     // ascension chosen for new runs
+	Fusions   map[string]bool `json:"fusions"` // fusions ever formed
+	TotalGold int             `json:"total_gold"`
 	Settings  Settings        `json:"settings"`
 }
 
 func defaultSave() SaveData {
-	return SaveData{Version: 1, Upg: map[string]int{}, Unlocked: map[string]bool{}, Daily: map[string]int{}, Seen: map[string]bool{},
+	return SaveData{Version: 2, Upg: map[string]int{}, Unlocked: map[string]bool{}, Daily: map[string]int{}, Seen: map[string]bool{}, Fusions: map[string]bool{},
 		Settings: Settings{Master: 1, Music: 0.6, SFX: 0.8, Shake: true, Flashes: true, Particles: 1, VSync: true, Fullscreen: true}}
 }
 
@@ -73,6 +78,10 @@ func loadSave() SaveData {
 	if s.Seen == nil {
 		s.Seen = map[string]bool{}
 	}
+	if s.Fusions == nil {
+		s.Fusions = map[string]bool{}
+	}
+	s.AscSel = max(0, min(s.AscSel, s.AscMax))
 	return s
 }
 

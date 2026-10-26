@@ -69,6 +69,7 @@ type Ball struct {
 	Charged         bool
 	Momentum        int
 	Phantom         float64 // >0: temporary orb with this many seconds left
+	Rico            int     // wall bounces since the paddle (Ricochet)
 }
 
 type Power int
@@ -224,6 +225,9 @@ type Level struct {
 	Walls           []levelgen.Pt
 	Vis             Visuals
 	Designed        bool
+	rushBonus       float64 // Gold Rush damage bonus
+	bhCount         int     // bricks towards the next black hole
+	eruptDepth      int     // guards chained eruptions
 }
 
 func (g *Game) newLevel(node NodeType, seed int64) *Level {
@@ -252,7 +256,7 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 		L.Data = levelgen.Generate(levelgen.Params{Seed: seed, Depth: r.Depth + (act-1)*2, Act: act, Elite: node == NElite})
 		L.Designed = strings.HasPrefix(L.Data.Formation, "design")
 	}
-	hpMul := 1.0 + float64(act-1)*0.35
+	hpMul := (1.0 + float64(act-1)*0.35) * (1 + 0.02*float64(r.Depth)) * ascHP(r.Asc, node == NElite, false)
 	if r.Cursed && node != NBoss {
 		hpMul *= 1.5
 	}
@@ -283,6 +287,10 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 		L.propsX = append(L.propsX, V3{side * (24 + pr.Float64()*30), 2 + pr.Float64()*6, 14 + pr.Float64()*70})
 	}
 	L.spawnServe()
+	if r.Stats.OpeningPower {
+		opts := []Power{PExpand, PSlow, PFire, PLaser, PBarrier, PMagnet}
+		L.applyPower(opts[L.rng.Intn(len(opts))])
+	}
 	return L
 }
 
@@ -532,6 +540,7 @@ func (L *Level) Update(dt float64, in Input) {
 				L.Barrier--
 				g.snd.Play("shield")
 				L.sparks(V3{b.X, 0.3, BarrierZ}, 16, color.RGBA{170, 140, 255, 255}, 6)
+				L.barrierSaved(b.X)
 			}
 		}
 		b.Trail = append(b.Trail, [2]float64{b.X, b.Z})
@@ -617,6 +626,9 @@ func (L *Level) release() bool {
 		ang := t*50*math.Pi/180 + (L.rng.Float64()-0.5)*0.1
 		b.VX, b.VZ = sp*math.Sin(ang), sp*math.Cos(ang)
 		b.Stuck = false
+		if r.Stats.OpeningCrit > 0 {
+			b.Charged = true
+		}
 		released = true
 	}
 	if released {
@@ -714,6 +726,7 @@ func (L *Level) collideWalls(b *Ball) {
 	}
 	if hit {
 		fixAngle(b)
+		b.Rico++
 		b.PierceLeft = max(b.PierceLeft, L.g.run.Stats.Pierce)
 		L.g.snd.Play("wall")
 	}
@@ -815,7 +828,11 @@ func (L *Level) collidePaddle(b *Ball) {
 	b.Z = z1 + b.R
 	b.PierceLeft = r.Stats.Pierce
 	b.Momentum = 0
+	b.Rico = 0
 	L.paddleBounce = 1
+	if r.Stats.StaticPaddle {
+		L.zapNearest(b.X, b.Z, math.Max(1, r.Stats.Damage*(1+r.Stats.ChainMult)))
+	}
 	if r.Stats.HeavyPaddle {
 		b.Charged = true
 	}
@@ -925,7 +942,7 @@ func (L *Level) damage(b *Brick, h Hit) (bool, bool) {
 		}
 		return false, true
 	case b.Kind == levelgen.Armored && !(h.Crit || h.Void || h.Blast || h.Elemental):
-		b.Hits++
+		b.Hits += 1 + r.Stats.SunderMult
 		if !h.Silent {
 			g.snd.Play("steel")
 		}
@@ -938,9 +955,12 @@ func (L *Level) damage(b *Brick, h Hit) (bool, bool) {
 	}
 	dmg := h.Dmg
 	if b.Frozen > 0 {
-		if r.Stats.FrozenBonus {
+		switch {
+		case r.Stats.AbsoluteZero:
+			dmg *= 3
+		case r.Stats.FrozenBonus:
 			dmg *= 2
-		} else {
+		default:
 			dmg *= 1.5
 		}
 	}
@@ -951,6 +971,10 @@ func (L *Level) damage(b *Brick, h Hit) (bool, bool) {
 		dmg *= 3
 	}
 	b.HP -= dmg
+	if b.HP > 0 && r.Stats.ExecuteBelow > 0 && !b.Core && b.HP <= b.MaxHP*r.Stats.ExecuteBelow {
+		b.HP = 0
+		L.text(V3{b.X(), 1.4, b.Z()}, "EXECUTE", color.RGBA{255, 90, 90, 255}, false)
+	}
 	if b.HP > 0 {
 		if !h.Silent {
 			g.snd.BrickHit()
@@ -965,29 +989,65 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	r := L.g.run
 	s := &r.Stats
 	L.impacts++
-	crit := L.rng.Float64() < s.CritChance || ball.Charged
+	charged := ball.Charged
+	crit := L.rng.Float64() < s.CritChance || charged
 	ball.Charged = false
+	wasFrozen := b.Frozen > 0
 	dmg := s.Damage * s.DmgMult
-	dmg *= 1 + math.Min(1, float64(L.Combo)*s.ComboDmg)
+	dmg *= 1 + math.Min(L.comboCap(), float64(L.Combo)*s.ComboDmg)
 	if s.Momentum {
 		dmg *= 1 + 0.04*math.Min(15, float64(ball.Momentum))
 	}
 	if s.BloodMoon && r.HP < s.MaxHP/2 {
 		dmg *= 1.75
 	}
+	if s.Berserker && r.HP < s.MaxHP/2 {
+		dmg *= 1.5
+	}
+	if s.Ricochet > 0 {
+		dmg *= 1 + s.Ricochet*float64(min(ball.Rico, 12))
+	}
+	if s.BossDmg > 0 && (L.Boss != nil || b.Kind == levelgen.Elite) {
+		dmg *= 1 + s.BossDmg
+	}
+	if extra := L.realBalls() - 1; s.HiveDmg > 0 && extra > 0 {
+		dmg *= 1 + math.Min(s.HiveDmg*6, s.HiveDmg*float64(extra))
+	}
+	if s.LoneDmg > 0 && L.realBalls() == 1 {
+		dmg *= 1 + s.LoneDmg
+	}
+	if s.Avarice > 0 {
+		dmg *= 1 + math.Min(s.Avarice, float64(r.Gold)/1000)
+	}
+	if s.BattleHymn > 0 && L.T < s.BattleHymn {
+		dmg *= 2
+	}
+	dmg *= 1 + L.rushBonus
+	if ball.Phantom > 0 && s.VoidPrism {
+		dmg *= 2
+	}
+	if charged && s.Haymaker {
+		dmg *= 2.5
+		L.Combo += 3
+		L.Rings = append(L.Rings, &Ring{X: b.X(), Z: b.Z(), MaxR: 2.2, Life: 0.3, Max: 0.3, Col: color.RGBA{255, 150, 90, 255}})
+	}
 	if crit {
 		dmg *= s.CritMult
 	}
 	fire := L.Timers[PFire] > 0
-	h := Hit{Dmg: dmg, Crit: crit, Void: L.rng.Float64() < s.VoidChance, Fire: fire && b.Kind != levelgen.Steel, Elemental: fire}
+	h := Hit{Dmg: dmg, Crit: crit, Void: L.rng.Float64() < s.VoidChance || (ball.Phantom > 0 && s.VoidPrism), Fire: fire && b.Kind != levelgen.Steel, Elemental: fire}
 	if fire {
 		h.Dmg *= 2
 	}
 	bx, bz := b.X(), b.Z()
 	times := 1
-	if s.EchoEvery > 0 && L.impacts%s.EchoEvery == 0 {
+	if (s.EchoEvery > 0 && L.impacts%s.EchoEvery == 0) || (s.EchoChance > 0 && L.rng.Float64() < s.EchoChance) {
 		times = 2
 		L.text(V3{bx, 1.6, bz}, "ECHO", color.RGBA{200, 200, 255, 255}, false)
+		if s.Thunderclap {
+			L.skyStrike(bx, bz, dmg*0.8, color.RGBA{170, 220, 255, 255})
+			L.lightning(bx, bz, 3, math.Max(1, dmg*0.5), b, false)
+		}
 	}
 	var destroyed, solid bool
 	for i := 0; i < times; i++ {
@@ -1001,6 +1061,34 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	}
 	if crit {
 		L.g.snd.Play("crit")
+		if s.CritHeal > 0 {
+			r.HP = math.Min(s.MaxHP, r.HP+s.CritHeal)
+		}
+		if s.CritCoin > 0 && L.rng.Float64() < s.CritCoin {
+			L.gainGold(1, bx, bz, true)
+		}
+		if s.Hawkstrike && b.R > 0 {
+			if n := L.Grid[b.R-1][b.C]; n != nil && n.Alive && n != b {
+				L.damage(n, Hit{Dmg: dmg * 0.75, Crit: true, Silent: true})
+				L.sparks(V3{n.X(), 1, n.Z()}, 8, color.RGBA{255, 200, 120, 255}, 6)
+			}
+		}
+	}
+	if s.FreezeSpread && wasFrozen {
+		for _, n := range L.neighbours(b.R, b.C) {
+			n.Frozen = 4 + s.FreezeDur
+		}
+	}
+	if s.DragonHeart && b.Alive && b.Burn > 0 {
+		for _, n := range L.neighbours(b.R, b.C) {
+			n.Burn = 3.5
+		}
+	}
+	if s.PlasmaStorm && b.Burn > 0 && L.rng.Float64() < 0.35 {
+		L.lightning(bx, bz, 2, math.Max(1, dmg*0.5), b, false)
+	}
+	if s.Cataclysm && L.impacts%12 == 0 {
+		L.meteor()
 	}
 	if crit && !b.Core {
 		L.text(V3{bx, 1.4, bz}, "CRIT", color.RGBA{255, 90, 90, 255}, false)
@@ -1011,7 +1099,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	ball.Momentum++
 	// combo
 	L.Combo++
-	L.comboT = 3
+	L.comboT = 3 + s.ComboTime
 	if L.Combo > r.MaxCombo {
 		r.MaxCombo = L.Combo
 	}
@@ -1027,7 +1115,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 		b.Burn = 3.5
 	}
 	if b.Alive && L.rng.Float64() < s.FreezeChance {
-		b.Frozen = 4
+		b.Frozen = 4 + s.FreezeDur
 		L.g.snd.Play("freeze")
 	}
 	if L.rng.Float64() < s.ChainChance || (crit && s.ThunderCrown) {
@@ -1102,9 +1190,9 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	L.g.snd.BrickBreak(L.Combo, b.MaxHP >= 2 || b.Kind == levelgen.Elite)
 
 	// gold
-	coinP := 0.32
+	coinP := 0.32 + s.CoinChance
 	if s.Philosopher {
-		coinP = 0.6
+		coinP = 0.6 + s.CoinChance
 	}
 	if L.rng.Float64() < coinP {
 		L.gainGold(1+L.rng.Intn(2), x, z, true)
@@ -1122,7 +1210,11 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	}
 	if s.Hydra {
 		L.hydraCount++
-		if L.hydraCount >= 30 && len(L.Balls) < 14 {
+		need := 30
+		if r.HasFusion("brood") {
+			need = 15
+		}
+		if L.hydraCount >= need && len(L.Balls) < 14 {
 			L.hydraCount = 0
 			sp := L.speed()
 			a := (L.rng.Float64() - 0.5) * 1.2
@@ -1196,9 +1288,31 @@ func (L *Level) destroy(b *Brick, h Hit) {
 			}
 		}
 	}
+	if s.KillSplash > 0 {
+		for _, n := range L.neighbours(b.R, b.C) {
+			L.damage(n, Hit{Dmg: math.Max(0.5, s.Damage*s.DmgMult*s.KillSplash), Blast: true, Silent: true})
+		}
+		L.sparks(V3{x, 0.8, z}, 6, lighten(b.Col, 0.3), 7)
+	}
+	if s.BlackHole {
+		L.bhCount++
+		if L.bhCount >= 40 {
+			L.bhCount = 0
+			L.blackHole(x, z)
+		}
+	}
+	if s.Volcano && b.Burn > 0 && L.eruptDepth < 3 {
+		L.eruptDepth++
+		L.explode(x, z, 1.0, math.Max(1, s.Damage), false)
+		L.eruptDepth--
+	}
 	if b.Frozen > 0 && s.Shatter {
-		L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 3, Life: 0.35, Max: 0.35, Col: color.RGBA{170, 230, 255, 255}})
-		for _, n := range L.near(x, z, 2.6) {
+		shR := 2.6
+		if s.AbsoluteZero {
+			shR = 4.2
+		}
+		L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: shR + 0.4, Life: 0.35, Max: 0.35, Col: color.RGBA{170, 230, 255, 255}})
+		for _, n := range L.near(x, z, shR) {
 			if n != b {
 				L.damage(n, Hit{Dmg: 1.5, Elemental: true, Silent: true})
 			}
@@ -1221,8 +1335,14 @@ func (L *Level) near(x, z, rad float64) []*Brick {
 
 func (L *Level) explode(x, z, radiusCells, dmg float64, big bool) {
 	g := L.g
+	st := &g.run.Stats
+	dmg *= 1 + st.BlastMult
 	rad := radiusCells * CellW * 0.95
-	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: rad, Life: 0.45, Max: 0.45, Col: color.RGBA{255, 170, 60, 255}})
+	rc := color.RGBA{255, 170, 60, 255}
+	if st.CryoCharge {
+		rc = color.RGBA{150, 225, 255, 255}
+	}
+	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: rad, Life: 0.45, Max: 0.45, Col: rc})
 	L.sparks(V3{x, 0.8, z}, 26, color.RGBA{255, 190, 80, 255}, 10)
 	if g.settings.Particles > 0 {
 		for i := 0; i < 8; i++ {
@@ -1238,6 +1358,12 @@ func (L *Level) explode(x, z, radiusCells, dmg float64, big bool) {
 	g.snd.Play("boom")
 	for _, b := range L.near(x, z, rad) {
 		if b.Alive && b.Layer <= 1 {
+			if st.CryoCharge {
+				b.Frozen = 4 + st.FreezeDur
+			}
+			if st.Volcano {
+				b.Burn = 3.5
+			}
 			L.damage(b, Hit{Dmg: dmg, Blast: true, Silent: true})
 		}
 	}
@@ -1258,6 +1384,11 @@ func jag(a, b V3, rng *rand.Rand) []V3 {
 }
 
 func (L *Level) lightning(x, z float64, count int, dmg float64, from *Brick, recast bool) {
+	L.lightningRaw(x, z, count, dmg*(1+L.g.run.Stats.ChainMult), from, recast)
+}
+
+func (L *Level) lightningRaw(x, z float64, count int, dmg float64, from *Brick, recast bool) {
+	plasma := L.g.run.Stats.PlasmaStorm
 	var cands []*Brick
 	for _, b := range L.Bricks {
 		if b.Alive && b != from && b.Layer == 0 && b.Kind != levelgen.Steel && math.Hypot(b.X()-x, b.Z()-z) < 9 {
@@ -1284,11 +1415,16 @@ func (L *Level) lightning(x, z float64, count int, dmg float64, from *Brick, rec
 	prev := V3{x, 0.8, z}
 	for _, t := range cands {
 		p := V3{t.X(), 0.8, t.Z()}
-		L.Arcs = append(L.Arcs, &Arc{Pts: jag(prev, p, L.rng), Life: 0.3, Col: color.RGBA{150, 210, 255, 255}})
+		ac := color.RGBA{150, 210, 255, 255}
+		if plasma {
+			ac = color.RGBA{255, 120, 220, 255}
+			t.Burn = 3.5
+		}
+		L.Arcs = append(L.Arcs, &Arc{Pts: jag(prev, p, L.rng), Life: 0.3, Col: ac})
 		tx, tz := t.X(), t.Z()
 		L.damage(t, Hit{Dmg: dmg, Elemental: true, Silent: true})
 		if recast && L.rng.Float64() < 0.5 {
-			L.lightning(tx, tz, 1, dmg*0.7, t, false)
+			L.lightningRaw(tx, tz, 1, dmg*0.7, t, false)
 		}
 		prev = p
 	}
@@ -1327,6 +1463,7 @@ func (L *Level) mystery(x, z float64, b *Brick) {
 }
 
 func (L *Level) dropPower(x, z float64, goodOnly bool) {
+	goodOnly = goodOnly || L.g.run.Stats.Blessed
 	total := 0.0
 	for _, p := range powerDefs {
 		if !goodOnly || p.Good {
@@ -1377,7 +1514,7 @@ func (L *Level) applyPower(p Power) {
 	}
 	L.text(V3{L.PaddleX, 1.8, PaddleZ + 1}, d.Name, lighten(d.Col, 0.3), true)
 	if d.Dur > 0 {
-		L.Timers[p] = d.Dur
+		L.Timers[p] = d.Dur * (1 + g.run.Stats.PowerDur)
 	}
 	switch p {
 	case PExpand:
@@ -1462,8 +1599,17 @@ func (L *Level) clear() {
 		reward += 60
 	}
 	L.gainGold(reward, 0, 0, false)
+	if r.Stats.HealOnClear > 0 && r.HP < r.Stats.MaxHP {
+		heal := math.Min(r.Stats.MaxHP-r.HP, r.Stats.HealOnClear)
+		r.HP += heal
+		L.text(V3{0, 2.5, 8}, fmt.Sprintf("+%.0f HEALTH", heal), color.RGBA{120, 255, 150, 255}, true)
+	}
 	if r.Stats.Interest > 0 {
-		in := int(math.Min(30, float64(r.Gold)*r.Stats.Interest))
+		cap := 30.0
+		if r.HasFusion("hoard") {
+			cap = 60
+		}
+		in := int(math.Min(cap, float64(r.Gold)*r.Stats.Interest))
 		r.Gold += in
 		L.GoldEarned += in
 	}
@@ -1512,9 +1658,19 @@ func (L *Level) updateBricks(dt float64) {
 		if b.Burn > 0 {
 			b.Burn -= dt
 			b.burnTick += dt
-			if b.burnTick >= 0.7 {
+			tick := 0.7
+			if r.Stats.DragonHeart {
+				tick = 0.35
+			}
+			if r.Stats.SteamEngine && b.Frozen > 0 {
+				L.steamBurst(b)
+				if !b.Alive {
+					continue
+				}
+			}
+			if b.burnTick >= tick {
 				b.burnTick = 0
-				L.damage(b, Hit{Dmg: 0.5 + 0.25*r.Stats.Damage, Elemental: true, Silent: true})
+				L.damage(b, Hit{Dmg: (0.5 + 0.25*r.Stats.Damage) * (1 + r.Stats.BurnMult), Elemental: true, Silent: true})
 				if !b.Alive {
 					continue
 				}
@@ -1661,6 +1817,10 @@ func (L *Level) updateDrops(dt float64) {
 		if caught {
 			L.gainGold(c.Val, 0, 0, false)
 			L.g.snd.Coin()
+			if L.g.run.Stats.GoldRush {
+				L.rushBonus = math.Min(0.6, L.rushBonus+0.02)
+				L.sparks(V3{c.X, 0.8, PaddleZ}, 6, color.RGBA{255, 220, 90, 255}, 5)
+			}
 		}
 		if caught || c.Z < LoseZ {
 			L.Coins = append(L.Coins[:i], L.Coins[i+1:]...)
@@ -1676,8 +1836,12 @@ func (L *Level) updateDrops(dt float64) {
 		rr := int(math.Floor((GridTopZ - bl.Z) / CellD))
 		if !hit && rr >= 0 && rr < levelgen.MaxRows && c >= 0 && c < levelgen.Cols {
 			if b := L.Grid[rr][c]; b != nil && b.Alive {
-				L.damage(b, Hit{Dmg: math.Max(1, L.g.run.Stats.Damage*0.6), Silent: true})
+				st := &L.g.run.Stats
+				L.damage(b, Hit{Dmg: math.Max(1, st.Damage*0.6) * (1 + st.LaserDmg), Silent: true})
 				L.sparks(V3{bl.X, 0.6, bl.Z}, 5, color.RGBA{255, 100, 100, 255}, 4)
+				if st.TeslaCoil {
+					L.lightning(bl.X, bl.Z, 2, math.Max(1, st.Damage*0.5), b, false)
+				}
 				hit = true
 			}
 		}
@@ -1858,7 +2022,7 @@ func (L *Level) text(p V3, s string, c color.RGBA, big bool) {
 
 func (L *Level) setupBoss() {
 	act := L.g.run.Act
-	b := &Boss{Name: L.Biome.BossName, MaxHP: 40 + 25*float64(act-1)}
+	b := &Boss{Name: L.Biome.BossName, MaxHP: (40 + 30*float64(act-1) + 10*float64((act-1)*(act-1))) * ascHP(L.g.run.Asc, false, true)}
 	b.HP = b.MaxHP
 	L.Boss = b
 	shape := []string{
