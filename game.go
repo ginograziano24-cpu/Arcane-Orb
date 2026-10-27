@@ -88,6 +88,8 @@ type Game struct {
 	archPrev    int
 	archFade    float64
 	archGlow    color.RGBA
+	archPar     [2]float64
+	frontT      float64 // front-end animation clock
 	seedText    string
 	daily       bool
 	rewards     []rewardSet
@@ -567,11 +569,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 	switch g.state {
 	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex:
-		tgt := g.post.Target(int(sw), int(sh))
-		g.drawMenuScene(tgt, ddt)
-		g.post.Apply(screen, worldGrades[WNeon], !g.settings.NoBloom)
-		if g.state != StMenu {
-			fillRect(screen, 0, 0, sw, sh, color.RGBA{6, 4, 14, 150})
+		g.frontT += ddt
+		switch g.state {
+		case StMenu:
+			g.drawHall(screen, 1290, 560, true)
+		case StArch:
+			g.drawHall(screen, 960, 300, true)
+		default:
+			g.drawHall(screen, 960, 200, false)
+			fillRect(screen, 0, 0, sw, sh, color.RGBA{4, 2, 10, 90})
 		}
 	case StLevel, StPause:
 		g.ensureSky(g.level.Biome, g.level.propSeed)
@@ -583,7 +589,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		if g.prevState == StPause && g.level != nil {
 			g.drawWorld(screen, g.level)
 		} else {
-			g.drawMenuScene(screen, ddt)
+			g.frontT += ddt
+			g.drawHall(screen, 960, 200, false)
 		}
 		fillRect(screen, 0, 0, sw, sh, color.RGBA{6, 4, 14, 170})
 	default:
@@ -691,30 +698,31 @@ var (
 
 func (g *Game) drawMenu(s *ebiten.Image) {
 	u := g.ui
-	bob := math.Sin(g.stateT*1.4) * 5
-	glow := color.RGBA{255, 60, 200, 255}
-	if g.menu != nil {
-		glow = g.menu.biome.Trim
-	}
-	// soft shade behind the menu column for legibility
-	drawSprite(s, sprSoft, u.X(-500), u.Y(140), 1400*u.S, 1020*u.S, color.RGBA{0, 0, 0, 200}, false)
 	const ox = 1290.0
-	ot := g.stateT
-	if g.menu != nil {
-		ot = g.menu.t
+	g.drawRunes(s, 22, ox, 900)
+	g.drawTitleOrb(s, ox, 560, 140, g.frontT)
+	// title block
+	g.arcaneTitle(s, "Arcane Orb", 112, ox, 70)
+	sub := "A  ROGUELITE  OF  ORB  AND  RUNE"
+	sw := u.measure(sub, fSerif, 21)
+	u.text(s, sub, fSerif, 21, ox, 214, rgba(190, 160, 255, 255), alignCenter)
+	for _, sgn := range []float64{-1, 1} {
+		x0 := ox + sgn*(sw/2+24)
+		u.glowLine(s, math.Min(x0, x0+sgn*150), math.Max(x0, x0+sgn*150), 228, 1, rgba(196, 160, 92, 255), 0.8)
+		fillPath(s, diamondPath(u.X(x0+sgn*156), u.Y(228), 5*u.S, 7*u.S), rgba(230, 200, 140, 255), rgba(150, 110, 60, 255), grad{}, false)
 	}
-	g.drawTitleOrb(s, ox, 610, 150, ot)
-	g.chromeTitle(s, "ARCANE ORB", 140, ox, 52+bob, glow)
-	u.textOutlined(s, "~ a roguelite brick-breaker ~", fBold, 30, ox, 232, color.RGBA{120, 240, 255, 255}, alignCenter)
+	// menu column with a dark veil behind it
+	fillPath(s, boxPath(u.X(0), u.Y(0), 640*u.S, 1080*u.S, 0, false), rgba(0, 0, 0, 170), rgba(0, 0, 0, 0), hgrad(u.X(0), u.X(640)), false)
 	endlessLabel := "Endless Mode"
 	if g.save.Wins == 0 {
-		endlessLabel = "Endless Mode  ·  locked"
+		endlessLabel = "Endless Mode  ·  sealed"
 	}
 	items := []struct {
 		label string
 		do    func()
+		on    bool
 	}{
-		{"Story Mode", func() { g.seedText = ""; g.daily = false; g.endlessMode = false; g.setState(StArch) }},
+		{"Story Mode", func() { g.seedText = ""; g.daily = false; g.endlessMode = false; g.setState(StArch) }, true},
 		{endlessLabel, func() {
 			if g.save.Wins > 0 {
 				g.seedText = ""
@@ -724,22 +732,24 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 			} else {
 				g.snd.Play("deny")
 			}
-		}},
-		{"Daily Challenge", func() { g.daily = true; g.seedText = ""; g.endlessMode = false; g.setState(StArch) }},
-		{"Play a Seed", func() { g.seedText = ""; g.endlessMode = false; g.setState(StSeed) }},
-		{"Sanctum  ·  " + itoa(g.save.Shards) + " shards", func() { g.setState(StSanctum) }},
-		{"Codex", func() { g.codexTab = 0; g.setState(StCodex) }},
-		{"How to Play", func() { g.setState(StHelp) }},
-		{"Settings", func() { g.setState(StSettings) }},
-		{"Quit", func() { g.quit = true }},
+		}, true},
+		{"Daily Challenge", func() { g.daily = true; g.seedText = ""; g.endlessMode = false; g.setState(StArch) }, true},
+		{"Play a Seed", func() { g.seedText = ""; g.endlessMode = false; g.setState(StSeed) }, true},
+		{"Sanctum  ·  " + itoa(g.save.Shards) + " shards", func() { g.setState(StSanctum) }, true},
+		{"Codex", func() { g.codexTab = 0; g.setState(StCodex) }, true},
+		{"How to Play", func() { g.setState(StHelp) }, true},
+		{"Settings", func() { g.setState(StSettings) }, true},
+		{"Quit", func() { g.quit = true }, true},
 	}
 	y := 300.0
 	for i, it := range items {
-		w := u.measure(it.label, fBold, 34) + 80
-		if g.neonItem(s, "menu"+itoa(i), it.label, 110+w/2, y, glow, true) {
+		if g.arcaneItem(s, "menu"+itoa(i), it.label, 120, y, it.on) {
 			it.do()
 		}
-		y += 66
+		y += 64
+		if i == 3 || i == 6 {
+			y += 12 // breathing room between groups
+		}
 	}
 	g.drawRankBadge(s, 36, 32)
 	stats := fmt.Sprintf("Runs %d   ·   Wins %d   ·   Best act %d   ·   Best score %d   ·   Best combo %d",
@@ -747,11 +757,11 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 	if g.save.BestLoop > 0 {
 		stats += fmt.Sprintf("   ·   Endless loop %d", g.save.BestLoop)
 	}
-	u.textOutlined(s, stats, fReg, 18, ox, 1000, cDim, alignCenter)
+	u.textOutlined(s, stats, fReg, 17, ox, 1010, rgba(150, 140, 175, 255), alignCenter)
 	if best, ok := g.save.Daily[dailyCode()]; ok {
-		u.textOutlined(s, fmt.Sprintf("Today's daily best: %d", best), fBold, 18, ox, 1030, cGold, alignCenter)
+		u.textOutlined(s, fmt.Sprintf("Today's daily best: %d", best), fBold, 17, ox, 1038, cGold, alignCenter)
 	}
-	u.text(s, "v0.7", fReg, 16, 1890, 1048, cDim, alignRight)
+	u.text(s, "v0.8", fReg, 16, 1890, 1048, rgba(120, 110, 140, 255), alignRight)
 }
 
 // archPreview draws a paddle silhouette and stat meters on a paddle card.

@@ -110,19 +110,29 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	ph := 1010.0
 	pw := ph * 0.75
 	px, py := 960-pw/2, 1080-ph+6
+	// breathing (scale about the feet) and a little mouse parallax
+	br := math.Sin(g.stateT * 1.7)
+	g.archPar[0] += ((u.MX-960)/960*-12 - g.archPar[0]) * math.Min(1, u.DT*3)
+	g.archPar[1] += ((u.MY-540)/540*-7 - g.archPar[1]) * math.Min(1, u.DT*3)
 	drawP := func(id string, alpha, dy float64) {
 		img := portrait(id)
 		if img == nil || alpha <= 0 {
 			return
 		}
+		xf := portraitXform{px, py, pw, ph, 1 + 0.003*br, 1 + 0.009*br, g.archPar[0], g.archPar[1] + dy}
 		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		op.GeoM.Scale(pw*S/float64(img.Bounds().Dx()), ph*S/float64(img.Bounds().Dy()))
-		op.GeoM.Translate(u.X(px), u.Y(py+dy))
+		op.GeoM.Translate(-pw*S/2, -ph*S)
+		op.GeoM.Scale(xf.sx, xf.sy)
+		op.GeoM.Translate(u.X(px+pw/2+xf.dx), u.Y(py+ph+xf.dy))
 		op.ColorScale.ScaleAlpha(float32(alpha))
+		dim := 1.0
 		if locked && id == a.ID {
 			op.ColorScale.Scale(0.55, 0.55, 0.55, 1)
+			dim = 0.5
 		}
 		s.DrawImage(img, op)
+		g.drawPortraitFX(s, id, xf, alpha*dim)
 	}
 	if g.archFade < 1 && g.archPrev >= 0 && g.archPrev < n {
 		drawP(archetypes[g.archPrev].ID, 1-ease(g.archFade), 0)
@@ -141,7 +151,6 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	}
 
 	// ---- header
-	title := "CHOOSE YOUR ORIGIN"
 	sub := "Story"
 	if g.endlessMode {
 		sub = "Endless Mode"
@@ -151,7 +160,7 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	} else if g.seedText != "" {
 		sub = "Seeded run  ·  " + g.seedText
 	}
-	u.textOutlined(s, title, fTitle, 44, 70, 44, cGold, alignLeft)
+	u.textOutlined(s, "Choose your Origin", fRune, 46, 70, 40, rgba(232, 214, 170, 255), alignLeft)
 	u.text(s, strings.ToUpper(sub), fBold, 17, 72, 104, ca(lighten(u.theme().Accent, 0.3), 0.9), alignLeft)
 	u.glowLine(s, 70, 520, 136, 1.5, cGold, 0.7)
 
@@ -187,10 +196,10 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		if cl {
 			nc = rgba(130, 124, 146, 255)
 		}
-		u.text(s, c.Name, fBold, 30, 146+10*k, y+10, nc, alignLeft)
-		tag := "Passive"
+		u.text(s, c.Name, fSerif, 30, 146+10*k, y+8, nc, alignLeft)
+		tag := c.Passive
 		if c.Ability != "" {
-			tag = "Active · " + c.Ability
+			tag += "  ·  " + c.Ability
 		}
 		if cl {
 			tag = fmt.Sprintf("Locked · %d shards", c.Cost)
@@ -207,7 +216,7 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	ry := 60.0
 	u.frame(s, rx, ry, rw, 820, 0.88)
 	cx := rx + 36
-	u.textOutlined(s, strings.ToUpper(a.Name), fTitle, 52, cx, ry+26, lighten(col, 0.35), alignLeft)
+	u.textOutlined(s, a.Name, fRune, 50, cx, ry+24, lighten(col, 0.35), alignLeft)
 	y := ry + 100
 	y = u.paragraph(s, info.Lore, fReg, 19, cx, y, rw-72, rgba(214, 206, 228, 255), alignLeft) + 10
 	u.glowLine(s, cx, rx+rw-36, y, 1, ca(u.theme().Edge, 0.9), 1)
@@ -236,9 +245,9 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	y += 8
 	u.glowLine(s, cx, rx+rw-36, y, 1, ca(u.theme().Edge, 0.9), 1)
 	y += 20
-	u.text(s, "PASSIVE", fBold, 15, cx, y, ca(cGold, 0.9), alignLeft)
+	u.text(s, "PASSIVE  ·  "+strings.ToUpper(a.Passive), fBold, 15, cx, y, ca(cGold, 0.9), alignLeft)
 	y += 28
-	y = u.paragraph(s, a.Desc, fReg, 19, cx, y, rw-72, cWhite, alignLeft) + 12
+	y = u.paragraph(s, a.Desc, fReg, 18, cx, y, rw-72, cWhite, alignLeft) + 12
 	if a.Ability != "" {
 		bx, bw, bh := cx, rw-72, 104.0
 		fillPath(s, boxPath(u.X(bx), u.Y(y), bw*S, bh*S, 10*S, false), ca(darken(col, 0.3), 0.6), ca(darken(col, 0.12), 0.6), vgrad(u.Y(y), u.Y(y+bh)), false)

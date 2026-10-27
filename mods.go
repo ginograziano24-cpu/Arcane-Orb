@@ -60,6 +60,8 @@ type Stats struct {
 	StaticPaddle, FreezeSpread, Blessed, ThornWard, OpeningPower  bool
 	BlackHole, InfiniteCombo, DragonHeart                         bool
 	ClassIgnite                                                   int // ignite every Nth hit (Pyromancer)
+	ClassParry, ClassRage, ClassAttune, ClassOverclock            bool
+	ClassHighRoller, ClassStoke, ClassStatic                      bool
 	// fusions
 	PlasmaStorm, SteamEngine, CryoCharge, GoldRush, Thunderclap    bool
 	Berserker, TeslaCoil, VoidPrism, Sanctuary, Cataclysm, Volcano bool

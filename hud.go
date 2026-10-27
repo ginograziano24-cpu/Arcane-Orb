@@ -196,6 +196,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	if r.hasAbility() {
 		g.drawAbility(screen, L)
 	}
+	g.drawPassive(screen, L)
 
 	// ---- active power-ups (bottom-left)
 	x := 24.0
@@ -324,4 +325,75 @@ func (g *Game) drawAbility(screen *ebiten.Image, L *Level) {
 	} else {
 		u.text(screen, "recharging", fReg, 15, tx, cy+6, cDim, alignLeft)
 	}
+}
+
+// drawPassive shows the class passive's live state as a compact plate.
+func (g *Game) drawPassive(screen *ebiten.Image, L *Level) {
+	u := g.ui
+	r := g.run
+	st := &r.Stats
+	c := &L.cls
+	var label, val, gl string
+	var frac float64
+	var col color.RGBA
+	ready := false
+	switch {
+	case st.ClassParry:
+		label, gl, col = "PARRY", "shield", rgba(255, 215, 130, 255)
+		frac = 1 - clamp01(c.parryCD/0.8)
+		ready = c.parryCD <= 0
+		val = "centre hit"
+	case st.ClassRage:
+		label, gl, col = "RAGE", "sword", rgba(255, 70, 50, 255)
+		frac = float64(c.rage) / 20
+		val = fmt.Sprintf("+%d%%", c.rage*4)
+		ready = c.rage == 20
+	case st.ClassAttune:
+		col = attuneCols[c.attuneEl]
+		label, gl = attuneNames[c.attuneEl], []string{"flame", "snow", "bolt", "orb"}[c.attuneEl]
+		frac = 1 - c.attuneT/8
+		val = fmt.Sprintf("%.0fs", 8-c.attuneT)
+	case st.ClassOverclock:
+		label, gl, col = "OVERCLOCK", "gear", rgba(255, 160, 64, 255)
+		frac = clamp01(c.stillT / 1.5)
+		ready = c.overclock
+		val = "hold still"
+		if ready {
+			frac, val = 1, "READY"
+		}
+	case st.ClassHighRoller:
+		label, gl, col = "HIGH ROLLER", "coin", rgba(255, 210, 90, 255)
+		b := highRollerBonus(r.Gold)
+		frac = b / 0.6
+		val = fmt.Sprintf("+%.0f%%", b*100)
+		ready = frac >= 1
+	case st.ClassIgnite > 0:
+		label, gl, col = "IGNITE", "flame", rgba(255, 106, 26, 255)
+		frac = float64(L.igniteN%st.ClassIgnite) / float64(st.ClassIgnite-1)
+		val = fmt.Sprintf("%d / %d", L.igniteN%st.ClassIgnite+1, st.ClassIgnite)
+	case st.ClassStatic:
+		label, gl, col = "STATIC", "bolt", rgba(120, 190, 255, 255)
+		frac = c.static / 100
+		val = fmt.Sprintf("%.0f%%", c.static)
+		ready = c.static >= 100
+		if ready {
+			val = "bounce!"
+		}
+	default:
+		return
+	}
+	y := 934.0
+	if r.hasAbility() {
+		y = 828
+	}
+	w := 250.0
+	u.frame(screen, 22, y-26, w, 52, 0.88)
+	if ready {
+		p := 0.5 + 0.5*math.Sin(L.T*6)
+		drawSprite(screen, sprSoft, u.X(22-20), u.Y(y-40), (w+40)*u.S, 80*u.S, ca(col, 0.15+0.15*p), true)
+	}
+	u.drawEmblem(screen, glyphImage(gl, col), 50, y, 34, 1)
+	u.text(screen, label, fBold, 15, 74, y-19, lighten(col, 0.35), alignLeft)
+	u.text(screen, val, fBold, 14, 22+w-16, y-19, cWhite, alignRight)
+	u.meter(screen, 74, y+4, w-92, frac, col)
 }

@@ -5,6 +5,7 @@ package main
 // commercial games.
 //   Lilita One — display/headings (Juan Montoreano)
 //   Fira Sans  — interface text (Mozilla / Carrois)
+//   Cinzel and Cinzel Decorative — title screen (Natanael Gama)
 
 import _ "embed"
 
@@ -15,4 +16,8 @@ var (
 	fontBold []byte
 	//go:embed assets/fonts/LilitaOne-Regular.ttf
 	fontDisplay []byte
+	//go:embed assets/fonts/CinzelDecorative-Bold.ttf
+	fontRune []byte
+	//go:embed assets/fonts/Cinzel.ttf
+	fontSerif []byte
 )

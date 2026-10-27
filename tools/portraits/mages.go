@@ -31,8 +31,9 @@ func engineer() *Scene {
 	L := Arm{S: V{-0.21, 1.5, 0}, E: V{-0.31, 1.25, 0.0}, W: V{-0.3, 1.03, 0.12}, Hand: V{-0.29, 0.99, 0.15}, Fist: true}
 	headC := V{0, 1.76, 0.02}
 	coreP := V{0.3, 1.12, 0.45}
+	pz := Pose{Yaw: yaw, Roll: 0.11, Nod: 0.05, Turn: -0.12, Neck: V{0, 1.64, 0.01}}
 	s.SDF = func(p V) (float64, int) {
-		q := rotY(p, -yaw)
+		q := pz.local(p)
 		h := newH()
 		cb := coatBody(q, 1.08, 0.3) + folds(q, 9, 0.01, 1.0, 0.4)
 		// open front showing a dark waistcoat
@@ -112,6 +113,12 @@ func engineer() *Scene {
 		s.Sparks = append(s.Sparks, Spark{P: c, Col: V{2.5, 1.0, 0.3}, Size: 1.4 + math.Mod(f*0.7, 1.5)})
 	}
 	s.Embers = V{1.4, 0.8, 0.3}
+	s.Anchors = []Anchor{
+		{Kind: "core", P: rotY(coreP.Add(V{0, -0.01, 0.03}), yaw), Col: V{1, 0.4, 0.1}, Size: 0.8},
+		{Kind: "eye", P: pz.head(headC.Add(V{-0.034, 0.02, 0.105})), Col: V{1, 0.6, 0.2}, Size: 0.55},
+		{Kind: "eye", P: pz.head(headC.Add(V{0.034, 0.02, 0.105})), Col: V{1, 0.6, 0.2}, Size: 0.55},
+		{Kind: "steam", P: pz.body(V{0.08, 1.48, -0.22}), Col: V{0.7, 0.65, 0.6}, Size: 0.8},
+	}
 	return s
 }
 
@@ -140,12 +147,13 @@ func gambler() *Scene {
 		9:  {Alb: hexc(0x1d1712), Rough: 0.5, Sheen: 0.4},
 		10: {Alb: hexc(0x7a1622), Rough: 0.6, Sheen: 0.5}, // cravat
 	}
-	R := Arm{S: V{0.2, 1.5, 0}, E: V{0.34, 1.33, 0.12}, W: V{0.33, 1.52, 0.27}, Hand: V{0.32, 1.57, 0.3}}
-	L := Arm{S: V{-0.2, 1.5, 0}, E: V{-0.3, 1.24, 0.06}, W: V{-0.2, 1.14, 0.26}, Hand: V{-0.17, 1.15, 0.3}}
+	R := Arm{S: V{0.2, 1.5, 0}, E: V{0.34, 1.33, 0.12}, W: V{0.33, 1.52, 0.27}, Hand: V{0.32, 1.57, 0.3}, Curl: 0.8}
+	L := Arm{S: V{-0.2, 1.5, 0}, E: V{-0.3, 1.24, 0.06}, W: V{-0.2, 1.14, 0.26}, Hand: V{-0.17, 1.15, 0.3}, Curl: 0.5}
 	headC := V{0, 1.76, 0.02}
 	coinP := V{0.33, 1.72, 0.32}
+	pz := Pose{Yaw: yaw, Roll: -0.13, Nod: 0.06, Turn: 0.1, Neck: V{0, 1.64, 0.01}}
 	s.SDF = func(p V) (float64, int) {
-		q := rotY(p, -yaw)
+		q := pz.local(p)
 		h := newH()
 		cb := coatBody(q, 1.02, 0.31) + folds(q, 10, 0.012, 1.0, 0.35)
 		h.add(cb, 1)
@@ -188,6 +196,13 @@ func gambler() *Scene {
 		crown = smax(crown, -sdEllipsoid(ho.Sub(V{0, 0.23, 0}), V{0.03, 0.04, 0.12}), 0.02) // pinch
 		h.add(smin(brim, crown, 0.02), 3)
 		h.add(bandY(layer(crown, 0.002, 0.005), ho, 0.085, 0.11), 2)
+		// a long feather tucked into the hat band
+		fpts := []V{{0.09, 0.1, -0.03}, {0.15, 0.16, -0.07}, {0.19, 0.25, -0.12}, {0.18, 0.33, -0.17}}
+		fe := chain(ho, fpts, 0.004, 0.002)
+		vane := chain(ho, fpts, 0.022, 0.006)
+		vane = math.Max(vane, math.Abs(ho.Sub(V{0.15, 0.2, -0.1}).Dot(V{0.3, -0.2, 0.93}.Norm()))-0.003)
+		vane += 0.002 * math.Sin(ho.Y*400)
+		h.add(math.Min(fe, vane), 10)
 		// the coin
 		h.add(sdCyl(rotX(rotZ(p.Sub(rotY(coinP, yaw)), 0.4), 1.2), 0.03, 0.004, 0.002), 6)
 		return h.d, h.m
@@ -204,6 +219,12 @@ func gambler() *Scene {
 	}
 	s.Sparks = append(s.Sparks, Spark{P: cp, Col: V{3, 2.2, 0.6}, Size: 9})
 	s.Embers = V{1.4, 1.1, 0.4}
+	s.Anchors = []Anchor{
+		{Kind: "coin", P: cp, Col: V{1, 0.8, 0.3}, Size: 1},
+		{Kind: "eye", P: pz.head(headC.Add(V{-0.03, 0.0, 0.09})), Col: V{1, 0.8, 0.3}, Size: 0.35},
+		{Kind: "eye", P: pz.head(headC.Add(V{0.03, 0.0, 0.09})), Col: V{1, 0.8, 0.3}, Size: 0.35},
+		{Kind: "glint", P: pz.body(V{0.06, 1.2, 0.14}), Col: V{1, 0.9, 0.6}, Size: 0.4},
+	}
 	return s
 }
 
@@ -224,12 +245,13 @@ func pyromancer() *Scene {
 		7: {Alb: hexc(0x2a1c14), Rough: 0.6, Sheen: 0.3}, // wraps
 		8: {Alb: hexc(0x8a6a3a), Rough: 0.35, Metal: 1, Grime: 0.5},
 	}
-	R := Arm{S: V{0.2, 1.5, 0}, E: V{0.36, 1.32, 0.04}, W: V{0.45, 1.4, 0.2}, Hand: V{0.46, 1.43, 0.24}}
-	L := Arm{S: V{-0.2, 1.5, 0}, E: V{-0.32, 1.25, 0.02}, W: V{-0.36, 1.05, 0.14}, Hand: V{-0.37, 1.0, 0.17}}
+	R := Arm{S: V{0.2, 1.5, 0}, E: V{0.36, 1.32, 0.04}, W: V{0.45, 1.4, 0.2}, Hand: V{0.48, 1.42, 0.24}, Flip: true, Curl: 0.9}
+	L := Arm{S: V{-0.2, 1.5, 0}, E: V{-0.32, 1.25, 0.02}, W: V{-0.36, 1.05, 0.14}, Hand: V{-0.37, 1.0, 0.17}, Curl: 0.7}
 	headC := V{0, 1.76, 0.02}
 	fireP := V{0.46, 1.56, 0.26}
+	pz := Pose{Yaw: yaw, Roll: 0.06, Nod: 0.06, Turn: 0.3, Neck: V{0, 1.64, 0.01}}
 	s.SDF = func(p V) (float64, int) {
-		q := rotY(p, -yaw)
+		q := pz.local(p)
 		h := newH()
 		qz := V{q.X, q.Y, q.Z * 1.25}
 		body := smin(sdCone(qz, V{0, 1.48, 0}, V{0, 0.05, 0.02}, 0.17, 0.3), torso(q, 1.02), 0.06)
@@ -249,7 +271,7 @@ func pyromancer() *Scene {
 		h.add(smin(mant, sh, 0.03), 1)
 		h.add(void, 4)
 		for _, sx := range []float64{-0.03, 0.03} {
-			h.add(sdEllipsoid(q.Sub(headC.Add(V{sx, 0.0, 0.07})), V{0.014, 0.006, 0.006}), 5)
+			h.add(sdEllipsoid(q.Sub(headC.Add(V{sx, 0.0, 0.1})), V{0.014, 0.006, 0.006}), 5)
 		}
 		for _, ar := range []Arm{R, L} {
 			sl := limb(q, ar, 0.06, 0.07) + folds(q.Sub(ar.S), 8, 0.006, -0.4, 0)
@@ -287,6 +309,12 @@ func pyromancer() *Scene {
 		s.Sparks = append(s.Sparks, Spark{P: lh.Add(V{0.03 * math.Sin(f*2), f * 0.03, 0.03 * math.Cos(f*3)}), Col: V{2.4, 0.8, 0.15}, Size: 1.5 + math.Mod(f*0.6, 1.4)})
 	}
 	s.Embers = V{2.0, 0.7, 0.15}
+	s.Anchors = []Anchor{
+		{Kind: "fire", P: fw, Col: V{1, 0.5, 0.12}, Size: 1},
+		{Kind: "ember", P: lh, Col: V{1, 0.4, 0.1}, Size: 0.6},
+		{Kind: "eye", P: pz.head(headC.Add(V{-0.03, 0.0, 0.08})), Col: V{1, 0.45, 0.1}, Size: 0.4},
+		{Kind: "eye", P: pz.head(headC.Add(V{0.03, 0.0, 0.08})), Col: V{1, 0.45, 0.1}, Size: 0.4},
+	}
 	return s
 }
 
@@ -308,12 +336,13 @@ func stormcaller() *Scene {
 		8: {Alb: hexc(0x3a3f48), Rough: 0.6, Cloth: true},
 	}
 	R := Arm{S: V{0.2, 1.5, 0}, E: V{0.34, 1.32, 0.06}, W: V{0.34, 1.5, 0.22}, Hand: V{0.34, 1.54, 0.25}, Fist: true}
-	L := Arm{S: V{-0.2, 1.5, 0}, E: V{-0.35, 1.3, 0.1}, W: V{-0.45, 1.22, 0.28}, Hand: V{-0.47, 1.22, 0.33}}
+	L := Arm{S: V{-0.2, 1.5, 0}, E: V{-0.33, 1.3, 0.1}, W: V{-0.4, 1.24, 0.28}, Hand: V{-0.43, 1.25, 0.33}, Curl: 0.2}
 	headC := V{0, 1.76, 0.02}
 	staffBot := V{0.36, 0.2, 0.3}
-	staffTop := V{0.33, 2.2, 0.2}
+	staffTop := V{0.33, 2.06, 0.2}
+	pz := Pose{Yaw: yaw, Roll: -0.05, Nod: -0.1, Turn: 0.22, Neck: V{0, 1.64, 0.01}}
 	s.SDF = func(p V) (float64, int) {
-		q := rotY(p, -yaw)
+		q := pz.local(p)
 		h := newH()
 		qz := V{q.X, q.Y, q.Z * 1.25}
 		body := smin(sdCone(qz, V{0, 1.48, 0}, V{0, 0.05, 0.02}, 0.17, 0.3), torso(q, 1.04), 0.06)
@@ -334,7 +363,7 @@ func stormcaller() *Scene {
 		wrap := sdEllipsoid(q.Sub(headC.Add(V{0, -0.05, 0.035})), V{0.065, 0.05, 0.062})
 		h.add(wrap+0.003*math.Sin(q.Y*300), 8)
 		for _, sx := range []float64{-0.03, 0.03} {
-			h.add(sdEllipsoid(q.Sub(headC.Add(V{sx, 0.008, 0.075})), V{0.014, 0.005, 0.006}), 5)
+			h.add(sdEllipsoid(q.Sub(headC.Add(V{sx, 0.012, 0.1})), V{0.014, 0.005, 0.006}), 5)
 		}
 		for _, a := range []Arm{R, L} {
 			h.add(limb(q, a, 0.06, 0.06)+folds(q.Sub(a.S), 8, 0.005, -0.4, 0), 1)
@@ -368,6 +397,12 @@ func stormcaller() *Scene {
 	}
 	s.Sparks = append(s.Sparks, Spark{P: top, Col: V{1.5, 3, 6}, Size: 10}, Spark{P: lh, Col: V{1, 2, 4}, Size: 7})
 	s.Embers = V{0.5, 0.9, 1.6}
+	s.Anchors = []Anchor{
+		{Kind: "bolt", P: top, Col: V{0.55, 0.85, 1}, Size: 1},
+		{Kind: "spark", P: lh, Col: V{0.55, 0.85, 1}, Size: 0.7},
+		{Kind: "eye", P: pz.head(headC.Add(V{-0.03, 0.008, 0.08})), Col: V{0.5, 0.85, 1}, Size: 0.4},
+		{Kind: "eye", P: pz.head(headC.Add(V{0.03, 0.008, 0.08})), Col: V{0.5, 0.85, 1}, Size: 0.4},
+	}
 	s.GlowPos = [2]float64{-0.1, 0.4}
 	return s
 }

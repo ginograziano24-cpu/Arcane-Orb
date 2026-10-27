@@ -32,8 +32,10 @@ func (h *H) cut(d, k float64) { h.d = smax(h.d, -d, k) }
 // Arm describes one arm pose in character space.
 type Arm struct {
 	S, E, W V // shoulder, elbow, wrist
-	Hand    V // hand centre
+	Hand    V // hand centre (direction wrist -> hand sets the hand frame)
 	Fist    bool
+	Flip    bool    // palm facing the other way
+	Curl    float64 // relaxed finger curl for open hands
 }
 
 // limb returns the distance to an arm (upper + forearm), radius tapering.
@@ -42,15 +44,81 @@ func limb(q V, a Arm, r0, r1 float64) float64 {
 	return smin(d, sdCone(q, a.E, a.W, mix(r0, r1, 0.5), r1), 0.02)
 }
 
+// hand models a gloved hand in a frame built from the forearm direction:
+// a palm block, four fingers (curled into a fist or relaxed and slightly
+// spread) and a thumb.
 func hand(q V, a Arm) float64 {
-	dir := a.Hand.Sub(a.W).Norm()
-	c := a.Hand
-	if a.Fist {
-		return smin(sdSphere(q.Sub(c), 0.045), sdCone(q, a.W, c, 0.035, 0.04), 0.02)
+	f := a.Hand.Sub(a.W).Norm()
+	up := V{0, 1, 0}
+	if math.Abs(f.Y) > 0.9 {
+		up = V{0, 0, 1}
 	}
-	// flat open palm with fingers suggested
-	d := sdCone(q, a.W, c.Add(dir.Mul(0.05)), 0.034, 0.03)
+	sd := f.Cross(up).Norm() // across the knuckles
+	n := sd.Cross(f)         // back of the hand
+	side := 1.0
+	if a.S.X < 0 {
+		side = -1
+	}
+	if a.Flip {
+		n = n.Mul(-1)
+	}
+	o := q.Sub(a.W)
+	l := V{o.Dot(sd), o.Dot(n), o.Dot(f)}
+	if l.Len() > 0.2 {
+		return l.Len() - 0.1 // cheap bound
+	}
+	palm := sdBox(l.Sub(V{0, 0, 0.04}), V{0.032, 0.012, 0.036}, 0.011)
+	palm = smin(palm, sdCone(l, V{0, 0, -0.01}, V{0, 0, 0.02}, 0.028, 0.03), 0.015)
+	d := palm
+	for i := 0; i < 4; i++ {
+		x := (float64(i) - 1.5) * 0.017
+		ln := 0.05 - 0.008*math.Abs(float64(i)-1.3)
+		b := V{x, 0.002, 0.074}
+		var fd float64
+		if a.Fist {
+			// curled: forward then down and back under the palm
+			m := b.Add(V{0, -0.016, 0.014})
+			e := b.Add(V{0, -0.03, -0.006})
+			fd = math.Min(sdCone(l, b, m, 0.0095, 0.009), sdCone(l, m, e, 0.009, 0.008))
+		} else {
+			spread := x * 0.5
+			m := b.Add(V{spread, -0.006 - a.Curl*0.01, ln * 0.55})
+			e := m.Add(V{spread * 0.6, -0.008 - a.Curl*0.02, ln * 0.45})
+			fd = math.Min(sdCone(l, b, m, 0.0085, 0.0078), sdCone(l, m, e, 0.0078, 0.0068))
+		}
+		d = smin(d, fd, 0.006)
+	}
+	// thumb on the inner side
+	tb := V{-side * 0.026, -0.008, 0.02}
+	tm := tb.Add(V{-side * 0.018, -0.012, 0.024})
+	te := tm.Add(V{side * 0.004, -0.006, 0.024})
+	if a.Fist {
+		te = tm.Add(V{side * 0.02, -0.004, 0.012})
+	}
+	d = smin(d, math.Min(sdCone(l, tb, tm, 0.011, 0.0095), sdCone(l, tm, te, 0.0095, 0.008)), 0.008)
 	return d
+}
+
+// headTilt rotates points around the neck so the head can tilt and turn
+// (roll about Z, nod about X, turn about Y), only near the head.
+func headTilt(q V, neck V, roll, nod, turn float64) V {
+	w := smooth(neck.Y-0.04, neck.Y+0.06, q.Y) * smooth(0.3, 0.18, math.Hypot(q.X-neck.X, q.Z-neck.Z))
+	if w <= 0 {
+		return q
+	}
+	o := q.Sub(neck)
+	o = rotY(o, -turn*w)
+	o = rotX(o, -nod*w)
+	o = rotZ(o, -roll*w)
+	return o.Add(neck)
+}
+
+// sway bends cloth below y0 sideways like a breeze.
+func sway(q V, y0, amt float64) V {
+	w := smooth(y0, y0-1.0, q.Y)
+	q.X -= amt * w * w
+	q.Z += amt * 0.3 * w * w * math.Sin(q.Y*4)
+	return q
 }
 
 // folds displaces cloth radially for vertical drapery.
@@ -201,3 +269,30 @@ func layer(d, off, thick float64) float64 { return math.Abs(d-off) - thick }
 func bandY(d float64, q V, y0, y1 float64) float64 {
 	return smax(d, math.Max(y0-q.Y, q.Y-y1), 0.004)
 }
+
+// Pose holds a character's yaw and head attitude.
+type Pose struct {
+	Yaw, Roll, Nod, Turn float64
+	Neck                 V
+}
+
+// local maps a world sample point into the character's rest space.
+func (z Pose) local(p V) V {
+	q := rotY(p, -z.Yaw)
+	if z.Roll != 0 || z.Nod != 0 || z.Turn != 0 {
+		q = headTilt(q, z.Neck, z.Roll, z.Nod, z.Turn)
+	}
+	return q
+}
+
+// head maps a rest-space point on the head into world space.
+func (z Pose) head(e V) V {
+	o := e.Sub(z.Neck)
+	o = rotZ(o, z.Roll)
+	o = rotX(o, z.Nod)
+	o = rotY(o, z.Turn)
+	return rotY(o.Add(z.Neck), z.Yaw)
+}
+
+// body maps a rest-space body point into world space.
+func (z Pose) body(e V) V { return rotY(e, z.Yaw) }

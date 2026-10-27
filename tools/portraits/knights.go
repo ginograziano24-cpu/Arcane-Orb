@@ -19,14 +19,15 @@ func guardian() *Scene {
 		4: {Alb: V{0.002, 0.002, 0.003}, Rough: 1},
 		5: {Alb: V{}, Emit: V{5, 3.6, 1.6}},
 		6: {Alb: hexc(0x3a281c), Rough: 0.6, Grime: 0.3},
-		7: {Alb: hexc(0x5a5f68), Rough: 0.45, Metal: 1, Grime: 0.6},
+		7: {Alb: hexc(0x5a5f68), Rough: 0.45, Metal: 1, Grime: 0.6, Bump: 0.6, BumpF: 320}, // mail
 		8: {Alb: hexc(0x7a1a1e), Rough: 0.8, Cloth: true},
 	}
 	R := Arm{S: V{0.22, 1.5, 0}, E: V{0.3, 1.24, -0.02}, W: V{0.33, 1.02, 0.08}, Hand: V{0.34, 0.98, 0.11}, Fist: true}
 	L := Arm{S: V{-0.22, 1.5, 0}, E: V{-0.3, 1.27, 0.12}, W: V{-0.17, 1.2, 0.3}, Hand: V{-0.13, 1.21, 0.33}, Fist: true}
 	headC := V{0, 1.76, 0.02}
+	pz := Pose{Yaw: yaw, Roll: 0.05, Nod: 0.07, Turn: -0.18, Neck: V{0, 1.64, 0.01}}
 	s.SDF = func(p V) (float64, int) {
-		q := rotY(p, -yaw)
+		q := pz.local(p)
 		h := newH()
 		tor := torso(q, 1.18)
 		// mail beneath, plate over it
@@ -108,6 +109,13 @@ func guardian() *Scene {
 	sunP := rotY(V{-0.2, 1.18, 0.42}, yaw)
 	s.Lights = []Light{{P: sunP, Col: V{1.2, 0.85, 0.4}, R: 0.15}}
 	s.Embers = V{1.2, 0.9, 0.45}
+	s.Anchors = []Anchor{
+		{Kind: "core", P: rotY(V{-0.2, 1.18, 0.4}, yaw), Col: V{1, 0.8, 0.45}, Size: 1},
+		{Kind: "glint", P: pz.head(headC.Add(V{0.05, 0.08, 0.09})), Col: V{1, 0.95, 0.8}, Size: 0.6},
+		{Kind: "glint", P: pz.body(V{0.35, 0.9, 0.13}), Col: V{1, 0.95, 0.85}, Size: 0.5},
+		{Kind: "eye", P: pz.head(headC.Add(V{-0.03, 0.025, 0.08})), Col: V{1, 0.75, 0.35}, Size: 0.35},
+		{Kind: "eye", P: pz.head(headC.Add(V{0.03, 0.025, 0.08})), Col: V{1, 0.75, 0.35}, Size: 0.35},
+	}
 	return s
 }
 
@@ -132,10 +140,11 @@ func berserker() *Scene {
 	R := Arm{S: V{0.24, 1.5, 0}, E: V{0.38, 1.3, 0.12}, W: V{0.3, 1.42, 0.3}, Hand: V{0.27, 1.47, 0.32}, Fist: true}
 	L := Arm{S: V{-0.24, 1.5, 0}, E: V{-0.36, 1.25, 0.02}, W: V{-0.38, 1.02, 0.1}, Hand: V{-0.38, 0.97, 0.12}, Fist: true}
 	headC := V{0, 1.75, 0.03}
+	pz := Pose{Yaw: yaw, Roll: -0.09, Nod: -0.07, Turn: 0.14, Neck: V{0, 1.63, 0.02}}
 	axeA := V{0.27, 1.47, 0.32}
 	axeB := V{0.05, 2.15, -0.25}
 	s.SDF = func(p V) (float64, int) {
-		q := rotY(p, -yaw)
+		q := pz.local(p)
 		h := newH()
 		tor := torso(q, 1.3)
 		h.add(tor, 6)
@@ -178,13 +187,23 @@ func berserker() *Scene {
 		helm = smin(helm, nose, 0.01)
 		h.add(helm, 1)
 		h.add(sdEllipsoid(o.Sub(V{0, 0.0, 0.02}), V{0.08, 0.09, 0.09}), 4)
+		// braided beard hanging below the face guard, with iron beads
+		for _, sx := range []float64{-0.028, 0.028} {
+			pts := []V{{sx, -0.08, 0.085}, {sx * 1.2, -0.14, 0.1}, {sx * 1.1, -0.21, 0.105}, {sx * 0.9, -0.27, 0.1}}
+			br := chain(o, pts, 0.022, 0.01)
+			br += 0.004 * math.Sin(o.Y*120+sx*50)
+			h.add(br, 2)
+			h.add(sdTorus(o.Sub(V{sx * 1.0, -0.245, 0.103}), 0.015, 0.006), 1)
+		}
+		h.add(sdEllipsoid(o.Sub(V{0, -0.08, 0.075}), V{0.06, 0.03, 0.04})-0.01*fbm(o.Mul(60), 2), 2)
 		for _, sx := range []float64{-1, 1} {
 			pts := []V{{sx * 0.09, 0.06, 0}, {sx * 0.16, 0.08, 0.02}, {sx * 0.22, 0.13, 0.06}, {sx * 0.24, 0.2, 0.11}, {sx * 0.22, 0.25, 0.16}}
 			hd := chain(o, pts, 0.034, 0.005)
 			hd += 0.003 * math.Sin(o.Dot(V{sx, 0.4, 0})*160) // growth ridges
 			h.add(hd, 3)
 		}
-		// great axe over the shoulder
+		// great axe over the shoulder (unaffected by the head tilt)
+		q = rotY(p, -yaw)
 		h.add(sdCone(q, axeA.Sub(axeB.Sub(axeA).Norm().Mul(0.12)), axeB, 0.02, 0.018), 8)
 		ax := q.Sub(axeB.Lerp(axeA, 0.14))
 		dir := axeB.Sub(axeA).Norm()
@@ -203,7 +222,13 @@ func berserker() *Scene {
 		h.add(math.Min(sock, spike), 1)
 		return h.d, h.m
 	}
-	s.Lights = []Light{{P: rotY(headC.Add(V{0, 0.01, 0.12}), yaw), Col: V{0.6, 0.08, 0.03}, R: 0.08}}
+	s.Lights = []Light{{P: pz.head(headC.Add(V{0, 0.01, 0.12})), Col: V{0.6, 0.08, 0.03}, R: 0.08}}
 	s.Embers = V{1.6, 0.4, 0.15}
+	s.Anchors = []Anchor{
+		{Kind: "eye", P: pz.head(headC.Add(V{-0.033, 0.01, 0.09})), Col: V{1, 0.2, 0.08}, Size: 0.5},
+		{Kind: "eye", P: pz.head(headC.Add(V{0.033, 0.01, 0.09})), Col: V{1, 0.2, 0.08}, Size: 0.5},
+		{Kind: "glint", P: pz.body(axeB.Lerp(axeA, 0.14).Add(V{0.15, 0.05, 0.02})), Col: V{1, 0.9, 0.85}, Size: 0.7},
+		{Kind: "ember", P: pz.body(V{0, 1.24, 0.17}), Col: V{1, 0.35, 0.1}, Size: 0.5},
+	}
 	return s
 }

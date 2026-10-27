@@ -15,6 +15,7 @@ import (
 
 type Archetype struct {
 	ID, Name, Desc string
+	Passive        string
 	Cost           int // shards to unlock (0 = free)
 	Apply          func(s *Stats)
 	Ability        string // active ability on right-click / E ("" = none)
@@ -23,39 +24,56 @@ type Archetype struct {
 }
 
 var archetypes = []Archetype{
-	{"guardian", "Guardian", "Wide paddle, 120 health and a barrier every level. Slightly weaker hits.", 0, func(s *Stats) {
-		s.PaddleWidth += 0.2
-		s.MaxHP += 20
-		s.BarrierPerLevel++
-		s.DmgMult *= 0.9
-	}, "", "", 0},
-	{"berserker", "Berserker", "Narrow paddle but heavy, critical-focused strikes.", 0, func(s *Stats) {
-		s.PaddleWidth -= 0.15
-		s.CritChance += 0.1
-		s.CritMult += 0.5
-		s.Damage += 0.5
-	}, "", "", 0},
-	{"arcane", "Arcanist", "Starts each run attuned to a random element.", 0, func(s *Stats) {
-		s.StartElement = "random"
-	}, "", "", 0},
-	{"engineer", "Engineer", "Paddle-mounted lasers from the very first level.", 60, func(s *Stats) {
-		s.LaserInterval = 2.0
-	}, "", "", 0},
-	{"lucky", "Gambler", "+40% gold, +60% power-ups and a free shop reroll.", 90, func(s *Stats) {
-		s.GoldMult += 0.4
-		s.Luck += 0.6
-		s.FreeRerolls++
-	}, "", "", 0},
-	{"pyro", "Pyromancer", "Every 4th hit ignites. Fire burns 50% hotter.", 120, func(s *Stats) {
-		s.ClassIgnite = 4
-		s.BurnMult += 0.5
-		s.BurnChance += 0.06
-	}, "Firestorm", "Set the two lowest rows ablaze.", 22},
-	{"storm", "Stormcaller", "Every paddle bounce arcs lightning. Lightning +30%.", 120, func(s *Stats) {
-		s.StaticPaddle = true
-		s.ChainMult += 0.3
-		s.ChainCount++
-	}, "Thunderstrike", "Smite the toughest brick; it chains to 4 more.", 18},
+	{ID: "guardian", Name: "Guardian", Passive: "Parry",
+		Desc: "Catch the orb on the centre of your paddle to loose a holy wave up that column. Wide paddle, 120 health, a barrier every chamber, slightly weaker hits.",
+		Apply: func(s *Stats) {
+			s.PaddleWidth += 0.2
+			s.MaxHP += 20
+			s.BarrierPerLevel++
+			s.DmgMult *= 0.9
+			s.ClassParry = true
+		}},
+	{ID: "berserker", Name: "Berserker", Passive: "Rampage",
+		Desc: "Every brick you break adds Rage: +4% damage each, up to +80%. Rage fades after 4 seconds without a break, or when you drop the orb. Narrow paddle, +10% crit.",
+		Apply: func(s *Stats) {
+			s.PaddleWidth -= 0.15
+			s.CritChance += 0.1
+			s.CritMult += 0.5
+			s.ClassRage = true
+		}},
+	{ID: "arcane", Name: "Arcanist", Passive: "Attunement",
+		Desc: "Your orb cycles Fire, Frost, Storm and Void every 8 seconds; each hit has a 35% chance to unleash the current element.",
+		Apply: func(s *Stats) {
+			s.ClassAttune = true
+		}},
+	{ID: "engineer", Name: "Engineer", Passive: "Overclock", Cost: 60,
+		Desc: "Paddle lasers fire every 2 seconds. Hold the paddle still for 1.5 seconds to overclock: the next volley is a piercing beam for double damage.",
+		Apply: func(s *Stats) {
+			s.LaserInterval = 2.0
+			s.ClassOverclock = true
+		}},
+	{ID: "lucky", Name: "Gambler", Passive: "High Roller", Cost: 90,
+		Desc: "Gold is power: +1% damage for every 8 gold you carry, up to +60%. Spend or hoard? +40% gold, +30% power-ups and a free shop reroll.",
+		Apply: func(s *Stats) {
+			s.GoldMult += 0.4
+			s.Luck += 0.3
+			s.FreeRerolls++
+			s.ClassHighRoller = true
+		}},
+	{ID: "pyro", Name: "Pyromancer", Passive: "Stoke", Cost: 120,
+		Desc: "Every 4th hit ignites. Hitting a burning brick stokes it: +50% damage and the fire is renewed. Fire burns 50% hotter.",
+		Apply: func(s *Stats) {
+			s.ClassIgnite = 4
+			s.BurnMult += 0.5
+			s.ClassStoke = true
+		}, Ability: "Firestorm", AbilityDesc: "Set the two lowest rows ablaze.", Cooldown: 22},
+	{ID: "storm", Name: "Stormcaller", Passive: "Static Charge", Cost: 120,
+		Desc: "Sweep the paddle back and forth to build static. When full, your next bounce supercharges the orb: for 4 seconds every hit arcs lightning. Lightning +30%.",
+		Apply: func(s *Stats) {
+			s.ChainMult += 0.3
+			s.ChainCount++
+			s.ClassStatic = true
+		}, Ability: "Thunderstrike", AbilityDesc: "Smite the toughest brick; it chains to 4 more.", Cooldown: 18},
 }
 
 // ---------------------------------------------------------------- map

@@ -1,4 +1,4 @@
-ARCANE ORB  -  build 0.7
+ARCANE ORB  -  build 0.8
 =====================================
 
 Run ArcaneOrb.exe. No install needed. Starts fullscreen at your
@@ -10,6 +10,32 @@ CONTROLS
   Click / Space .... launch orb, fire   Shift ........... faster keyboard move
   Esc / P .......... pause              F11 ............. fullscreen
   Right-click / E .. class ability (Pyromancer, Stormcaller)
+
+NEW IN 0.8  -  the arcane hall, living origins, real passives
+  - New dark title screen: a moonlit gothic hall drawn live by a shader,
+    with rolling violet mist, light shafts, a mirrored stone floor and a
+    turning magic circle under the hovering orb; floating runes; new
+    Cinzel lettering and a darker violet-and-gold interface theme
+  - Origin portraits come alive: breathing, mouse parallax, glowing
+    eyes, live lightning on the Stormcaller's staff, licking flames for
+    the Pyromancer, orbiting sparks on the Arcanist's orb, steam from the
+    Engineer's pack, glints on steel and gold
+  - Refined models: proper hands with fingers, head tilts and poses, a
+    braided beard for the Berserker, a feathered hat for the Gambler,
+    chainmail for the Guardian
+  - Every origin now has a passive that changes how you play:
+      Guardian    PARRY        centre-of-paddle catches loose a holy wave
+      Berserker   RAMPAGE      each break adds Rage (+4% dmg, max +80%);
+                               it fades after 4s without a break
+      Arcanist    ATTUNEMENT   orb cycles Fire/Frost/Storm/Void every 8s,
+                               35% chance per hit to unleash it
+      Engineer    OVERCLOCK    hold still 1.5s and the next laser volley
+                               is a piercing double-damage beam
+      Gambler     HIGH ROLLER  +1% damage per 8 gold carried (max +60%)
+      Pyromancer  STOKE        hits on burning bricks +50% and re-ignite
+      Stormcaller STATIC       sweep the paddle to charge; the next bounce
+                               supercharges the orb with chain lightning
+    Each passive has a live meter on the HUD (bottom left)
 
 NEW IN 0.7  -  title screen and origins
   - New title screen: a hovering arcane orb rendered live by a shader,
@@ -119,8 +145,8 @@ Save file: %APPDATA%\ArcaneOrb\save.json
 
 LICENSES
   Engine: Ebitengine (Apache-2.0).
-  Fonts: Lilita One by Juan Montoreano and Fira Sans by Mozilla /
-  Carrois, both under the SIL Open Font License 1.1 (license texts in
+  Fonts: Lilita One by Juan Montoreano, Fira Sans by Mozilla /
+  Carrois, Cinzel and Cinzel Decorative by Natanael Gama, all under the SIL Open Font License 1.1 (license texts in
   the source archive under assets/fonts/).
   All other art, audio and music were made for this game: backdrops are
   painted by the included tools/paint_backdrops.py, models and sounds are

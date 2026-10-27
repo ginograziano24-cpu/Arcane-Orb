@@ -1027,6 +1027,14 @@ var recipes = map[string]recipe{
 			b.pluck(0.02, semis(root/2, n), 0.998, 0.35, 0.35)
 		})
 	}},
+	"parry": {3, func(p []int, v int, r *rand.Rand) []byte {
+		return one(1.6, r.Int63(), verbBig.with(0.6), func(b *sb) {
+			b.impact(0, 0.5)
+			b.modes(0, 523.25*float64(1+v%3)/2+523.25, []float64{1, 2.76, 5.4}, []float64{1, 0.45, 0.2}, []float64{3, 6, 10}, 0.5, 0.001)
+			b.glass(0.02, 2093, 0.3)
+			b.whoosh(0, 0.25, 600, 5000, 0.35)
+		})
+	}},
 	"abilready": {1, func(p []int, v int, r *rand.Rand) []byte {
 		return one(1.2, r.Int63(), verbMid.with(0.4), func(b *sb) {
 			b.glass(0, 1318.5, 0.5)

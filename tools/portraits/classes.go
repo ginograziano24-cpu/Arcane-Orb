@@ -55,12 +55,13 @@ func arcanist() *Scene {
 			return a
 		}},
 	}
-	R := Arm{S: V{0.19, 1.52, 0.0}, E: V{0.33, 1.27, 0.08}, W: V{0.42, 1.2, 0.27}, Hand: V{0.44, 1.21, 0.32}}
+	R := Arm{S: V{0.19, 1.52, 0.0}, E: V{0.33, 1.27, 0.08}, W: V{0.42, 1.2, 0.27}, Hand: V{0.45, 1.23, 0.32}, Flip: true, Curl: 0.6}
 	L := Arm{S: V{-0.19, 1.52, 0.0}, E: V{-0.3, 1.24, 0.05}, W: V{-0.31, 1.06, 0.16}, Hand: V{-0.31, 1.05, 0.2}, Fist: true}
 	orbC := rotY(V{0.46, 1.36, 0.34}, yaw)
 	headC := V{0, 1.77, 0.02}
+	pz := Pose{Yaw: yaw, Roll: 0.07, Nod: 0.14, Turn: 0.32, Neck: V{0, 1.64, 0.01}}
 	s.SDF = func(p V) (float64, int) {
-		q := rotY(p, -yaw)
+		q := pz.local(p)
 		h := newH()
 		qz := V{q.X, q.Y, q.Z * 1.25}
 		body := smin(sdCone(qz, V{0, 1.48, 0}, V{0, 0.05, 0.02}, 0.17, 0.33), torso(q, 1.05), 0.06)
@@ -138,5 +139,11 @@ func arcanist() *Scene {
 		s.Sparks = append(s.Sparks, Spark{P: pp, Col: V{1.2, 0.8, 3}, Size: 1.6 + 2*math.Mod(float64(i)*0.73, 1)})
 	}
 	s.Embers = V{0.6, 0.45, 1.4}
+	s.Anchors = []Anchor{
+		{Kind: "orb", P: orbC, Col: V{0.75, 0.5, 1}, Size: 1},
+		{Kind: "core", P: rotY(V{-0.3, 2.175, 0.15}, yaw), Col: V{0.7, 0.55, 1}, Size: 0.5},
+		{Kind: "eye", P: pz.head(headC.Add(V{-0.025, 0.004, 0.08})), Col: V{0.7, 0.5, 1}, Size: 0.35},
+		{Kind: "eye", P: pz.head(headC.Add(V{0.025, 0.004, 0.08})), Col: V{0.7, 0.5, 1}, Size: 0.35},
+	}
 	return s
 }

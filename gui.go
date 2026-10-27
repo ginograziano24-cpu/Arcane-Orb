@@ -37,20 +37,24 @@ type Theme struct {
 
 func rgba(r, g, b, a uint8) color.RGBA { return color.RGBA{r, g, b, a} }
 
-var themes = [6]Theme{
-	WNeon:    {styleHolo, rgba(26, 12, 52, 228), rgba(8, 4, 24, 240), rgba(255, 84, 214, 255), rgba(96, 232, 255, 140), rgba(96, 232, 255, 255)},
-	WMeadow:  {styleBrass, rgba(58, 41, 28, 234), rgba(31, 21, 14, 244), rgba(224, 180, 98, 255), rgba(255, 232, 180, 80), rgba(164, 226, 112, 255)},
-	WCaverns: {styleCrystal, rgba(18, 28, 56, 228), rgba(7, 11, 30, 240), rgba(132, 216, 255, 255), rgba(204, 164, 255, 120), rgba(172, 132, 255, 255)},
-	WRuins:   {styleStone, rgba(60, 51, 41, 236), rgba(33, 27, 21, 244), rgba(234, 188, 94, 255), rgba(178, 158, 126, 110), rgba(92, 208, 194, 255)},
-	WClouds:  {styleCloud, rgba(46, 60, 100, 222), rgba(22, 30, 62, 236), rgba(250, 244, 228, 255), rgba(242, 206, 120, 170), rgba(255, 214, 128, 255)},
-	WMachine: {styleMetal, rgba(46, 48, 54, 240), rgba(21, 22, 26, 246), rgba(158, 164, 176, 255), rgba(255, 172, 48, 140), rgba(255, 158, 44, 255)},
+// themeArcane frames the front end (title, origins, codex...).
+const themeArcane = 6
+
+var themes = [7]Theme{
+	WNeon:       {styleHolo, rgba(26, 12, 52, 228), rgba(8, 4, 24, 240), rgba(255, 84, 214, 255), rgba(96, 232, 255, 140), rgba(96, 232, 255, 255)},
+	WMeadow:     {styleBrass, rgba(58, 41, 28, 234), rgba(31, 21, 14, 244), rgba(224, 180, 98, 255), rgba(255, 232, 180, 80), rgba(164, 226, 112, 255)},
+	WCaverns:    {styleCrystal, rgba(18, 28, 56, 228), rgba(7, 11, 30, 240), rgba(132, 216, 255, 255), rgba(204, 164, 255, 120), rgba(172, 132, 255, 255)},
+	WRuins:      {styleStone, rgba(60, 51, 41, 236), rgba(33, 27, 21, 244), rgba(234, 188, 94, 255), rgba(178, 158, 126, 110), rgba(92, 208, 194, 255)},
+	WClouds:     {styleCloud, rgba(46, 60, 100, 222), rgba(22, 30, 62, 236), rgba(250, 244, 228, 255), rgba(242, 206, 120, 170), rgba(255, 214, 128, 255)},
+	WMachine:    {styleMetal, rgba(46, 48, 54, 240), rgba(21, 22, 26, 246), rgba(158, 164, 176, 255), rgba(255, 172, 48, 140), rgba(255, 158, 44, 255)},
+	themeArcane: {styleStone, rgba(22, 13, 38, 232), rgba(8, 5, 17, 244), rgba(196, 160, 92, 255), rgba(168, 120, 255, 110), rgba(184, 140, 255, 255)},
 }
 
 // themeWorld picks which world's framing the current screen uses.
 func (g *Game) themeWorld() int {
 	switch g.state {
 	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex:
-		return WNeon
+		return themeArcane
 	case StLevel, StPause:
 		if g.level != nil {
 			return g.level.Biome.ID
@@ -60,7 +64,7 @@ func (g *Game) themeWorld() int {
 			return g.level.Biome.ID
 		}
 		if g.run == nil || g.prevState == StMenu {
-			return WNeon
+			return themeArcane
 		}
 	}
 	if g.run != nil {

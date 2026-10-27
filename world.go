@@ -197,6 +197,11 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	}
 	// lasers
 	for _, bl := range L.Bolts {
+		if bl.Mult > 1 { // overclocked beam
+			B.Box(bl.X-0.12, 0.48, bl.Z-1.2, bl.X+0.12, 0.66, bl.Z+0.6, color.RGBA{255, 230, 170, 255}, sprWhite, 0.9)
+			B.Billboard(V3{bl.X, 0.55, bl.Z}, 2.4, sprSoft, alpha(color.RGBA{255, 150, 50, 255}, 0.8), true)
+			continue
+		}
 		B.Box(bl.X-0.07, 0.5, bl.Z-0.5, bl.X+0.07, 0.62, bl.Z+0.5, color.RGBA{255, 220, 220, 255}, sprWhite, 0.8)
 		B.Billboard(V3{bl.X, 0.55, bl.Z}, 1.2, sprSoft, alpha(color.RGBA{255, 60, 60, 255}, 0.6), true)
 	}
@@ -210,6 +215,11 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 			glow, core = color.RGBA{255, 130, 40, 255}, color.RGBA{255, 230, 170, 255}
 		} else if g.run.Stats.MeteorHeart {
 			glow, core = color.RGBA{255, 90, 60, 255}, color.RGBA{255, 200, 170, 255}
+		}
+		if b.Storm > 0 {
+			glow, core = color.RGBA{120, 190, 255, 255}, color.RGBA{225, 240, 255, 255}
+		} else if g.run.Stats.ClassAttune && !fire {
+			glow = attuneCols[L.cls.attuneEl]
 		}
 		a := 1.0
 		if b.Phantom > 0 {

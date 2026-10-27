@@ -70,6 +70,7 @@ type Ball struct {
 	Momentum        int
 	Phantom         float64 // >0: temporary orb with this many seconds left
 	Rico            int     // wall bounces since the paddle (Ricochet)
+	Storm           float64 // Stormcaller supercharge seconds left
 }
 
 type Power int
@@ -121,7 +122,12 @@ type Coin struct {
 	T                   float64
 }
 
-type Bolt struct{ X, Z float64 }
+type Bolt struct {
+	X, Z   float64
+	Pierce int     // bricks it can pass through (overclocked beam)
+	Mult   float64 // damage multiplier
+	last   *Brick
+}
 
 type Rock struct {
 	X, Z, TX float64
@@ -179,6 +185,8 @@ type Boss struct {
 // ---------------------------------------------------------------- level
 
 type Level struct {
+	cls                   classState
+	lastPadX              float64
 	igniteN               int
 	abilReadyT, abilFlash float64
 	g                     *Game
@@ -457,6 +465,7 @@ func (L *Level) Update(dt float64, in Input) {
 		}
 	}
 	L.updateAbility(dt, in)
+	L.updatePassives(dt)
 	L.abilFlash = math.Max(0, L.abilFlash-dt*2)
 	L.stun -= dt
 	L.hurtFlash = math.Max(0, L.hurtFlash-dt*2)
@@ -653,7 +662,14 @@ func (L *Level) release() bool {
 
 func (L *Level) fireLaser() {
 	half := L.PaddleW / 2
-	L.Bolts = append(L.Bolts, &Bolt{L.PaddleX - half + 0.4, PaddleZ + 0.5}, &Bolt{L.PaddleX + half - 0.4, PaddleZ + 0.5})
+	pierce, mult := 0, 1.0
+	if L.cls.overclock {
+		L.cls.overclock = false
+		L.cls.stillT = 0
+		pierce, mult = 3, 2
+		L.g.snd.PlayVol("zap", 0.6)
+	}
+	L.Bolts = append(L.Bolts, &Bolt{X: L.PaddleX - half + 0.4, Z: PaddleZ + 0.5, Pierce: pierce, Mult: mult}, &Bolt{X: L.PaddleX + half - 0.4, Z: PaddleZ + 0.5, Pierce: pierce, Mult: mult})
 	L.g.snd.Play("laser")
 }
 
@@ -830,6 +846,7 @@ func (L *Level) collidePaddle(b *Ball) {
 	ang := t * 62 * math.Pi / 180
 	b.VX, b.VZ = sp*math.Sin(ang), sp*math.Cos(ang)
 	b.Z = z1 + b.R
+	L.passiveOnPaddle(b, t)
 	b.PierceLeft = r.Stats.Pierce
 	b.Momentum = 0
 	b.Rico = 0
@@ -1035,6 +1052,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 		L.Combo += 3
 		L.Rings = append(L.Rings, &Ring{X: b.X(), Z: b.Z(), MaxR: 2.2, Life: 0.3, Max: 0.3, Col: color.RGBA{255, 150, 90, 255}})
 	}
+	dmg = L.passiveDamage(b, dmg)
 	if crit {
 		dmg *= s.CritMult
 	}
@@ -1060,6 +1078,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 		}
 		destroyed, solid = L.damage(b, h)
 	}
+	L.passiveOnHit(ball, b, dmg)
 	if b.Kind == levelgen.Steel {
 		return false, true
 	}
@@ -1176,6 +1195,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	r := g.run
 	s := &r.Stats
 	b.Alive = false
+	L.passiveOnBreak()
 	L.removeFromColumn(b)
 	if b.Kind.Required() && !b.BossPart {
 		L.Left--
@@ -1562,6 +1582,7 @@ func (L *Level) loseBall() {
 	L.Drops = nil
 	L.Bolts = nil
 	L.Combo = 0
+	L.passiveOnLoss()
 	L.spawnServe()
 }
 
@@ -1839,14 +1860,23 @@ func (L *Level) updateDrops(dt float64) {
 		c := int(math.Floor((bl.X + HalfW) / CellW))
 		rr := int(math.Floor((GridTopZ - bl.Z) / CellD))
 		if !hit && rr >= 0 && rr < levelgen.MaxRows && c >= 0 && c < levelgen.Cols {
-			if b := L.Grid[rr][c]; b != nil && b.Alive {
+			if b := L.Grid[rr][c]; b != nil && b.Alive && b != bl.last {
 				st := &L.g.run.Stats
-				L.damage(b, Hit{Dmg: math.Max(1, st.Damage*0.6) * (1 + st.LaserDmg), Silent: true})
+				bm := bl.Mult
+				if bm == 0 {
+					bm = 1
+				}
+				L.damage(b, Hit{Dmg: math.Max(1, st.Damage*0.6) * (1 + st.LaserDmg) * bm, Silent: true, Void: bl.Pierce > 0})
 				L.sparks(V3{bl.X, 0.6, bl.Z}, 5, color.RGBA{255, 100, 100, 255}, 4)
 				if st.TeslaCoil {
 					L.lightning(bl.X, bl.Z, 2, math.Max(1, st.Damage*0.5), b, false)
 				}
 				hit = true
+				if bl.Pierce > 0 {
+					bl.Pierce--
+					bl.last = b
+					hit = false
+				}
 			}
 		}
 		if hit {

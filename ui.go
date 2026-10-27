@@ -19,7 +19,7 @@ type UI struct {
 	MX, MY    float64 // mouse in virtual coords
 	Click     bool
 	faces     map[faceKey]text.Face
-	fonts     [3]*opentype.Font
+	fonts     [5]*opentype.Font
 	hoverID   string
 	lastHover string
 	snd       *Sounds
@@ -35,6 +35,8 @@ const (
 	fReg fontID = iota
 	fBold
 	fTitle
+	fRune  // Cinzel Decorative: arcane titles
+	fSerif // Cinzel: menu items
 )
 
 type faceKey struct {
@@ -52,7 +54,7 @@ const (
 
 func newUI(snd *Sounds) *UI {
 	u := &UI{faces: map[faceKey]text.Face{}, snd: snd, anims: map[string]float64{}}
-	for i, data := range [][]byte{fontRegular, fontBold, fontDisplay} {
+	for i, data := range [][]byte{fontRegular, fontBold, fontDisplay, fontRune, fontSerif} {
 		f, err := opentype.Parse(data)
 		if err != nil {
 			panic(err)

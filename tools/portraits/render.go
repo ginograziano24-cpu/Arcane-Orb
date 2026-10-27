@@ -9,6 +9,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -207,8 +208,17 @@ type Spark struct {
 	Size float64
 }
 
+// Anchor marks a point the game animates on top of the portrait.
+type Anchor struct {
+	Kind string // eye, orb, fire, bolt, coin, core, ember
+	P    V
+	Col  V
+	Size float64
+}
+
 type Scene struct {
 	Name    string
+	Anchors []Anchor
 	SDF     func(p V) (float64, int)
 	Mats    map[int]Mat
 	Key     V // key light direction (towards light)
@@ -743,6 +753,24 @@ func drawBolt(im *img, c cam, a Arc, W, H int, sc float64, r *rand.Rand, kids in
 	}
 }
 
+// writeAnchors stores the anchors projected to normalised image coords.
+func writeAnchors(s *Scene, W, H int, path string) {
+	c := newCam(s, float64(W)/float64(H))
+	var out []map[string]any
+	for _, a := range s.Anchors {
+		u, v, ok := c.project(a.P)
+		if !ok {
+			continue
+		}
+		out = append(out, map[string]any{
+			"kind": a.Kind, "x": (u + 1) / 2, "y": (1 - v) / 2,
+			"r": a.Col.X, "g": a.Col.Y, "b": a.Col.Z, "size": a.Size,
+		})
+	}
+	b, _ := json.MarshalIndent(out, "", " ")
+	os.WriteFile(path, b, 0o644)
+}
+
 func main() {
 	scale := 1.0
 	only := ""
@@ -785,6 +813,7 @@ func main() {
 		f, _ = os.Create(filepath.Join(outDir, s.Name+"_a.png"))
 		png.Encode(f, al)
 		f.Close()
+		writeAnchors(s, W, H, filepath.Join(outDir, s.Name+".json"))
 		fmt.Println("wrote", s.Name)
 	}
 }
