@@ -13,3 +13,9 @@ func steamActive() bool       { return false }
 
 func steamSync(ids []string) {}
 func steamShutdown()         {}
+
+func steamLBAvailable() bool                                                                  { return false }
+func steamLBFind(name string)                                                                 {}
+func steamLBDownload(kind, from, to int)                                                      {}
+func steamLBUpload(score int, details []int32)                                                {}
+func steamLBPoll(onFound func(), onEntries func(tag string, rows []lbRow), onUploaded func()) {}

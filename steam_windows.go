@@ -24,6 +24,21 @@ type steamBridge struct {
 	runCallbacks, setAch     *syscall.LazyProc
 	storeStats, getAch, deck *syscall.LazyProc
 	shutdown                 *syscall.LazyProc
+	friends                  uintptr
+	dll                      *syscall.LazyDLL
+}
+
+// iface returns the first Steam interface accessor that exists (newest
+// first), so the bridge works across SDK versions.
+func iface(dll *syscall.LazyDLL, names ...string) uintptr {
+	for _, n := range names {
+		if p := dll.NewProc(n); p.Find() == nil {
+			if r, _, _ := p.Call(); r != 0 {
+				return r
+			}
+		}
+	}
+	return 0
 }
 
 var steam steamBridge
@@ -66,15 +81,11 @@ func steamInit() (relaunch bool) {
 	} else {
 		return false
 	}
-	us, _, _ := dll.NewProc("SteamAPI_SteamUserStats_v013").Call()
-	if us == 0 { // older SDKs
-		if p := dll.NewProc("SteamAPI_SteamUserStats_v012"); p.Find() == nil {
-			us, _, _ = p.Call()
-		}
-	}
-	ut, _, _ := dll.NewProc("SteamAPI_SteamUtils_v011").Call()
+	us := iface(dll, "SteamAPI_SteamUserStats_v013", "SteamAPI_SteamUserStats_v012")
+	ut := iface(dll, "SteamAPI_SteamUtils_v011", "SteamAPI_SteamUtils_v010")
+	fr := iface(dll, "SteamAPI_SteamFriends_v018", "SteamAPI_SteamFriends_v017")
 	steam = steamBridge{
-		ok: us != 0, stats: us, utils: ut,
+		ok: us != 0, stats: us, utils: ut, friends: fr, dll: dll,
 		runCallbacks: dll.NewProc("SteamAPI_RunCallbacks"),
 		setAch:       dll.NewProc("SteamAPI_ISteamUserStats_SetAchievement"),
 		storeStats:   dll.NewProc("SteamAPI_ISteamUserStats_StoreStats"),

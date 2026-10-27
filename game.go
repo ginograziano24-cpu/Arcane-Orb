@@ -254,6 +254,7 @@ func (g *Game) Update() error {
 	g.bannerT -= dt
 	steamTick()
 	g.checkAchievements()
+	g.lbTick()
 
 	if inpututil.IsKeyJustPressed(ebiten.KeyF11) || (inpututil.IsKeyJustPressed(ebiten.KeyEnter) && ebiten.IsKeyPressed(ebiten.KeyAlt)) {
 		g.settings.Fullscreen = !g.settings.Fullscreen
@@ -611,6 +612,7 @@ func (g *Game) endRun(win bool) {
 	g.boardRank = 0
 	if r.Endless && !win {
 		g.boardRank = g.save.addToBoard(EndlessEntry{Score: score, Loop: r.Loop(), Depth: r.Depth, Class: r.Arch.Name, Asc: r.Asc, Date: time.Now().Format("2006-01-02")})
+		lbSubmit(r, score)
 	}
 	if r.Daily {
 		k := r.SeedCode
@@ -853,6 +855,7 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 		}
 	}
 	g.drawRankBadge(s, 36, 32)
+	g.drawLeaderboard(s, 1588, 300, 300)
 	stats := fmt.Sprintf("Runs %d   ·   Wins %d   ·   Best act %d   ·   Best score %d   ·   Best combo %d",
 		g.save.Runs, g.save.Wins, g.save.BestAct, g.save.BestScore, g.save.MaxCombo)
 	if g.save.BestLoop > 0 {
