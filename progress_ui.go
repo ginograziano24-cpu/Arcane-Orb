@@ -288,6 +288,9 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 		}
 		op.ColorScale.ScaleAlpha(float32(k))
 		s.DrawImage(img, op)
+		// soften the painting's edges into the scene
+		fillPath(s, boxPath(u.X(-10), u.Y(py-10), 520*u.S, 330*u.S, 0, false), rgba(4, 3, 10, 235), rgba(4, 3, 10, 0), vgrad(u.Y(py-10), u.Y(py+320)), false)
+		fillPath(s, boxPath(u.X(-10), u.Y(py), 140*u.S, ph*u.S, 0, false), rgba(4, 3, 10, 200), rgba(4, 3, 10, 0), hgrad(u.X(-10), u.X(130)), false)
 	}
 	u.panel(s, 400, 60, 1120, 960, 0.92)
 	u.heading(s, title, 90, 80, col, 1)
