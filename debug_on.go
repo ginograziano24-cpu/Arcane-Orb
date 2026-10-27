@@ -12,7 +12,13 @@ import (
 )
 
 // Developer shortcuts, only compiled with -tags debug.
+// iconSheet > 0 shows a page of Steam achievement icons for capture.
+var iconSheet int
+
 func debugMenuKeys(g *Game) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF6) {
+		iconSheet = (iconSheet + 1) % 3
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyF8) { // unlock the next achievement
 		for _, a := range achievements {
 			if !g.save.Ach[a.ID] {
@@ -100,5 +106,24 @@ func debugMapKeys(g *Game) {
 				}
 			}
 		}
+	}
+}
+
+// debugOverlay draws the achievement icon sheet (256px cells on a grid of
+// 7x4 at 20,20 with an 8px gap) so a capture script can crop Steam icons.
+func debugOverlay(g *Game, dst *ebiten.Image) {
+	if iconSheet == 0 {
+		return
+	}
+	u := g.ui
+	fillRect(dst, 0, 0, 4000, 4000, rgba(0, 0, 0, 255))
+	for i := 0; i < 28; i++ {
+		k := (iconSheet-1)*28 + i
+		if k >= len(achievements) {
+			break
+		}
+		x := 20 + float64(i%7)*264
+		y := 20 + float64(i/7)*264
+		drawAchIcon(u, dst, &achievements[k], x, y, 256)
 	}
 }

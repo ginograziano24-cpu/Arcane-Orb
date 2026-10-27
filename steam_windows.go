@@ -4,8 +4,8 @@ package main
 
 import (
 	"os"
-	"runtime"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -23,6 +23,7 @@ type steamBridge struct {
 	stats, utils             uintptr
 	runCallbacks, setAch     *syscall.LazyProc
 	storeStats, getAch, deck *syscall.LazyProc
+	shutdown                 *syscall.LazyProc
 }
 
 var steam steamBridge
@@ -66,6 +67,11 @@ func steamInit() (relaunch bool) {
 		return false
 	}
 	us, _, _ := dll.NewProc("SteamAPI_SteamUserStats_v013").Call()
+	if us == 0 { // older SDKs
+		if p := dll.NewProc("SteamAPI_SteamUserStats_v012"); p.Find() == nil {
+			us, _, _ = p.Call()
+		}
+	}
 	ut, _, _ := dll.NewProc("SteamAPI_SteamUtils_v011").Call()
 	steam = steamBridge{
 		ok: us != 0, stats: us, utils: ut,
@@ -74,8 +80,36 @@ func steamInit() (relaunch bool) {
 		storeStats:   dll.NewProc("SteamAPI_ISteamUserStats_StoreStats"),
 		getAch:       dll.NewProc("SteamAPI_ISteamUserStats_GetAchievement"),
 		deck:         dll.NewProc("SteamAPI_ISteamUtils_IsSteamRunningOnSteamDeck"),
+		shutdown:     dll.NewProc("SteamAPI_Shutdown"),
 	}
 	return false
+}
+
+// steamSync pushes achievements earned while offline (or before the game
+// was on Steam) up to Steam in a single store.
+func steamSync(ids []string) {
+	if !steam.ok {
+		return
+	}
+	dirty := false
+	for _, id := range ids {
+		if !steamHas(id) {
+			b := cstr(id)
+			steam.setAch.Call(steam.stats, uintptr(unsafe.Pointer(&b[0])))
+			runtime.KeepAlive(b)
+			dirty = true
+		}
+	}
+	if dirty {
+		steam.storeStats.Call(steam.stats)
+	}
+}
+
+func steamShutdown() {
+	if steam.ok {
+		steam.shutdown.Call()
+		steam.ok = false
+	}
 }
 
 func steamTick() {

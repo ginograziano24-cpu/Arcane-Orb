@@ -162,6 +162,17 @@ func NewGame() *Game {
 	g.post = newPost()
 	g.applySettings()
 	g.titleCache = map[string]*ebiten.Image{}
+	// achievements earned before Steam was present catch up now
+	var have []string
+	for id, ok := range g.save.Ach {
+		if ok {
+			have = append(have, id)
+		}
+	}
+	steamSync(have)
+	if steamOnDeck() {
+		g.padActive = true // the Deck is a controller first
+	}
 	return g
 }
 
@@ -229,6 +240,7 @@ func (g *Game) Layout(ow, oh int) (int, int) {
 func (g *Game) Update() error {
 	if g.quit {
 		writeSave(&g.save)
+		steamShutdown()
 		return ebiten.Termination
 	}
 	now := time.Now()
@@ -746,6 +758,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 	g.drawAchievementPopup(screen)
 	g.drawTransition(screen, ddt)
+	debugOverlay(g, screen)
 }
 
 func (g *Game) ensureSky(b *Biome, seed int64) {

@@ -10,3 +10,6 @@ func steamUnlock(id string)   {}
 func steamHas(id string) bool { return false }
 func steamOnDeck() bool       { return false }
 func steamActive() bool       { return false }
+
+func steamSync(ids []string) {}
+func steamShutdown()         {}

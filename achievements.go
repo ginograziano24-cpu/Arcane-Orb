@@ -36,7 +36,7 @@ var achievements = []achievement{
 	{ID: "ACH_FLAWLESS", Name: "Untouchable", Desc: "Defeat a Guardian without dropping an orb.", Glyph: "mirror"},
 	{ID: "ACH_ENDLESS_3", Name: "Looping the Lattice", Desc: "Reach loop 3 in Endless Mode.", Glyph: "infinity",
 		Prog: func(g *Game) (int, int) { return g.save.BestLoop, 3 }},
-	{ID: "ACH_ENDLESS_10", Name: "Eternal Warden", Desc: "Reach loop 10 in Endless Mode.", Glyph: "infinity",
+	{ID: "ACH_ENDLESS_10", Name: "Eternal Warden", Desc: "Reach loop 10 in Endless Mode.", Glyph: "blackhole",
 		Prog: func(g *Game) (int, int) { return g.save.BestLoop, 10 }},
 	{ID: "ACH_COMBO_50", Name: "Chain Reaction", Desc: "Reach a 50-hit combo.", Glyph: "chain",
 		Prog: func(g *Game) (int, int) { return g.save.MaxCombo, 50 }},
@@ -297,4 +297,25 @@ func (g *Game) drawAchievementsTab(s *ebiten.Image, y0 float64) {
 		ty := top + (bh-tk)*(g.achScroll/maxScroll)
 		fillPath(s, boxPath(u.X(bx), u.Y(ty), 5*S, tk*S, 2.5*S, false), rgba(200, 170, 255, 230), rgba(140, 110, 220, 230), vgrad(u.Y(ty), u.Y(ty+tk)), false)
 	}
+}
+
+// drawAchIcon draws an achievement's square medallion (the Steam icon art).
+func drawAchIcon(u *UI, dst *ebiten.Image, a *achievement, x, y, sz float64) {
+	S := u.S
+	gold := rgba(255, 210, 110, 255)
+	k := sz / 256
+	cx, cy := x+sz/2, y+sz/2
+	fillPath(dst, boxPath(u.X(x), u.Y(y), sz*S, sz*S, 0, false), rgba(46, 30, 82, 255), rgba(9, 6, 18, 255), vgrad(u.Y(y), u.Y(y+sz)), false)
+	drawSprite(dst, sprSoft, u.X(cx-150*k), u.Y(cy-150*k), 300*k*S, 300*k*S, ca(rgba(150, 90, 255, 255), 0.55), true)
+	// faint rune ring
+	for i := 0; i < 24; i++ {
+		an := float64(i) / 24 * 2 * math.Pi
+		r := 116 * k
+		fillPath(dst, circlePath(u.X(cx+math.Cos(an)*r), u.Y(cy+math.Sin(an)*r), 2.2*k*S), ca(gold, 0.45), ca(gold, 0.45), vgrad(0, 1), false)
+	}
+	fillPath(dst, circlePath(u.X(cx), u.Y(cy), 98*k*S), rgba(44, 32, 70, 255), rgba(12, 8, 24, 255), vgrad(u.Y(cy-98*k), u.Y(cy+98*k)), false)
+	strokePath(dst, circlePath(u.X(cx), u.Y(cy), 98*k*S), 6*k*S, gold, false)
+	strokePath(dst, circlePath(u.X(cx), u.Y(cy), 86*k*S), 1.5*k*S, ca(gold, 0.5), false)
+	drawSprite(dst, sprSoft, u.X(cx-80*k), u.Y(cy-80*k), 160*k*S, 160*k*S, ca(gold, 0.25), true)
+	u.drawEmblem(dst, glyphImage(a.Glyph, gold), cx, cy, 128*k, 1)
 }
