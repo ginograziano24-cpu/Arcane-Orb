@@ -51,13 +51,13 @@ type caption struct {
 }
 
 var trailerCaptions = []caption{
-	{8.45, 11.55, "Break the Lattice"},
-	{12.45, 15.55, "Six living worlds"},
-	{16.3, 19.7, "Seven origins"},
-	{20.45, 23.55, "Over 100 upgrades & relics"},
-	{24.25, 25.85, "Forge fusions"},
-	{26.3, 29.7, "Build something unstoppable"},
-	{38.45, 41.55, "Face the Guardians"},
+	{8.45, 11.55, "Bounce the orb. Break every brick."},
+	{12.45, 15.55, "Chain lightning, fire and frost"},
+	{16.3, 19.7, "Seven origins. Seven playstyles."},
+	{20.45, 23.55, "Pick from 100+ upgrades and relics"},
+	{24.25, 25.85, "Pair two items to forge a fusion"},
+	{26.3, 29.7, "Stack effects into chain reactions"},
+	{38.45, 41.55, "Beat a Guardian to end each act"},
 }
 
 // flashes: white pops on the big downbeats
@@ -105,7 +105,7 @@ var trailerShots = []shot{
 		powers:  []Power{PMulti, PMulti},
 		ability: []float64{2.6}, cam: camLow}},
 	{at: 12, dur: 4, play: &playShot{world: WMeadow, act: 3, arch: "storm", seed: 5202, depth: 16, preroll: 1.8,
-		mods:   []string{"twin", "static", "conductor", "storm", "thunder", "echo", "sharp", "precision", "staticfield", "tesla"},
+		mods:   []string{"twin", "static", "conductor", "storm", "kindling", "frost", "deepfreeze", "inferno", "staticfield", "tesla"},
 		powers: []Power{PMulti, PMulti}, ability: []float64{1.8}, cam: camOrbit(1)}},
 	{at: 16, dur: 4, enter: enterOrigins, step: stepOrigins},
 	{at: 20, dur: 4, play: &playShot{world: WCaverns, act: 3, arch: "arcane", seed: 6303, depth: 17, preroll: 1.8,
@@ -462,7 +462,7 @@ func cardColdOpen(g *Game, dst *ebiten.Image, lt float64) {
 	lines := []struct {
 		t0, t1 float64
 		s      string
-	}{{0.8, 2.85, "The Lattice has swallowed every realm."}, {3.1, 5.75, "One orb remains."}}
+	}{{0.8, 2.85, "Walls of bricks have sealed every realm."}, {3.1, 5.75, "One orb can break them open."}}
 	for _, l := range lines {
 		if lt < l.t0 || lt > l.t1 {
 			continue
@@ -597,13 +597,18 @@ var capCache = map[string]*ebiten.Image{}
 func drawCaption(g *Game, dst *ebiten.Image, s string, a, rise float64) {
 	u := g.ui
 	sw, sh := float64(dst.Bounds().Dx()), float64(dst.Bounds().Dy())
-	band := 300.0 * u.S
-	fillPath(dst, boxPath(0, sh-band, sw, band, 0, false), rgba(0, 0, 0, 0), ca(rgba(4, 2, 10, 255), 0.72*a), vgrad(sh-band, sh), false)
+	band := 340.0 * u.S
+	fillPath(dst, boxPath(0, sh-band, sw, band*0.65, 0, false), rgba(0, 0, 0, 0), ca(rgba(4, 2, 10, 255), 0.88*a), vgrad(sh-band, sh-band*0.35), false)
+	fillRect(dst, 0, sh-band*0.35, sw, band*0.35, ca(rgba(4, 2, 10, 255), 0.88*a))
 	txt := spaced(s)
+	size := 58.0
+	if w := u.measure(txt, fRune, size); w > 1380 {
+		size *= 1380 / w // long lines shrink to fit between the rules
+	}
 	img, ok := capCache[txt]
 	if !ok {
 		img = ebiten.NewImage(1920, 160)
-		g.arcaneTitle(img, txt, 58, 960, 30)
+		g.arcaneTitle(img, txt, size, 960, 30)
 		capCache[txt] = img
 	}
 	y := 868 + (1-rise)*16
@@ -613,7 +618,7 @@ func drawCaption(g *Game, dst *ebiten.Image, s string, a, rise float64) {
 	op.GeoM.Translate(u.X(960), u.Y(y))
 	op.ColorScale.ScaleAlpha(float32(a))
 	dst.DrawImage(img, op)
-	w := u.measure(txt, fRune, 58)
+	w := u.measure(txt, fRune, size)
 	gold := rgba(214, 176, 104, 255)
 	for _, sg := range []float64{-1, 1} {
 		x0 := 960 + sg*(w/2+28)
