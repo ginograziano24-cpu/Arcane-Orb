@@ -83,17 +83,17 @@ type Game struct {
 	useKeys    bool
 	mouseHeld  bool
 
-	archSel     int
-	archShown   int
-	archPrev    int
-	archFade    float64
-	archGlow    color.RGBA
-	archPar     [2]float64
-	frontT      float64 // front-end animation clock
-	clickLatch  bool
-	navLatch    navInput
-	stickT      float64
-	stickHeld   bool
+	archSel      int
+	archShown    int
+	archPrev     int
+	archFade     float64
+	archGlow     color.RGBA
+	archPar      [2]float64
+	frontT       float64 // front-end animation clock
+	clickLatch   bool
+	navLatch     navInput
+	stickT       float64
+	stickHeld    bool
 	archActivate bool
 	padActive    bool // last input came from a gamepad: show pad glyphs
 	helpPage     int
@@ -101,23 +101,23 @@ type Game struct {
 	helpT        float64
 	lastCurX     int
 	lastCurY     int
-	keyLatch    map[ebiten.Key]bool
-	drawnSince  bool
-	seedText    string
-	daily       bool
-	rewards     []rewardSet
-	shop        []shopItem
-	rerollCost  int
-	event       *Event
-	eventMsg    string
-	banner      string
-	bannerDesc  string
-	bannerT     float64
-	victory     bool
-	shardsWon   int
-	pendingNode int
-	quit        bool
-	tooltip     string
+	keyLatch     map[ebiten.Key]bool
+	drawnSince   bool
+	seedText     string
+	daily        bool
+	rewards      []rewardSet
+	shop         []shopItem
+	rerollCost   int
+	event        *Event
+	eventMsg     string
+	banner       string
+	bannerDesc   string
+	bannerT      float64
+	victory      bool
+	shardsWon    int
+	pendingNode  int
+	quit         bool
+	tooltip      string
 
 	// HUD animation state
 	hudLevel   *Level
@@ -243,7 +243,10 @@ func (g *Game) Update() error {
 		steamShutdown()
 		return ebiten.Termination
 	}
-	now := time.Now()
+	if captureUpdate(g) {
+		return nil // the trailer capture is waiting for its next frame
+	}
+	now := nowFn()
 	dt := now.Sub(g.last).Seconds()
 	g.last = now
 	dt = math.Max(0, math.Min(dt, 1.0/30))
@@ -303,6 +306,9 @@ func (g *Game) Update() error {
 			return nil
 		}
 		in := g.readInput()
+		if inputHook != nil {
+			in = inputHook(g)
+		}
 		debugKeys(g)
 		g.level.Update(dt, in)
 		if r := g.run; r != nil && r.HP > 0 && r.HP < r.Stats.MaxHP*0.3 && !g.level.Cleared {
@@ -618,9 +624,12 @@ func (g *Game) endRun(win bool) {
 // ---------------------------------------------------------------- draw
 
 func (g *Game) Draw(screen *ebiten.Image) {
+	if captureSkipDraw(g, screen) {
+		return
+	}
 	sw, sh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
 	g.ui.Setup(sw, sh)
-	now := time.Now()
+	now := nowFn()
 	ddt := math.Min(0.05, now.Sub(g.lastDraw).Seconds())
 	g.lastDraw = now
 	g.ui.Th = &themes[g.themeWorld()]
@@ -653,7 +662,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		tgt := g.post.Target(int(sw), int(sh))
 		g.drawWorld(tgt, g.level)
 		g.post.Apply(screen, worldGrades[g.level.Biome.ID], !g.settings.NoBloom)
-		g.drawHUD(screen, g.level)
+		if !hideHUD || g.level.introT > 0 {
+			g.drawHUD(screen, g.level)
+		}
 	case StSettings:
 		if g.prevState == StPause && g.level != nil {
 			g.drawWorld(screen, g.level)
@@ -759,6 +770,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.drawAchievementPopup(screen)
 	g.drawTransition(screen, ddt)
 	debugOverlay(g, screen)
+	captureAfterDraw(g, screen)
 }
 
 func (g *Game) ensureSky(b *Biome, seed int64) {
@@ -909,7 +921,6 @@ func (g *Game) drawSeed(s *ebiten.Image) {
 		g.setState(StMenu)
 	}
 }
-
 
 func (g *Game) runPanel(s *ebiten.Image) {
 	u := g.ui

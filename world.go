@@ -36,6 +36,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		cam.Eye = eye0.Add(cam.Eye.Sub(eye0).Mul(e))
 		cam.Target = tgt0.Add(cam.Target.Sub(tgt0).Mul(e))
 	}
+	if camHook != nil {
+		camHook(cam, L)
+	}
 	if sh2 > 0 {
 		cam.Eye = cam.Eye.Add(V3{(g.rng.Float64() - 0.5) * sh2, (g.rng.Float64() - 0.5) * sh2, 0})
 	}
@@ -173,10 +176,21 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 				B.Billboard(V3{x, 2.6, z}, 4.5, sprSoft, alpha(bio.Trim, 0.4+0.3*math.Sin(t*5)), true)
 			}
 		}
-		// eye sockets (row 5, cols 5 & 8 are empty in the shape)
-		for _, c := range []int{5, 8} {
-			B.Billboard(V3{cellX(c), 1.6, cellZ(5)}, 1.6, sprSoft, alpha(color.RGBA{255, 60, 40, 255}, 0.7+0.3*L.Boss.Hurt), true)
-			B.Billboard(V3{cellX(c), 1.6, cellZ(5)}, 0.5, sprSphere, color.RGBA{255, 120, 90, 255}, false)
+		// eye sockets (row 5, cols 5 & 8 are empty in the shape); during
+		// the intro they ignite once the face has formed
+		lit := 1.0
+		if L.introT > 0 {
+			lit = smootherstep(clamp01((L.introMax - L.introT - 3.0) / 0.7))
+		}
+		if lit > 0 {
+			eye := mixc(color.RGBA{255, 60, 40, 255}, lighten(bio.Trim, 0.3), 0.25)
+			for _, c := range []int{5, 8} {
+				ey := bossHeight(5, c) + 0.4
+				p := V3{cellX(c), ey, cellZ(5)}
+				B.Billboard(p, 6*lit, sprSoft, alpha(eye, (0.5+0.3*L.Boss.Hurt+0.1*math.Sin(t*4))*lit), true)
+				B.Billboard(p, 2.2*lit, sprSoft, alpha(lighten(eye, 0.6), 0.95*lit), true)
+				B.Billboard(p, 0.9*lit, sprSphere, lighten(eye, 0.5), false)
+			}
 		}
 	}
 	// rocks
@@ -329,6 +343,13 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	if b.Kind != levelgen.Steel && b.Layer == 0 && b.Up == nil {
 		h *= 0.8 + 0.2*frac
 	}
+	if b.BossPart {
+		// the Guardian is sculpted: a domed head and heavy shoulders
+		h = bossHeight(b.R, b.C) * (0.85 + 0.15*frac)
+		if b.Core {
+			h += 0.5
+		}
+	}
 	h *= ap
 	col := b.Col
 	if b.Kind == levelgen.Basic && b.MaxHP > 1 {
@@ -362,6 +383,22 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		B.DecalBelow(x+0.5, z-0.15, 0.015, CellW*1.15, CellD*1.4, sprShadow, color.RGBA{0, 0, 0, 120})
 	}
 	bio := L.Biome
+	if b.BossPart && !b.Core {
+		// carved armour with glowing rune seams in the world's trim colour
+		pulse := 0.55 + 0.45*math.Sin(t*2.2-float64(b.R)*0.7)
+		B.BoxTex(x-hw, y0, z-hd, x+hw, y0+h, z+hd, col, matTop[bio.BrickMat], matSide[bio.BrickMat], emis+0.04)
+		seam := lighten(bio.Trim, 0.2)
+		B.Box(x-hw-0.03, y0+h*0.62, z-hd-0.03, x+hw+0.03, y0+h*0.68, z+hd+0.03, seam, sprWhite, float32(0.5+0.4*pulse))
+		B.Decal(x, z, y0+h+0.01, CellW*0.9, CellD*0.9, sprSoft, alpha(seam, 0.22*pulse*ap), true)
+		if b.R-2 <= 1 && ap > 0.5 {
+			// a crown of crystal spikes along the brow
+			sh := (1.4 + 1.6*(1-math.Abs(float64(b.C)-6.5)/6.5)) * ap
+			q := 0.42
+			B.Prism([4][2]float64{{x - q, z - q*0.7}, {x + q, z - q*0.7}, {x + q, z + q*0.7}, {x - q, z + q*0.7}}, y0+h, y0+h+sh, 0.08, lighten(bio.Trim, 0.1), float32(0.35+0.25*pulse))
+		}
+		g.drawBadge(B, b, x, y0+h, z, t)
+		return
+	}
 	mat := bio.BrickMat
 	special := b.Kind != levelgen.Basic && b.Kind != levelgen.Steel
 	switch {
@@ -447,4 +484,15 @@ func (g *Game) drawPaddle(B *Batch, L *Level) {
 			B.Billboard(V3{cx, PaddleH + 0.55, PaddleZ + 0.25}, 0.5, sprSoft, color.RGBA{255, 80, 80, 255}, true)
 		}
 	}
+}
+
+// bossHeight gives each cell of the Guardian its sculpted height.
+func bossHeight(r, c int) float64 {
+	gr := float64(r - 2) // row within the shape, 0 = crown
+	if gr >= 6 {
+		return 1.25 // legs
+	}
+	dx := math.Abs(float64(c)-6.5) / 6.5
+	dome := 1 - dx*dx
+	return 1.0 + 3.0*dome*(0.5+0.5*(1-gr/6))
 }

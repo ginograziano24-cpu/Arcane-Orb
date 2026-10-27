@@ -202,6 +202,15 @@ var sanctumShader *ebiten.Shader
 
 // drawHall fills the screen with the arcane hall.
 func (g *Game) drawHall(dst *ebiten.Image, orbX, orbY float64, circle bool) {
+	c := 0.0
+	if circle {
+		c = 1
+	}
+	g.drawHallK(dst, orbX, orbY, c)
+}
+
+// drawHallK is drawHall with the magic circle at strength c (0..1).
+func (g *Game) drawHallK(dst *ebiten.Image, orbX, orbY, c float64) {
 	if sanctumShader == nil {
 		sh, err := ebiten.NewShader([]byte(sanctumSrc))
 		if err != nil {
@@ -210,17 +219,13 @@ func (g *Game) drawHall(dst *ebiten.Image, orbX, orbY float64, circle bool) {
 		sanctumShader = sh
 	}
 	u := g.ui
-	c := float32(0)
-	if circle {
-		c = 1
-	}
 	op := &ebiten.DrawRectShaderOptions{}
 	op.Uniforms = map[string]any{
 		"Time":   float32(math.Mod(g.frontT, 2000)),
 		"Origin": []float32{float32(u.X(0)), float32(u.Y(0))},
 		"Scale":  float32(u.S),
 		"Orb":    []float32{float32(orbX), float32(orbY)},
-		"Circle": c,
+		"Circle": float32(c),
 	}
 	w, h := dst.Bounds().Dx(), dst.Bounds().Dy()
 	dst.DrawRectShader(w, h, sanctumShader, op)

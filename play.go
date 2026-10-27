@@ -186,9 +186,9 @@ type Boss struct {
 // ---------------------------------------------------------------- level
 
 type Level struct {
-	introT, introMax float64 // boss intro cinematic
-	hitStop  float64
-	lostOrbs int // orbs dropped this chamber (for Untouchable)
+	introT, introMax      float64 // boss intro cinematic
+	hitStop               float64
+	lostOrbs              int // orbs dropped this chamber (for Untouchable)
 	cls                   classState
 	lastPadX              float64
 	igniteN               int
@@ -2122,7 +2122,7 @@ func (L *Level) setupBoss() {
 		"..##......##..",
 		".###......###.",
 	}
-	body := darken(L.Biome.Wall, 0.8)
+	body := bossBody(L.Biome)
 	for r, row := range shape {
 		for c := 0; c < len(row); c++ {
 			if row[c] == '#' {
@@ -2149,7 +2149,7 @@ func (L *Level) moveCore() {
 		if br.Alive && br.Core {
 			br.Core = false
 			br.Kind = levelgen.Basic
-			br.Col = darken(L.Biome.Wall, 0.8)
+			br.Col = bossBody(L.Biome)
 		}
 	}
 	var cands []*Brick
@@ -2261,3 +2261,6 @@ func (L *Level) breakPop(b *Brick, x, z float64) {
 		L.sparks(V3{x, 0.8, z}, 8, c, 7)
 	}
 }
+
+// bossBody is the Guardian's armour: the world's stone, touched by its trim.
+func bossBody(b *Biome) color.RGBA { return mixc(darken(b.Wall, 0.6), b.Trim, 0.16) }

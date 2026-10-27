@@ -1,4 +1,4 @@
-ARCANE ORB  -  build 0.9
+ARCANE ORB  -  build 1.0 RC
 =====================================
 
 Run ArcaneOrb.exe. No install needed. Starts fullscreen at your
@@ -10,6 +10,38 @@ CONTROLS
   Click / Space .... launch orb, fire   Shift ........... faster keyboard move
   Esc / P .......... pause              F11 ............. fullscreen
   Right-click / E .. class ability (Pyromancer, Stormcaller)
+
+  CONTROLLER (Xbox / PlayStation / Steam Deck)
+  Left stick / D-pad  move paddle      A ............... launch orb
+  X / RB / RT ....... class ability    Start ........... pause
+  In menus: stick or D-pad to move, A to choose, B to go back,
+  LB / RB to turn pages and switch Codex tabs. Keyboard menus work the
+  same way with arrows / WASD, Enter or Space, Esc, and Q / E.
+
+NEW IN 1.0 RC  -  readability, Guardians, controllers, Steam
+  - Special bricks carry clear floating badges (anvil = armoured, bomb =
+    explosive, bolt = chain, heart = regenerating, shield, swirl =
+    teleport, star = multiplier, gem = crystal, "?" = mystery, crown =
+    elite ...) so you can read a chamber at a glance
+  - Bricks break with a flash, a ring on the floor and tumbling shards;
+    big bricks and elites land with a brief hit-stop and a shockwave
+  - Guardian intros: the camera starts low beside the arena while the
+    Guardian assembles row by row, its name rises over a turning magic
+    circle, and its eyes ignite (click to skip). The Guardians are now
+    sculpted: a domed head with glowing rune seams and a crown of
+    crystal spikes
+  - Illustrated How to Play: seven pages covering controls, the map,
+    every brick type (with its badge), power-ups, items and fusions,
+    the origins, and the meta game
+  - Full keyboard and controller navigation in every menu, with a
+    glowing focus ring and controller button prompts
+  - 33 achievements with an in-game unlock toast and a new Codex tab
+    (progress bars for counted goals); they sync to Steam when the game
+    runs through Steam
+  - Steam support: achievements, cloud saves (Auto-Cloud), Steam Deck
+    detection (controller prompts by default) - see STEAM.md
+  - Store kit in store/: trailer, screenshots, capsule art and
+    achievement icons
 
 NEW IN 0.9  -  polish pass
   - Arcane lettering (Cinzel) for every heading, banner, card name, boss
@@ -156,10 +188,6 @@ WHAT'S IN THIS BUILD
     intensifies with your combo
   - Settings: volumes, screen shake, flashes, particles, VSync, FPS
     counter, bloom and colour grading
-
-COMING IN LATER PHASES
-  Enemies, more bosses, more events, collection screen, achievements,
-  Steamworks hooks.
 
 Save file: %APPDATA%\ArcaneOrb\save.json
 

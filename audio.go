@@ -114,7 +114,7 @@ func (s *Sounds) play(name string, vol float64) {
 	if !ok {
 		return
 	}
-	now := time.Now()
+	now := nowFn()
 	if t, ok := s.last[name]; ok && now.Sub(t) < 35*time.Millisecond {
 		return
 	}
@@ -140,6 +140,9 @@ func (s *Sounds) play(name string, vol float64) {
 		}
 	}
 	s.lastVar[name] = v
+	if sfxHook != nil && sfxHook(name, v, vol) {
+		return
+	}
 	c := s.clip(name, v)
 	if c == nil {
 		return
@@ -152,7 +155,7 @@ func (s *Sounds) play(name string, vol float64) {
 
 // Duck lowers the music briefly under a big stinger.
 func (s *Sounds) Duck(depth, secs float64) {
-	s.duck, s.duckT, s.duckLen = depth, time.Now(), secs
+	s.duck, s.duckT, s.duckLen = depth, nowFn(), secs
 	s.updateVolumes()
 }
 
@@ -173,7 +176,7 @@ func (s *Sounds) BrickHit() { s.play("tuf."+itoa(s.World)+"."+itoa(s.Key), 0.9) 
 
 // Coin climbs a scale while coins keep arriving in quick succession.
 func (s *Sounds) Coin() {
-	now := time.Now()
+	now := nowFn()
 	if now.Sub(s.coinT) > 450*time.Millisecond {
 		s.coinStep = 0
 	} else {
@@ -310,7 +313,7 @@ func (s *Sounds) SetTrack(i int) {
 func (s *Sounds) SetIntensity(v float64) {
 	s.intensity += (v - s.intensity) * 0.03
 	if s.duck > 0 {
-		if el := time.Since(s.duckT).Seconds(); el > s.duckLen {
+		if el := nowFn().Sub(s.duckT).Seconds(); el > s.duckLen {
 			s.duck = math.Max(0, s.duck-0.02)
 		}
 	}

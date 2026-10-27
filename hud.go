@@ -431,6 +431,8 @@ func (g *Game) drawBossIntro(screen *ebiten.Image, L *Level) {
 		u.headingW(screen, L.Boss.Name, 86, 752+(1-a)*14, rgba(255, 226, 196, 255), a, 940)
 	}
 	if k > 0.1 && out > 0.5 {
-		u.text(screen, "Click to skip", fSerif, 18, 1880, 1080-bh+(bh-30)/2, ca(cDim, 0.6*out), alignRight)
+		if !hideHUD {
+			u.text(screen, "Click to skip", fSerif, 18, 1880, 1080-bh+(bh-30)/2, ca(cDim, 0.6*out), alignRight)
+		}
 	}
 }
