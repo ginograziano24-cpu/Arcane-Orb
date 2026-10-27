@@ -31,7 +31,7 @@ func engineer() *Scene {
 	L := Arm{S: V{-0.21, 1.5, 0}, E: V{-0.31, 1.25, 0.0}, W: V{-0.3, 1.03, 0.12}, Hand: V{-0.29, 0.99, 0.15}, Fist: true}
 	headC := V{0, 1.76, 0.02}
 	coreP := V{0.3, 1.12, 0.45}
-	pz := Pose{Yaw: yaw, Roll: 0.11, Nod: 0.05, Turn: -0.12, Neck: V{0, 1.64, 0.01}}
+	pz := vary(Pose{Yaw: yaw, Roll: 0.11, Nod: 0.05, Turn: -0.12, Neck: V{0, 1.64, 0.01}})
 	s.SDF = func(p V) (float64, int) {
 		q := pz.local(p)
 		h := newH()
@@ -151,7 +151,7 @@ func gambler() *Scene {
 	L := Arm{S: V{-0.2, 1.5, 0}, E: V{-0.3, 1.24, 0.06}, W: V{-0.2, 1.14, 0.26}, Hand: V{-0.17, 1.15, 0.3}, Curl: 0.5}
 	headC := V{0, 1.76, 0.02}
 	coinP := V{0.33, 1.72, 0.32}
-	pz := Pose{Yaw: yaw, Roll: -0.13, Nod: 0.06, Turn: 0.1, Neck: V{0, 1.64, 0.01}}
+	pz := vary(Pose{Yaw: yaw, Roll: -0.13, Nod: 0.06, Turn: 0.1, Neck: V{0, 1.64, 0.01}})
 	s.SDF = func(p V) (float64, int) {
 		q := pz.local(p)
 		h := newH()
@@ -249,7 +249,7 @@ func pyromancer() *Scene {
 	L := Arm{S: V{-0.2, 1.5, 0}, E: V{-0.32, 1.25, 0.02}, W: V{-0.36, 1.05, 0.14}, Hand: V{-0.37, 1.0, 0.17}, Curl: 0.7}
 	headC := V{0, 1.76, 0.02}
 	fireP := V{0.46, 1.56, 0.26}
-	pz := Pose{Yaw: yaw, Roll: 0.06, Nod: 0.06, Turn: 0.3, Neck: V{0, 1.64, 0.01}}
+	pz := vary(Pose{Yaw: yaw, Roll: 0.06, Nod: 0.06, Turn: 0.3, Neck: V{0, 1.64, 0.01}})
 	s.SDF = func(p V) (float64, int) {
 		q := pz.local(p)
 		h := newH()
@@ -340,7 +340,7 @@ func stormcaller() *Scene {
 	headC := V{0, 1.76, 0.02}
 	staffBot := V{0.36, 0.2, 0.3}
 	staffTop := V{0.33, 2.06, 0.2}
-	pz := Pose{Yaw: yaw, Roll: -0.05, Nod: -0.1, Turn: 0.22, Neck: V{0, 1.64, 0.01}}
+	pz := vary(Pose{Yaw: yaw, Roll: -0.05, Nod: -0.1, Turn: 0.22, Neck: V{0, 1.64, 0.01}})
 	s.SDF = func(p V) (float64, int) {
 		q := pz.local(p)
 		h := newH()

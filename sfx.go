@@ -1060,6 +1060,29 @@ var recipes = map[string]recipe{
 			b.sparkle(0.05, 0.4, 10, 3000, 8000, 0.25)
 		})
 	}},
+	"scroll": {1, func(p []int, v int, r *rand.Rand) []byte {
+		// parchment unfurls, then the spell rings out
+		return one(1.6, r.Int63(), verbBig.with(0.55), func(b *sb) {
+			b.noise(0, 0.25, expEnv(0.01, 10), fBP, sweep(800, 3000, 0.25), 1.2, 0.5)
+			for i, st := range []int{0, 7, 12, 19} {
+				b.glass(0.12+float64(i)*0.05, semis(392, st), 0.35)
+			}
+			b.whoosh(0.1, 0.6, 400, 4000, 0.5)
+			b.sparkle(0.15, 0.8, 16, 2500, 9000, 0.2)
+		})
+	}},
+	"paddleboom": {2, func(p []int, v int, r *rand.Rand) []byte {
+		// the paddle bursting: a crack, a low thump and a spray of shards
+		return one(2.2, r.Int63(), verbMid.with(0.75), func(b *sb) {
+			b.noise(0, 0.05, expEnv(0, 70), fHP, cst(2500), 0.8, 0.9)
+			b.sub(0, 120, 34, 1.1, 1.0)
+			b.noise(0.01, 0.6, expEnv(0.002, 6), fLP, sweep(6000, 300, 0.5), 0.8, 0.8)
+			for i := 0; i < 9; i++ {
+				b.glass(0.04+r.Float64()*0.35, 900+r.Float64()*2600, 0.12)
+			}
+			b.tone(0.05, 0.9, sweep(420, 90, 0.8), expEnv(0.004, 3), wSaw, 0.12)
+		})
+	}},
 	"achievement": {1, func(p []int, v int, r *rand.Rand) []byte {
 		// a bright bell arpeggio over a warm major pad: unmistakably "you did it"
 		return one(3.2, r.Int63(), verbBig.with(0.5), func(b *sb) {
@@ -1190,7 +1213,7 @@ func prewarmNames() []string {
 	}
 	for _, n := range []string{"crit", "steel", "shieldhit", "pad.0", "wall", "launch", "laser", "boom", "zap",
 		"thump", "coinbig", "hover", "click", "cardhover", "deal", "mapenter", "lose.0", "clear.0", "pick.0.0", "pick.1.0",
-		"pick.2.0", "pick.3.0", "pick.4.0", "synergy.0", "actstart.0", "heartbeat", "firestorm", "thunder", "abilready", "bossintro", "parry", "achievement"} {
+		"pick.2.0", "pick.3.0", "pick.4.0", "synergy.0", "actstart.0", "heartbeat", "firestorm", "thunder", "abilready", "bossintro", "parry", "achievement", "scroll", "paddleboom"} {
 		out = append(out, n)
 	}
 	for i := 0; i < 12; i++ {

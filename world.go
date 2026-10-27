@@ -464,7 +464,11 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 }
 
 func (g *Game) drawPaddle(B *Batch, L *Level) {
-	w := L.PaddleW
+	shown := L.paddleShown()
+	if shown <= 0 {
+		return
+	}
+	w := L.PaddleW * (0.4 + 0.6*shown)
 	x0, x1 := L.PaddleX-w/2, L.PaddleX+w/2
 	z0, z1 := PaddleZ-PaddleD/2, PaddleZ+PaddleD/2
 	body := L.Biome.PaddleBody

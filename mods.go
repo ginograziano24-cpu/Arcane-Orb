@@ -40,7 +40,9 @@ type Stats struct {
 	BarrierPerLevel                                                  int
 	LaserInterval                                                    float64
 	ComboDmg                                                         float64
-	BallLossDmg                                                      float64
+	BallLossDmg                                                      float64 // extra health lost when the orb is dropped
+	DropBarrier                                                      int     // barrier charges gained when a life is lost
+	LifeHeal                                                         float64 // health restored when a life is lost
 	Lifesteal                                                        int
 	Magnet                                                           bool
 	MoltenEvery, EchoEvery, StaticEvery                              int
@@ -49,6 +51,10 @@ type Stats struct {
 	Shatter, EagleEye, MeteorHeart, FrozenBonus, PrismOrb, Hydra     bool
 	BarrierRegen, CritPierce, VoidDouble, GoldPerBrick, ChainRecast  bool
 	StartElement                                                     string
+	BrickHPMult                                                      float64 // curses: extra brick health
+	ScrollSlots, CurseCount                                          int
+	ScrollKeep, ScribeChance, CurseDmg, ChallengeGold                float64
+	CurseWard                                                        bool
 	StartGold                                                        float64 // extra gold at the start of a run
 	FreeRerolls                                                      int
 
@@ -81,6 +87,7 @@ type Mod struct {
 	Icon   string // glyph drawn on cards, badges and the Codex (icons.go)
 	Unlock int    // player rank required before it can appear
 	Needs  string // only offered once this mod is owned
+	Curse  bool   // a curse: never offered, removed by cleansing
 }
 
 var modList = []*Mod{
@@ -118,7 +125,7 @@ var modList = []*Mod{
 	}},
 	{ID: "eagle", Icon: "eye", Name: "Eagle Eye", Desc: "Critical hits splash damage onto adjacent bricks.", Rarity: Rare, Tags: []string{"crit"}, Max: 1, Apply: func(s *Stats) { s.EagleEye = true }},
 	{ID: "momentum", Icon: "comet", Name: "Momentum", Desc: "Each brick hit without touching the paddle adds +4% speed and damage.", Rarity: Rare, Tags: []string{"combo"}, Max: 1, Apply: func(s *Stats) { s.Momentum = true }},
-	{ID: "padding", Icon: "feather", Name: "Shock Padding", Desc: "Losing your orb costs 6 less health.", Rarity: Common, Tags: []string{"guard"}, Max: 3, Apply: func(s *Stats) { s.BallLossDmg -= 6 }},
+	{ID: "padding", Icon: "feather", Name: "Shock Padding", Desc: "Losing a life leaves a barrier charge behind.", Rarity: Common, Tags: []string{"guard"}, Max: 3, Apply: func(s *Stats) { s.DropBarrier++ }},
 
 	// ---------------- relics ----------------
 	{ID: "molten", Icon: "volcano", Name: "Molten Core", Desc: "Every 50 orb impacts unleash a huge explosion.", Rarity: Uncommon, Relic: true, Tags: []string{"blast"}, Max: 1, Apply: func(s *Stats) { s.MoltenEvery = 50 }},
@@ -201,12 +208,15 @@ var modList = []*Mod{
 	{ID: "infinity", Icon: "infinity", Name: "Infinity Loop", Desc: "Combo damage bonuses have no cap.", Rarity: Mythic, Relic: true, Tags: []string{"combo"}, Max: 1, Unlock: 10, Apply: func(s *Stats) { s.InfiniteCombo = true; s.ComboDmg += 0.01 }},
 	{ID: "dragonheart", Icon: "dragonheart", Name: "Dragon Heart", Desc: "Fire burns twice as fast, and every hit on a burning brick spreads the flames.", Rarity: Legendary, Relic: true, Tags: []string{"fire"}, Max: 1, Unlock: 8, Apply: func(s *Stats) { s.DragonHeart = true; s.BurnMult += 1 }},
 	{ID: "excalibur", Icon: "sword", Name: "Excalibur", Desc: "+10% critical chance and critical hits deal +150% damage.", Rarity: Legendary, Relic: true, Tags: []string{"crit"}, Max: 1, Unlock: 7, Apply: func(s *Stats) { s.CritChance += 0.1; s.CritMult += 1.5 }},
-	{ID: "phylactery", Icon: "urn", Name: "Phylactery", Desc: "+40 max health, but orb loss costs 5 more.", Rarity: Rare, Relic: true, Tags: []string{"guard"}, Max: 1, Unlock: 5, Apply: func(s *Stats) { s.MaxHP += 40; s.BallLossDmg += 5 }},
+	{ID: "phylactery", Icon: "urn", Name: "Phylactery", Desc: "+40 max health, but dropping the orb also costs 10 health.", Rarity: Rare, Relic: true, Tags: []string{"guard"}, Max: 1, Unlock: 5, Apply: func(s *Stats) { s.MaxHP += 40; s.BallLossDmg += 10 }},
 }
 
 var modByID = func() map[string]*Mod {
 	m := map[string]*Mod{}
 	for _, md := range modList {
+		m[md.ID] = md
+	}
+	for _, md := range curseList {
 		m[md.ID] = md
 	}
 	return m
@@ -242,6 +252,7 @@ var tagColors = map[string]color.RGBA{
 	"crit": {255, 80, 80, 255}, "swarm": {255, 160, 230, 255}, "blast": {255, 170, 60, 255},
 	"frost": {150, 230, 255, 255}, "guard": {120, 230, 140, 255}, "void": {170, 110, 255, 255},
 	"power": {240, 240, 240, 255}, "combo": {255, 230, 120, 255}, "tech": {200, 200, 255, 255},
+	"curse": {200, 60, 120, 255},
 }
 
 func sortedTags(m map[string]int) []string {

@@ -835,3 +835,11 @@ func drawSprite(dst *ebiten.Image, spr Sprite, x, y, w, h float64, c color.RGBA,
 	}
 	dst.DrawTriangles(vs, []uint16{0, 1, 2, 0, 2, 3}, atlas, op)
 }
+
+// fillRectA fills with colour c at opacity a (straight alpha in, so the
+// premultiplication vector drawing expects is done here).
+func fillRectA(dst *ebiten.Image, x, y, w, h float64, c color.RGBA, a float64) {
+	a = clamp01(a) * float64(c.A) / 255
+	pm := color.RGBA{uint8(float64(c.R) * a), uint8(float64(c.G) * a), uint8(float64(c.B) * a), uint8(255 * a)}
+	vector.DrawFilledRect(dst, float32(x), float32(y), float32(w), float32(h), pm, false)
+}

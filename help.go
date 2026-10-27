@@ -15,7 +15,7 @@ import (
 // Arrows / Q E / LB RB turn pages.
 
 var helpPages = []string{"The Orb & the Paddle", "A Run in Three Acts", "Know Your Bricks", "Power-ups",
-	"Upgrades, Relics & Fusions", "Origins", "Beyond the Run"}
+	"Upgrades, Relics & Fusions", "Scrolls, Omens & Curses", "Origins", "Beyond the Run"}
 
 var powerDesc = [numPowers]string{
 	PMulti:   "Splits your orb into three",
@@ -28,6 +28,7 @@ var powerDesc = [numPowers]string{
 	PBarrier: "A one-time safety net under the paddle",
 	PGlue:    "The orb sticks; click to aim and release",
 	PMagnet:  "Pulls coins and capsules to you",
+	PLife:    "Rare: restores a lost life (three a run)",
 }
 
 var nodeDesc = []string{
@@ -74,8 +75,10 @@ func (g *Game) drawHelp(s *ebiten.Image) {
 	case 4:
 		g.helpItems(s, a)
 	case 5:
-		g.helpOrigins(s, a)
+		g.helpScrolls(s, a)
 	case 6:
+		g.helpOrigins(s, a)
+	case 7:
 		g.helpMeta(s, a)
 	}
 
@@ -196,6 +199,7 @@ func (g *Game) helpControls(s *ebiten.Image, a float64) {
 	row([]string{"Mouse", "A D", "← →"}, "Move the paddle (Shift: faster)")
 	row([]string{"Click", "Space"}, "Launch the orb")
 	row([]string{"Right-click", "E"}, "Your origin's ability")
+	row([]string{"1", "2", "3"}, "Read a scroll")
 	row([]string{"Esc", "P"}, "Pause")
 	y += 14
 	u.text(s, "CONTROLLER", fBold, 18, tx, y, ca(cGold, a), alignLeft)
@@ -203,10 +207,11 @@ func (g *Game) helpControls(s *ebiten.Image, a float64) {
 	row([]string{"Left stick", "D-pad"}, "Move the paddle")
 	row([]string{"A"}, "Launch / select")
 	row([]string{"X", "RB"}, "Ability")
+	row([]string{"Y", "LB"}, "Read / pick a scroll")
 	row([]string{"Start"}, "Pause")
 	row([]string{"B"}, "Back")
 	y += 10
-	g.textBlock(s, "", "Losing an orb costs health. Health carries between chambers, so every save matters. Where the orb meets the paddle decides where it goes.", tx, y, 790, a)
+	g.textBlock(s, "", "Let every orb slip past and you lose a life: the paddle shatters and reforms. You start with two lives and each act tops them back up to two. A rare falling heart restores a lost life, three times a run at most. Health is your shield against Guardians, hazards and curses; run it dry and that costs a life too.", tx, y, 790, a)
 }
 
 // ---------------------------------------------------------------- page 2
@@ -454,4 +459,37 @@ func (g *Game) helpMeta(s *ebiten.Image, a float64) {
 		u.text(s, it.title, fSerif, 26, x+170, y+30, ca(cGold, a), alignLeft)
 		u.paragraph(s, it.body, fReg, 19, x+170, y+76, 580, ca(rgba(222, 216, 236, 255), a), alignLeft)
 	}
+}
+
+// ---------------------------------------------------------------- scrolls
+
+func (g *Game) helpScrolls(s *ebiten.Image, a float64) {
+	u := g.ui
+	S := u.S
+	// a fan of scrolls on the left, an omen and a curse below
+	ix, iy := 150.0, 200.0
+	for i, id := range []string{"meteor", "frost", "multi", "storm"} {
+		sd := scrollByID[id]
+		x := ix + 90 + float64(i%2)*300
+		y := iy + 80 + float64(i/2)*230
+		bob := math.Sin(g.helpT*1.8+float64(i)) * 5
+		drawSprite(s, sprSoft, u.X(x-90), u.Y(y-90), 180*S, 180*S, ca(sd.Col, 0.25*a), true)
+		u.drawEmblem(s, glyphImage(sd.Glyph, sd.Col), x+60, y+bob, 104, a)
+		u.text(s, sd.Name, fSerif, 19, x+60, y+66, ca(lighten(sd.Col, 0.2), a), alignCenter)
+	}
+	oy := iy + 520
+	if o := omenByID["swift"]; o != nil {
+		u.drawEmblem(s, glyphImage(o.Glyph, o.Col), ix+110, oy+40, 80, a)
+		u.text(s, "Omen: "+o.Name, fSerif, 19, ix+110, oy+96, ca(o.Col, a), alignCenter)
+	}
+	if c := modByID["c_brittle"]; c != nil {
+		u.drawEmblem(s, modEmblem(c), ix+450, oy+40, 80, a)
+		u.text(s, "Curse: "+c.Name, fSerif, 19, ix+450, oy+96, ca(tagColors["curse"], a), alignCenter)
+	}
+
+	tx, y := 1010.0, 190.0
+	y = g.textBlock(s, "Scrolls", "One-shot spells you carry between chambers, three at a time. Read one mid-fight with 1, 2 or 3 (Y on a controller): meteors, frost novas, wildfire, extra orbs, healing and more. Elites and Guardians always leave one; shops and events sell them.", tx, y, 800, a)
+	y = g.textBlock(s, "Omens", "Some chambers on the map carry an omen. Some change the fight: gilded bricks, frenzied orbs, volatile powder. Others set a challenge, like a time limit or no dropped orbs, with a prize if you manage it. Hover a node to read it before you choose your path.", tx, y, 800, a)
+	y = g.textBlock(s, "Curses", "Bargains at events can lay a curse on you: a narrower paddle, weaker hits, a thinner purse. Curses sit in your build in crimson until you cleanse them.", tx, y, 800, a)
+	g.textBlock(s, "Campfires", "Rest to heal, Train for a new upgrade, Empower an upgrade you own to double it, or Cleanse a curse.", tx, y, 800, a)
 }

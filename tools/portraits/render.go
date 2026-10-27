@@ -790,6 +790,13 @@ func main() {
 	if scale < 0.7 {
 		spp = 1
 	}
+	if v, err := strconv.Atoi(os.Getenv("SPP")); err == nil && v > 0 {
+		spp = v
+	}
+	suffix := ""
+	if poseVariant != "" {
+		suffix = "_" + poseVariant
+	}
 	for _, mk := range classes {
 		s := mk()
 		if only != "" && only != "all" && s.Name != only {
@@ -804,16 +811,18 @@ func main() {
 			rgb.Pix[i+3] = 255
 			al.Pix[i/4] = im.Pix[i+3]
 		}
-		f, err := os.Create(filepath.Join(outDir, s.Name+".jpg"))
+		f, err := os.Create(filepath.Join(outDir, s.Name+suffix+".jpg"))
 		if err != nil {
 			panic(err)
 		}
 		jpeg.Encode(f, rgb, &jpeg.Options{Quality: 90})
 		f.Close()
-		f, _ = os.Create(filepath.Join(outDir, s.Name+"_a.png"))
+		f, _ = os.Create(filepath.Join(outDir, s.Name+suffix+"_a.png"))
 		png.Encode(f, al)
 		f.Close()
-		writeAnchors(s, W, H, filepath.Join(outDir, s.Name+".json"))
+		if suffix == "" {
+			writeAnchors(s, W, H, filepath.Join(outDir, s.Name+".json"))
+		}
 		fmt.Println("wrote", s.Name)
 	}
 }

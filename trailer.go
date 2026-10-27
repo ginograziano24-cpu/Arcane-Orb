@@ -585,7 +585,7 @@ func directorOverlay(g *Game, dst *ebiten.Image, t float64) {
 	for _, f := range trailerFlashes {
 		if d := t - f[0]; d >= 0 && d < f[1] {
 			a := (1 - d/f[1])
-			fillRect(dst, 0, 0, sw, sh, ca(rgba(255, 246, 255, 255), f[2]*a*a))
+			fillRectA(dst, 0, 0, sw, sh, rgba(255, 246, 255, 255), f[2]*a*a)
 		}
 	}
 	_ = u
@@ -599,7 +599,7 @@ func drawCaption(g *Game, dst *ebiten.Image, s string, a, rise float64) {
 	sw, sh := float64(dst.Bounds().Dx()), float64(dst.Bounds().Dy())
 	band := 340.0 * u.S
 	fillPath(dst, boxPath(0, sh-band, sw, band*0.65, 0, false), rgba(0, 0, 0, 0), ca(rgba(4, 2, 10, 255), 0.88*a), vgrad(sh-band, sh-band*0.35), false)
-	fillRect(dst, 0, sh-band*0.35, sw, band*0.35, ca(rgba(4, 2, 10, 255), 0.88*a))
+	fillRectA(dst, 0, sh-band*0.35, sw, band*0.35, rgba(4, 2, 10, 255), 0.88*a)
 	txt := spaced(s)
 	size := 58.0
 	if w := u.measure(txt, fRune, size); w > 1380 {

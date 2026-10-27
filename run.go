@@ -102,6 +102,7 @@ type MapNode struct {
 	Next      []int
 	Visited   bool
 	Seed      int64
+	Omen      string // optional chamber omen (omens.go)
 }
 
 type ActMap struct {
@@ -152,6 +153,7 @@ func genMap(r *rand.Rand, act int) *ActMap {
 	// guarantee one treasure mid-act
 	mid := rows[3]
 	m.Nodes[mid[r.Intn(len(mid))]].Type = NTreasure
+	placeOmens(m, r, act)
 	m.Nodes = append(m.Nodes, &MapNode{Row: mapRows, Lane: 1, Type: NBoss, Seed: r.Int63()})
 	rows[mapRows] = []int{len(m.Nodes) - 1}
 	// edges
@@ -227,11 +229,14 @@ type Run struct {
 	Stats        Stats
 	Active       []string // active synergy names
 	PhoenixUsed  bool
+	Lives        int // lives left (lives.go)
+	LifeFinds    int // hearts caught this run
 	Cursed       bool
 	LastWorld    int
 	Element      string
 	Rerolls      int
 	Fused        []string // fusions formed this run
+	Scrolls      []string // carried scrolls (scrolls.go)
 	NewFusions   []string // formed since last announced
 	Rank, Asc    int      // player rank and ascension level at run start
 	Endless      bool     // continued past the final boss
@@ -253,6 +258,7 @@ func NewRun(code string, arch *Archetype, meta *SaveData, daily bool) *Run {
 	r := &Run{SeedCode: code, SeedN: n, Daily: daily, Rng: rand.New(rand.NewSource(n)), Arch: arch, LastWorld: -1,
 		Mods: map[string]int{}, Cur: -1, Start: time.Now()}
 	r.Act = 1
+	r.Lives = baseLives
 	r.Rank = rankOf(meta.XP)
 	r.Asc = meta.AscSel
 	r.metaLuck = meta.Upg["fortune"]
@@ -292,7 +298,7 @@ func hashStr(s string) int64 {
 
 func baseStats() Stats {
 	return Stats{MaxHP: 100, Damage: 1, DmgMult: 1, CritChance: 0.08, CritMult: 2, SpeedMult: 1, SizeMult: 1,
-		ChainCount: 2, ExplodeRadius: 1.4, GoldMult: 1, Luck: 1, PaddleWidth: 1, BallLossDmg: 20}
+		ChainCount: 2, ExplodeRadius: 1.4, GoldMult: 1, Luck: 1, PaddleWidth: 1, BallLossDmg: 0}
 }
 
 func (r *Run) Recompute(meta *SaveData) {
@@ -315,6 +321,14 @@ func (r *Run) Recompute(meta *SaveData) {
 			tags[t] += r.Mods[id]
 		}
 	}
+	for _, id := range r.Order {
+		if m := modByID[id]; m != nil && m.Curse && r.Mods[id] > 0 {
+			s.CurseCount++
+		}
+	}
+	if s.CurseWard && r.Mods["c_doubt"] > 0 {
+		s.MaxHP += 15 // the talisman shields your health from curses
+	}
 	r.Active = r.Active[:0]
 	for _, sy := range synergies {
 		if tags[sy.Tag] >= 3 {
@@ -333,7 +347,7 @@ func (r *Run) Recompute(meta *SaveData) {
 		}
 	}
 	s.PaddleWidth = math.Max(0.5, s.PaddleWidth)
-	s.BallLossDmg = math.Max(4, s.BallLossDmg)
+	s.BallLossDmg = math.Max(0, s.BallLossDmg)
 	s.MaxHP = math.Max(20, s.MaxHP)
 	r.Stats = s
 	if r.HP > s.MaxHP {
@@ -440,6 +454,7 @@ func (r *Run) NextAct(meta *SaveData) bool {
 	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(r.SeedN, int64(r.Act)))), r.Act)
 	r.Cur = -1
 	r.HP = math.Min(r.Stats.MaxHP, r.HP+r.Stats.MaxHP*0.3)
+	r.Lives = max(r.Lives, baseLives) // every act starts with at least two lives
 	return true
 }
 
@@ -479,6 +494,16 @@ type Event struct {
 
 func makeEvent(g *Game, rng *rand.Rand) *Event {
 	r := g.run
+	extra := moreEvents(g, rng)
+	for try := 0; try < 4; try++ {
+		k := rng.Intn(6 + len(extra))
+		if k < 6 {
+			break
+		}
+		if ev := extra[k-6](); ev != nil {
+			return ev
+		}
+	}
 	switch rng.Intn(6) {
 	case 0:
 		relic := r.Offer(1, true, Rare, rng)

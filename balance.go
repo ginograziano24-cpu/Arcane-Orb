@@ -10,8 +10,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"math/rand"
+	"strings"
 	"syscall/js"
 )
 
@@ -255,5 +257,70 @@ func init() {
 		}
 		b, _ := json.Marshal(out)
 		return string(b)
+	}))
+}
+
+func init() {
+	// __lifeTest exercises lives end to end without rendering
+	js.Global().Set("__lifeTest", js.FuncOf(func(this js.Value, args []js.Value) any {
+		g := theGame
+		rec := capState.recording
+		capState.recording = false
+		defer func() { capState.recording = rec }()
+		var log []string
+		say := func(f string, a ...any) { log = append(log, fmt.Sprintf(f, a...)) }
+		sv := defaultSave()
+		r := NewRun("LIFE", archByID("berserker"), &sv, false)
+		g.run, g.save = r, sv
+		g.hero = heroPortrait{}
+		L := g.newLevel(NCombat, 99)
+		g.level, g.state = L, StLevel
+		say("start lives=%d hp=%.0f", r.Lives, r.HP)
+		step := func(n int, in Input) {
+			for i := 0; i < n && g.state == StLevel; i++ {
+				L.Update(1.0/60, in)
+			}
+		}
+		// drop every orb
+		L.release()
+		for _, b := range L.Balls {
+			b.X, b.Z, b.VX, b.VZ = 0, 1, 0, -10
+		}
+		step(30, Input{UseKeys: true})
+		say("after drop lives=%d paddleGone=%.2f state=%v", r.Lives, L.paddleGone, g.state)
+		in := Input{Fire: true, UseKeys: true}
+		step(5, in)
+		say("launch while reforming: stuck=%v", L.anyStuck())
+		step(90, Input{UseKeys: true})
+		// a heart lands on the paddle
+		L.Drops = append(L.Drops, &Drop{X: L.PaddleX, Z: PaddleZ + 3, P: PLife})
+		say("heart at x=%.1f z=%.1f paddle=%.1f w=%.1f balls=%d stuck=%v", L.Drops[0].X, L.Drops[0].Z, L.PaddleX, L.PaddleW, len(L.Balls), L.anyStuck())
+		step(10, Input{UseKeys: true})
+		if len(L.Drops) > 0 {
+			say("10 frames: heart z=%.2f", L.Drops[0].Z)
+		} else {
+			say("10 frames: drops empty, lives=%d", r.Lives)
+		}
+		step(110, Input{UseKeys: true})
+		say("after heart lives=%d finds=%d", r.Lives, r.LifeFinds)
+		// health runs dry
+		L.hurt(r.HP+5, "TEST")
+		say("after hp loss lives=%d hp=%.0f", r.Lives, r.HP)
+		// last life
+		L.release()
+		for _, b := range L.Balls {
+			b.X, b.Z, b.VX, b.VZ = 0, 1, 0, -10
+		}
+		step(30, Input{UseKeys: true})
+		say("last drop lives=%d gameOverT=%.2f state=%v", r.Lives, L.gameOverT, g.state)
+		step(200, Input{UseKeys: true})
+		say("after blast state=%v (summary=%v)", g.state, g.state == StSummary)
+		// act refill
+		r2 := NewRun("LIFE2", archByID("guardian"), &sv, false)
+		r2.Lives = 0
+		r2.NextAct(&sv)
+		say("act refill lives=%d", r2.Lives)
+		g.state = StMenu
+		return strings.Join(log, "\n")
 	}))
 }

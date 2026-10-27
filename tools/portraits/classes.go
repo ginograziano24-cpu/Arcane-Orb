@@ -59,7 +59,7 @@ func arcanist() *Scene {
 	L := Arm{S: V{-0.19, 1.52, 0.0}, E: V{-0.3, 1.24, 0.05}, W: V{-0.31, 1.06, 0.16}, Hand: V{-0.31, 1.05, 0.2}, Fist: true}
 	orbC := rotY(V{0.46, 1.36, 0.34}, yaw)
 	headC := V{0, 1.77, 0.02}
-	pz := Pose{Yaw: yaw, Roll: 0.07, Nod: 0.14, Turn: 0.32, Neck: V{0, 1.64, 0.01}}
+	pz := vary(Pose{Yaw: yaw, Roll: 0.07, Nod: 0.14, Turn: 0.32, Neck: V{0, 1.64, 0.01}})
 	s.SDF = func(p V) (float64, int) {
 		q := pz.local(p)
 		h := newH()

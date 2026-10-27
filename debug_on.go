@@ -89,8 +89,14 @@ func debugKeys(g *Game) {
 		g.run.Bosses = 3
 		g.endRun(true)
 	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyF1) && g.level != nil {
+		g.level.Drops = append(g.level.Drops, &Drop{X: g.level.PaddleX, Z: 14, P: PLife})
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyF7) {
 		g.run.Gold += 200
+		for len(g.run.Scrolls) < g.run.scrollCap() {
+			g.addScroll(randomScroll(g.rng))
+		}
 	}
 }
 

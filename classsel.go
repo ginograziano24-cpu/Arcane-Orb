@@ -178,7 +178,7 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		k := u.anim("archrow"+c.ID, g.archSel == i, 12)
 		if k > 0.01 {
 			fillPath(s, boxPath(u.X(60), u.Y(y), 470*S, 78*S, 6*S, false), ca(ci.Col, 0.2*k), ca(ci.Col, 0.02*k), hgrad(u.X(60), u.X(530)), false)
-			fillRect(s, u.X(60), u.Y(y+8), 4*S, 62*S, ca(lighten(ci.Col, 0.3), k))
+			fillRectA(s, u.X(60), u.Y(y+8), 4*S, 62*S, lighten(ci.Col, 0.3), k)
 			u.glowLine(s, 60, 60+470*k, y+77, 1, ca(ci.Col, 0.8), k)
 		}
 		cl := c.Cost > 0 && !g.save.Unlocked[c.ID]

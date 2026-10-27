@@ -52,10 +52,11 @@ type rewardSet struct {
 }
 
 type shopItem struct {
-	Mod   *Mod
-	Kind  string // "mod", "heal"
-	Price int
-	Sold  bool
+	Mod    *Mod
+	Kind   string // "mod", "heal", "scroll", "cleanse"
+	Price  int
+	Sold   bool
+	Scroll string
 }
 
 type Game struct {
@@ -150,6 +151,8 @@ type Game struct {
 	achT      float64
 	achTick   int
 	achScroll float64
+	scrollSel int // pad: selected scroll slot
+	hero      heroPortrait
 }
 
 func NewGame() *Game {
@@ -309,9 +312,12 @@ func (g *Game) Update() error {
 		in := g.readInput()
 		if inputHook != nil {
 			in = inputHook(g)
+		} else {
+			g.scrollInput(g.level)
 		}
 		debugKeys(g)
 		g.level.Update(dt, in)
+		g.updateHero(g.level, dt)
 		if r := g.run; r != nil && r.HP > 0 && r.HP < r.Stats.MaxHP*0.3 && !g.level.Cleared {
 			g.heartT -= dt
 			if g.heartT <= 0 {
@@ -455,6 +461,7 @@ func (g *Game) startRun(arch *Archetype) {
 		code = randomSeedCode(g.rng)
 	}
 	g.run = NewRun(code, arch, &g.save, g.daily)
+	g.hero = heroPortrait{}
 	g.run.Endless = g.endlessMode
 	g.run.EndlessStart = g.endlessMode
 	g.save.Runs++
@@ -479,6 +486,9 @@ func (g *Game) enterNode(i int) {
 			g.snd.Play("roar")
 		}
 		g.level = g.newLevel(n.Type, r.NodeSeed(i))
+		if o := omenByID[n.Omen]; o != nil {
+			g.level.applyOmen(o)
+		}
 		g.setState(StLevel)
 	case NShop:
 		g.openShop(rng)
@@ -498,6 +508,13 @@ func (g *Game) afterLevel() {
 	r := g.run
 	L := g.level
 	rng := rand.New(rand.NewSource(r.NodeSeed(r.Cur) + 99))
+	// scrolls: elites and Guardians always leave one, other chambers sometimes
+	if L.Node == NElite || L.Node == NBoss || rng.Float64() < 0.2 {
+		g.addScroll(randomScroll(rng))
+	}
+	if rng.Float64() < r.Stats.ScribeChance {
+		g.addScroll(randomScroll(rng))
+	}
 	g.rewards = nil
 	switch L.Node {
 	case NElite:
@@ -506,7 +523,11 @@ func (g *Game) afterLevel() {
 	case NBoss:
 		g.rewards = append(g.rewards, rewardSet{Title: "Boss treasure — choose a relic", Mods: r.Offer(r.choices(), true, Rare, rng), Skip: 60})
 	default:
-		g.rewards = append(g.rewards, rewardSet{Title: "Choose an upgrade", Mods: r.Offer(r.choices(), false, Common, rng), Skip: 15})
+		minR := Common
+		if L.hasOmen("fortified") {
+			minR = Uncommon
+		}
+		g.rewards = append(g.rewards, rewardSet{Title: "Choose an upgrade", Mods: r.Offer(r.choices(), false, minR, rng), Skip: 15})
 	}
 	g.setState(StReward)
 }
@@ -534,6 +555,7 @@ func (g *Game) finishRewards() {
 
 func (g *Game) take(m *Mod) {
 	r := g.run
+	g.react(reactUpgrade)
 	g.save.Seen[m.ID] = true
 	if m.Relic {
 		g.toastImg("Relic acquired", m.Name+" — "+m.Desc, rarityColors[m.Rarity], modEmblem(m))
@@ -563,6 +585,10 @@ func (g *Game) openShop(rng *rand.Rand) {
 		g.shop = append(g.shop, shopItem{Mod: m, Kind: "mod", Price: r.price(modPrice(m, rng))})
 	}
 	g.shop = append(g.shop, shopItem{Kind: "heal", Price: r.price(35)})
+	for i := 0; i < 2; i++ {
+		id := randomScroll(rng)
+		g.shop = append(g.shop, shopItem{Kind: "scroll", Scroll: id, Price: r.price(scrollByID[id].Price + rng.Intn(10) - 5)})
+	}
 	g.rerollCost = r.price(20)
 	g.shopFree = r.Stats.ShopRerolls
 	g.setState(StShop)
@@ -928,15 +954,18 @@ func (g *Game) drawSeed(s *ebiten.Image) {
 func (g *Game) runPanel(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
-	u.panel(s, 30, 30, 360, 300, 0.85)
-	u.text(s, r.Arch.Name, fRune, 34, 50, 42, cGold, alignLeft)
-	u.iconLabel(s, icHeart, fmt.Sprintf("%.0f / %.0f", r.HP, r.Stats.MaxHP), fBold, 26, 52, 100, color.RGBA{255, 130, 140, 255}, alignLeft)
-	u.iconLabel(s, icCoin, fmt.Sprintf("%d gold", r.Gold), fBold, 26, 52, 140, cGold, alignLeft)
-	u.text(s, fmt.Sprintf("%s  ·  Act %d", biomes[r.AI()].Name, r.Act), fReg, 21, 50, 186, cDim, alignLeft)
-	u.text(s, "Seed  "+r.SeedCode, fReg, 21, 50, 218, cDim, alignLeft)
-	u.text(s, fmt.Sprintf("Damage %.1f  ·  Crit %.0f%%", r.Stats.Damage*r.Stats.DmgMult, r.Stats.CritChance*100), fReg, 19, 50, 256, cDim, alignLeft)
+	u.panel(s, 30, 30, 360, 330, 0.85)
+	g.updateHero(nil, u.DT)
+	g.drawHero(s, nil, 40, 40, 116, 150)
+	u.text(s, r.Arch.Name, fRune, 28, 170, 44, cGold, alignLeft)
+	g.drawLives(s, nil, 184+18*float64(max(r.maxLives(), r.Lives)-2), 100)
+	u.iconLabel(s, icHeart, fmt.Sprintf("%.0f / %.0f", r.HP, r.Stats.MaxHP), fBold, 24, 172, 124, color.RGBA{255, 130, 140, 255}, alignLeft)
+	u.iconLabel(s, icCoin, fmt.Sprintf("%d gold", r.Gold), fBold, 24, 172, 160, cGold, alignLeft)
+	u.text(s, fmt.Sprintf("%s  ·  Act %d", biomes[r.AI()].Name, r.Act), fReg, 21, 50, 206, cDim, alignLeft)
+	u.text(s, "Seed  "+r.SeedCode, fReg, 21, 50, 238, cDim, alignLeft)
+	u.text(s, fmt.Sprintf("Damage %.1f  ·  Crit %.0f%%", r.Stats.Damage*r.Stats.DmgMult, r.Stats.CritChance*100), fReg, 19, 50, 276, cDim, alignLeft)
 	if len(r.Active) > 0 {
-		u.text(s, "Synergies: "+strings.Join(r.Active, ", "), fBold, 19, 50, 288, cAcc, alignLeft)
+		u.text(s, "Synergies: "+strings.Join(r.Active, ", "), fBold, 19, 50, 308, cAcc, alignLeft)
 	}
 	// inventory
 	u.panel(s, 1530, 30, 360, 1020, 0.85)
@@ -1067,6 +1096,12 @@ func (g *Game) drawMap(s *ebiten.Image) {
 			strokePath(s, circlePath(u.X(x), u.Y(y), (rad+13)*u.S), 3*u.S, ca(cWhite, 0.9), false)
 		}
 		g.nodeIcon(s, n.Type, x, y, rad*1.1)
+		if o := omenByID[n.Omen]; o != nil && !n.Visited {
+			bx, by := x+rad*0.8, y-rad*0.8
+			fillPath(s, circlePath(u.X(bx), u.Y(by), 15*u.S), rgba(24, 16, 40, 255), rgba(10, 6, 18, 255), vgrad(u.Y(by-15), u.Y(by+15)), false)
+			strokePath(s, circlePath(u.X(bx), u.Y(by), 15*u.S), 1.6*u.S, o.Col, false)
+			u.drawEmblem(s, glyphImage(o.Glyph, o.Col), bx, by, 22, 1)
+		}
 		var hv, clk bool
 		if reach[i] {
 			hv, clk = u.hit("node"+itoa(i), x-rad, y-rad, rad*2, rad*2)
@@ -1078,6 +1113,9 @@ func (g *Game) drawMap(s *ebiten.Image) {
 		}
 		if hv {
 			g.tooltip = nodeNames[n.Type]
+			if o := omenByID[n.Omen]; o != nil && !n.Visited {
+				g.tooltip += "  ·  Omen: " + o.Name + " — " + o.Desc
+			}
 			if reach[i] {
 				g.tooltip += " — click to enter"
 			}
@@ -1199,12 +1237,14 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 		limit = y + h - 92
 	}
 	ds := 22.0
-	for ds > 15 && nameY+20+float64(len(u.wrap(m.Desc, fReg, ds, w-50)))*ds*1.35 > limit {
+	descBottom := func() float64 { return nameY + 20 + float64(len(u.wrap(m.Desc, fReg, ds, w-50)))*ds*1.35 }
+	for ds > 12 && descBottom() > limit {
 		ds -= 1
 	}
+	roomForHint := descBottom() <= limit+4
 	u.paragraph(s, m.Desc, fReg, ds, x+w/2, nameY+20, w-50, cDim, alignCenter)
 	// fusion hint
-	if f := g.run.fusionWith(m.ID); f != nil {
+	if f := g.run.fusionWith(m.ID); f != nil && roomForHint {
 		fy := y + h - 96
 		pulse := 0.75 + 0.25*math.Sin(g.stateT*5)
 		fp := boxPath(u.X(x+18), u.Y(fy), (w-36)*S, 36*S, 18*S, false)
@@ -1213,7 +1253,7 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 		strokePath(s, fp, 1.6*S, ca(f.Col, pulse), false)
 		u.drawEmblem(s, fusionEmblem(f), x+40, fy+18, 34, 1)
 		u.text(s, "FORGES "+strings.ToUpper(f.Name), fBold, 15, x+62, fy+9, lighten(f.Col, 0.3), alignLeft)
-	} else if ps := fusionPartners(m.ID); len(ps) > 0 {
+	} else if ps := fusionPartners(m.ID); len(ps) > 0 && roomForHint {
 		u.text(s, "Fuses with "+modByID[ps[0]].Name, fReg, 15, x+w/2, y+h-86, ca(cDim, 0.8), alignCenter)
 	}
 	// tags
@@ -1349,7 +1389,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		if it.Sold {
 			label = "Healed"
 		}
-		if u.button(s, "heal", label, 1160, 700, 330, 64, cGreen, !it.Sold && r.Gold >= it.Price && r.HP < r.Stats.MaxHP) {
+		if u.button(s, "heal", label, 1160, 770, 330, 52, cGreen, !it.Sold && r.Gold >= it.Price && r.HP < r.Stats.MaxHP) {
 			r.Gold -= it.Price
 			r.HP = math.Min(r.Stats.MaxHP, r.HP+30)
 			g.shop[i].Sold = true
@@ -1362,7 +1402,34 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		label = "Reroll stock   ·   free"
 		cost = 0
 	}
-	if u.button(s, "reroll", label, 1160, 790, 330, 64, cGold, r.Gold >= cost) {
+	// scrolls
+	sy := 650.0
+	for i, it := range g.shop {
+		if it.Kind != "scroll" {
+			continue
+		}
+		sd := scrollByID[it.Scroll]
+		lbl := fmt.Sprintf("%s  ·  %d", sd.Name, it.Price)
+		if it.Sold {
+			lbl = "Sold"
+		}
+		full := len(r.Scrolls) >= r.scrollCap()
+		if u.button(s, "scroll"+itoa(i), lbl, 1160, sy, 330, 52, sd.Col, !it.Sold && !full && r.Gold >= it.Price) {
+			r.Gold -= it.Price
+			g.addScroll(it.Scroll)
+			g.shop[i].Sold = true
+			g.snd.Play("buy")
+		}
+		if u.hover(1160, sy, 330, 52) {
+			tip := sd.Desc
+			if full && !it.Sold {
+				tip += "  (your scroll slots are full)"
+			}
+			g.tooltip = sd.Name + " — " + tip
+		}
+		sy += 60
+	}
+	if u.button(s, "reroll", label, 1160, 830, 330, 52, cGold, r.Gold >= cost) {
 		switch {
 		case g.shopFree > 0:
 			g.shopFree--
@@ -1377,7 +1444,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		g.rerollCost, g.shopFree = rc, sf
 		g.snd.Play("buy")
 	}
-	if u.button(s, "leave", "Leave shop", 1160, 900, 330, 64, cAcc, true) {
+	if u.button(s, "leave", "Leave shop", 1160, 900, 330, 60, cAcc, true) {
 		g.setState(StMap)
 	}
 }
@@ -1462,22 +1529,41 @@ func (g *Game) drawRest(s *ebiten.Image) {
 	r := g.run
 	g.runPanel(s)
 	u.heading(s, "A QUIET CAMPFIRE", 60, 200, cGold, 1)
-	g.drawCampfire(s, 960, 790)
+	g.drawCampfire(s, 960, 840)
 	u.text(s, "Rest your hands, or train your craft.", fReg, 26, 960, 300, cDim, alignCenter)
 	healPct := 0.35
 	if r.Asc >= 6 {
 		healPct = 0.25
 	}
 	heal := math.Round(r.Stats.MaxHP * healPct)
-	if u.button(s, "rest", fmt.Sprintf("Rest  (+%.0f health)", heal), 660, 420, 600, 80, cGreen, true) {
+	if u.button(s, "rest", fmt.Sprintf("Rest  (+%.0f health)", heal), 380, 380, 560, 76, cGreen, true) {
 		r.HP = math.Min(r.Stats.MaxHP, r.HP+heal)
 		g.snd.PlayKeyed("heal")
 		g.setState(StMap)
 	}
-	if u.button(s, "train", "Train  (choose an Uncommon+ upgrade)", 660, 530, 600, 80, cAcc, true) {
+	if u.button(s, "train", "Train  (a new Uncommon+ upgrade)", 980, 380, 560, 76, cAcc, true) {
 		rng := rand.New(rand.NewSource(r.NodeSeed(r.Cur) + 5))
 		g.rewards = []rewardSet{{Title: "Training — choose an upgrade", Mods: r.Offer(r.choices(), false, Uncommon, rng), Skip: 10}}
 		g.setState(StReward)
+	}
+	emp := r.empowerable()
+	if u.button(s, "empower", "Empower  (double an upgrade you own)", 380, 476, 560, 76, cGold, len(emp) > 0) {
+		rng := rand.New(rand.NewSource(r.NodeSeed(r.Cur) + 11))
+		rng.Shuffle(len(emp), func(i, j int) { emp[i], emp[j] = emp[j], emp[i] })
+		g.rewards = []rewardSet{{Title: "Empower — its effect doubles", Mods: emp[:min(3, len(emp))], Skip: 5}}
+		g.setState(StReward)
+	}
+	nc := len(r.curses())
+	lbl := "Cleanse  (lift a curse, +10 health)"
+	if nc == 0 {
+		lbl = "Cleanse  (no curses)"
+	}
+	if u.button(s, "cleanse", lbl, 980, 476, 560, 76, tagColors["curse"], nc > 0) {
+		if c := g.cleanse(); c != nil {
+			r.HP = math.Min(r.Stats.MaxHP, r.HP+10)
+			g.toastImg("Curse lifted", c.Name+" fades from your soul.", cGreen, modEmblem(c))
+		}
+		g.setState(StMap)
 	}
 }
 
@@ -1511,7 +1597,7 @@ func (g *Game) drawActIntro(s *ebiten.Image) {
 	u.text(s, "GUARDIAN", fBold, 15, 960, 512, ca(cDim, a3), alignCenter)
 	u.text(s, b.BossName, fRune, 34, 960, 534, ca(rgba(255, 214, 190, 255), a3), alignCenter)
 	if l := r.Loop(); l > 0 {
-		u.text(s, fmt.Sprintf("Bricks ×%.2f health   ·   orbs +%d%% speed   ·   orb loss +%d damage", math.Pow(1.25, float64(l)), 6*l, 3*l),
+		u.text(s, fmt.Sprintf("Bricks ×%.2f health   ·   orbs +%d%% speed   ·   drops cost %d health", math.Pow(1.25, float64(l)), 6*l, 3*l),
 			fReg, 22, 960, 600, ca(rgba(255, 140, 120, 255), a3), alignCenter)
 	}
 	if (u.Click || g.keyHit(ebiten.KeySpace) || g.keyHit(ebiten.KeyEnter)) && t < 0.8 && t > 0.05 {

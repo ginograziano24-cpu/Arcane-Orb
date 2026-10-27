@@ -423,6 +423,7 @@ func (g *Game) announceFusions() {
 		}
 		g.save.Fusions[id] = true
 		g.banner, g.bannerDesc, g.bannerT = "FUSION: "+strings.ToUpper(f.Name), f.Desc, 4.5
+		g.react(reactFusion)
 		g.bannerIcon = fusionEmblem(f)
 		g.bannerCol = f.Col
 		g.snd.PlayKeyed("synergy")

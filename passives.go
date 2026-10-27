@@ -83,6 +83,12 @@ func (L *Level) updatePassives(dt float64) {
 // passiveDamage scales a ball hit's damage.
 func (L *Level) passiveDamage(b *Brick, dmg float64) float64 {
 	s := &L.g.run.Stats
+	if L.hasOmen("frenzy") {
+		dmg *= 1.3
+	}
+	if s.CurseDmg > 0 {
+		dmg *= 1 + s.CurseDmg*float64(s.CurseCount)
+	}
 	if s.ClassRage {
 		dmg *= 1 + 0.05*float64(L.cls.rage)
 	}

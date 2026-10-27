@@ -25,7 +25,7 @@ func guardian() *Scene {
 	R := Arm{S: V{0.22, 1.5, 0}, E: V{0.3, 1.24, -0.02}, W: V{0.33, 1.02, 0.08}, Hand: V{0.34, 0.98, 0.11}, Fist: true}
 	L := Arm{S: V{-0.22, 1.5, 0}, E: V{-0.3, 1.27, 0.12}, W: V{-0.17, 1.2, 0.3}, Hand: V{-0.13, 1.21, 0.33}, Fist: true}
 	headC := V{0, 1.76, 0.02}
-	pz := Pose{Yaw: yaw, Roll: 0.05, Nod: 0.07, Turn: -0.18, Neck: V{0, 1.64, 0.01}}
+	pz := vary(Pose{Yaw: yaw, Roll: 0.05, Nod: 0.07, Turn: -0.18, Neck: V{0, 1.64, 0.01}})
 	s.SDF = func(p V) (float64, int) {
 		q := pz.local(p)
 		h := newH()
@@ -140,7 +140,7 @@ func berserker() *Scene {
 	R := Arm{S: V{0.24, 1.5, 0}, E: V{0.38, 1.3, 0.12}, W: V{0.3, 1.42, 0.3}, Hand: V{0.27, 1.47, 0.32}, Fist: true}
 	L := Arm{S: V{-0.24, 1.5, 0}, E: V{-0.36, 1.25, 0.02}, W: V{-0.38, 1.02, 0.1}, Hand: V{-0.38, 0.97, 0.12}, Fist: true}
 	headC := V{0, 1.75, 0.03}
-	pz := Pose{Yaw: yaw, Roll: -0.09, Nod: -0.07, Turn: 0.14, Neck: V{0, 1.63, 0.02}}
+	pz := vary(Pose{Yaw: yaw, Roll: -0.09, Nod: -0.07, Turn: 0.14, Neck: V{0, 1.63, 0.02}})
 	axeA := V{0.27, 1.47, 0.32}
 	axeB := V{0.05, 2.15, -0.25}
 	s.SDF = func(p V) (float64, int) {

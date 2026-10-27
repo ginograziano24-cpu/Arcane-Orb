@@ -86,6 +86,7 @@ const (
 	PBarrier
 	PGlue
 	PMagnet
+	PLife // a restored life (never in the normal drop table)
 	numPowers
 )
 
@@ -108,6 +109,7 @@ var powerDefs = [numPowers]powerDef{
 	PBarrier: {"B", "Barrier", color.RGBA{150, 120, 255, 255}, true, 7, 0},
 	PGlue:    {"G", "Glue", color.RGBA{120, 220, 70, 255}, true, 7, 14},
 	PMagnet:  {"$", "Magnet", color.RGBA{255, 200, 80, 255}, true, 5, 15},
+	PLife:    {"+", "Extra Life", color.RGBA{255, 110, 160, 255}, true, 0, 0},
 }
 
 type Drop struct {
@@ -189,7 +191,14 @@ type Level struct {
 	introT, introMax      float64 // boss intro cinematic
 	hitStop               float64
 	lostOrbs              int // orbs dropped this chamber (for Untouchable)
-	startLeft             int // required bricks at the start, for the last-brick assist
+	startLeft             int
+	paddleGone            float64 // >0 while the exploded paddle reforms
+	gameOverT             float64 // >0 while the last life's blast plays out
+	lifeFlash             float64 // required bricks at the start, for the last-brick assist
+	timeWarp, midasT      float64 // scroll effects
+	omen                  *omen
+	peakCombo             int
+	titanT, magnetT       float64
 	cls                   classState
 	lastPadX              float64
 	igniteN               int
@@ -275,6 +284,7 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 	if r.Cursed && node != NBoss {
 		hpMul *= 1.5
 	}
+	hpMul *= 1 + r.Stats.BrickHPMult
 	for row := 0; row < levelgen.MaxRows; row++ {
 		for c := 0; c < levelgen.Cols; c++ {
 			cell := L.Data.Cells[row][c]
@@ -410,7 +420,13 @@ func (L *Level) spawnServe() {
 	}
 }
 
-func (L *Level) ballR() float64 { return math.Min(0.75, 0.32*L.g.run.Stats.SizeMult) }
+func (L *Level) ballR() float64 {
+	r := math.Min(0.75, 0.32*L.g.run.Stats.SizeMult)
+	if L.titanT > 0 {
+		r *= 2
+	}
+	return r
+}
 
 func (L *Level) speed() float64 {
 	r := L.g.run
@@ -422,6 +438,12 @@ func (L *Level) speed() float64 {
 	}
 	if L.Timers[PHaste] > 0 {
 		base *= 1.3
+	}
+	if L.timeWarp > 0 {
+		base *= 0.55
+	}
+	if L.hasOmen("frenzy") {
+		base *= 1.15
 	}
 	return base
 }
@@ -442,6 +464,9 @@ func (L *Level) paddleTarget() float64 {
 func (L *Level) Update(dt float64, in Input) {
 	g := L.g
 	r := g.run
+	if L.updateLives(dt) {
+		return // the last life's explosion plays out
+	}
 	// boss intro: the arena holds still while the Guardian assembles
 	if L.introT > 0 {
 		L.T += dt
@@ -490,6 +515,10 @@ func (L *Level) Update(dt float64, in Input) {
 	if L.Frenzy > 0 {
 		L.Frenzy -= dt
 	}
+	L.timeWarp = math.Max(0, L.timeWarp-dt)
+	L.midasT = math.Max(0, L.midasT-dt)
+	L.titanT = math.Max(0, L.titanT-dt)
+	L.magnetT = math.Max(0, L.magnetT-dt)
 	L.comboT -= dt
 	if L.comboT <= 0 && L.Combo > 0 {
 		overdrive := false
@@ -531,6 +560,9 @@ func (L *Level) Update(dt float64, in Input) {
 			target += in.KeyDir * sp * dt
 		} else {
 			target = g.cam.ScreenToFloorX(in.MouseX, PaddleZ)
+		}
+		if math.IsNaN(target) || math.IsInf(target, 0) {
+			target = L.PaddleX
 		}
 		half := L.PaddleW / 2
 		L.PaddleX = math.Max(-HalfW+half, math.Min(HalfW-half, target))
@@ -577,6 +609,9 @@ func (L *Level) Update(dt float64, in Input) {
 			}
 		}
 		b.R += (L.ballR() - b.R) * math.Min(1, dt*6)
+		if L.titanT > 0 && b.PierceLeft < 2 {
+			b.PierceLeft = 2
+		}
 		s := sp
 		if r.Stats.Momentum {
 			s *= 1 + 0.04*math.Min(15, float64(b.Momentum))
@@ -676,6 +711,9 @@ func (L *Level) anyStuck() bool {
 
 func (L *Level) release() bool {
 	r := L.g.run
+	if L.paddleGone > 0 {
+		return false // wait for the paddle to reform
+	}
 	sp := L.speed()
 	released := false
 	for _, b := range L.Balls {
@@ -1131,6 +1169,9 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 		destroyed, solid = L.damage(b, h)
 	}
 	L.passiveOnHit(ball, b, dmg)
+	if L.midasT > 0 && L.rng.Float64() < 0.6 {
+		L.gainGold(1, b.X(), b.Z(), true)
+	}
 	if b.Kind == levelgen.Steel {
 		return false, true
 	}
@@ -1178,6 +1219,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	if L.Combo > r.MaxCombo {
 		r.MaxCombo = L.Combo
 	}
+	L.peakCombo = max(L.peakCombo, L.Combo)
 	if L.Combo%10 == 0 {
 		L.text(V3{bx, 2.2, bz}, fmt.Sprintf("COMBO ×%d", L.Combo), color.RGBA{255, 230, 120, 255}, true)
 		L.g.snd.ComboMilestone(L.Combo)
@@ -1309,6 +1351,9 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	}
 	// power-up drop
 	dropP := 0.055 * s.Luck
+	if L.hasOmen("bountiful") {
+		dropP *= 2
+	}
 	if b.MaxHP >= 2 {
 		dropP *= 1.4
 	}
@@ -1324,6 +1369,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 			L.dropPower(x, z, false)
 		}
 	}
+	L.maybeDropLife(x, z)
 	// kind effects
 	switch b.Kind {
 	case levelgen.Explosive:
@@ -1584,6 +1630,9 @@ func (L *Level) gainGold(n int, x, z float64, asCoin bool) {
 	if r.Cursed {
 		v *= 2
 	}
+	if L.hasOmen("gilded") {
+		v *= 2
+	}
 	v = max(v, 1)
 	r.Gold += v
 	L.GoldEarned += v
@@ -1592,6 +1641,10 @@ func (L *Level) gainGold(n int, x, z float64, asCoin bool) {
 func (L *Level) applyPower(p Power) {
 	g := L.g
 	d := powerDefs[p]
+	if p == PLife {
+		L.gainLife()
+		return
+	}
 	if d.Good {
 		g.snd.Play("pw." + itoa(int(p)) + "." + itoa(g.snd.Key))
 	} else {
@@ -1633,11 +1686,21 @@ func (L *Level) applyPower(p Power) {
 func (L *Level) loseBall() {
 	g := L.g
 	r := g.run
-	dmg := r.Stats.BallLossDmg
 	L.lostOrbs++
-	L.hurt(dmg, "ORB LOST")
-	if g.state != StLevel {
+	if dmg := r.Stats.BallLossDmg; dmg > 0 {
+		// some curses and relics make a drop sting twice
+		r.HP = math.Max(1, r.HP-dmg)
+		L.text(V3{L.PaddleX, 1.2, PaddleZ + 1.4}, fmt.Sprintf("−%.0f", dmg), color.RGBA{255, 100, 100, 255}, false)
+	}
+	L.loseLife("ORB LOST")
+	if g.state != StLevel || L.gameOverT > 0 {
 		return
+	}
+	if r.Stats.DropBarrier > 0 {
+		L.Barrier = min(5, L.Barrier+r.Stats.DropBarrier)
+	}
+	if r.Stats.LifeHeal > 0 {
+		r.HP = math.Min(r.Stats.MaxHP, r.HP+r.Stats.LifeHeal)
 	}
 	L.Timers = [numPowers]float64{}
 	L.tempSize = 0
@@ -1664,12 +1727,16 @@ func (L *Level) hurt(dmg float64, label string) {
 			g.snd.Duck(0.5, 1.5)
 			return
 		}
-		r.HP = 0
-		g.snd.PlayKeyed("over")
-		g.snd.Duck(0.7, 3)
-		g.endRun(false)
+		// out of health: it costs a life, and the health comes back
+		r.HP = r.Stats.MaxHP
+		L.loseLife("HEALTH LOST")
+		if L.gameOverT <= 0 {
+			L.Balls = nil
+			L.spawnServe()
+		}
 		return
 	}
+	g.react(reactHurt)
 	g.snd.Play("lose")
 }
 
@@ -1680,6 +1747,7 @@ func (L *Level) clear() {
 	L.clearT = 0
 	if L == g.level && r.SeedCode != "MENU" {
 		g.unlock("ACH_FIRST_CHAMBER")
+		L.omenCleared()
 	}
 	reward := 12 + r.Act*4
 	if L.Node == NElite {
@@ -1865,7 +1933,7 @@ func (L *Level) moveBrick(b *Brick, r, c int) {
 
 func (L *Level) updateDrops(dt float64) {
 	r := L.g.run
-	magnet := r.Stats.Magnet || L.Timers[PMagnet] > 0
+	magnet := r.Stats.Magnet || L.Timers[PMagnet] > 0 || L.magnetT > 0
 	half := L.PaddleW / 2
 	for i := 0; i < len(L.Drops); {
 		d := L.Drops[i]
@@ -2311,7 +2379,7 @@ func levelUnits(d *levelgen.Level) float64 {
 // chamberBudget is how much work a chamber at this depth should be, so a
 // fresh run opens with short, readable chambers and they grow from there.
 func chamberBudget(p levelgen.Params) float64 {
-	u := (26 + 4.5*float64(min(p.Depth, 26))) * (1 + 0.2*float64(p.Act-1))
+	u := (26 + 4.5*float64(min(p.Depth, 26))) * (1 + 0.25*float64(p.Act-1))
 	if p.Elite {
 		u *= 1.3
 	}

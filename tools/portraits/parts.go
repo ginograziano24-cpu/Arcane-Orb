@@ -1,6 +1,9 @@
 package main
 
-import "math"
+import (
+	"math"
+	"os"
+)
 
 // H accumulates the closest surface and its material.
 type H struct {
@@ -296,3 +299,25 @@ func (z Pose) head(e V) V {
 
 // body maps a rest-space body point into world space.
 func (z Pose) body(e V) V { return rotY(e, z.Yaw) }
+
+// poseVariant nudges every character's head for alternate HUD poses
+// (POSE=look|fierce|hurt). The default keeps the select-screen pose.
+var poseVariant = os.Getenv("POSE")
+
+func vary(z Pose) Pose {
+	switch poseVariant {
+	case "look":
+		z.Turn -= 0.42
+		z.Nod += 0.04
+		z.Roll -= 0.04
+	case "fierce":
+		z.Nod -= 0.16
+		z.Roll *= -0.5
+		z.Turn *= 0.3
+	case "hurt":
+		z.Nod += 0.17
+		z.Roll += 0.11
+		z.Turn += 0.14
+	}
+	return z
+}

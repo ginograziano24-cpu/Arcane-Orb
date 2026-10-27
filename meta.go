@@ -61,7 +61,7 @@ var metaUpgrades = []MetaUpgrade{
 	{"power", "Arcane Might", "+0.15 orb damage per rank.", "fist", 60, 5},
 	{"keen", "Keen Eye", "+2% critical chance per rank.", "sword", 40, 5},
 	{"steady", "Steady Hands", "+5% paddle width per rank.", "paddle", 40, 4},
-	{"padding", "Cushioned Fall", "Losing your orb costs 2 less health per rank.", "shield", 40, 4},
+	{"padding", "Cushioned Fall", "Losing a life restores 10 health per rank.", "shield", 40, 4},
 	{"purse", "Heavy Purse", "+20 starting gold per rank.", "coin", 25, 5},
 	{"merchant", "Trade Routes", "Shop prices −5% per rank.", "tag", 45, 4},
 	{"fortune", "Fortune", "Rarer upgrades and relics appear more often.", "star", 60, 5},
@@ -85,7 +85,7 @@ func applyMeta(s *Stats, meta *SaveData, asc int) {
 	s.Damage += 0.15 * float64(u["power"])
 	s.CritChance += 0.02 * float64(u["keen"])
 	s.PaddleWidth += 0.05 * float64(u["steady"])
-	s.BallLossDmg -= 2 * float64(u["padding"])
+	s.LifeHeal += 10 * float64(u["padding"])
 	s.ShopDiscount += 0.05 * float64(u["merchant"])
 	s.FreeRerolls += u["reroll"]
 	s.HealOnClear += 4 * float64(u["recover"])
@@ -96,7 +96,7 @@ func applyMeta(s *Stats, meta *SaveData, asc int) {
 		s.MaxHP -= 10
 	}
 	if asc >= 5 {
-		s.BallLossDmg += 5
+		s.BallLossDmg += 10
 	}
 	if asc >= 8 {
 		s.GoldMult -= 0.15
@@ -110,7 +110,7 @@ var ascensions = []struct{ Name, Desc string }{
 	{"Frail", "Start with 10 less max health."},
 	{"Inflation", "Shop prices +15%."},
 	{"Fortified", "All bricks have 15% more health."},
-	{"Brittle Orb", "Losing your orb costs 5 more health."},
+	{"Brittle Orb", "Dropping the orb also costs 10 health."},
 	{"Weary", "Rest sites heal 25% instead of 35%."},
 	{"Titans", "Bosses have 30% more health."},
 	{"Poverty", "Earn 15% less gold."},

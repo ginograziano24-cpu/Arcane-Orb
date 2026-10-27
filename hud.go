@@ -91,23 +91,27 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	}
 	g.goldPop = math.Max(0, g.goldPop-dt*3)
 
-	// ---- vitals plate (top-left)
-	u.frame(screen, 22, 18, 478, 112, 0.92)
+	// ---- hero portrait and lives (top-left)
+	g.drawHero(screen, L, 22, 18, 150, 186)
+	g.drawLives(screen, L, 97, 224)
+	// ---- vitals plate, beside the portrait
+	const vx = 162.0
+	u.frame(screen, 22+vx, 18, 440, 112, 0.92)
 	frac := hp / r.Stats.MaxHP
 	beat := 1.0
 	if frac < 0.3 {
 		beat = 1 + 0.14*math.Max(0, math.Sin(L.T*9))
-		drawSprite(screen, sprSoft, u.X(64-40), u.Y(56-40), 80*S, 80*S, ca(rgba(255, 60, 90, 255), 0.5*(beat-1)/0.14), true)
+		drawSprite(screen, sprSoft, u.X(vx+64-40), u.Y(56-40), 80*S, 80*S, ca(rgba(255, 60, 90, 255), 0.5*(beat-1)/0.14), true)
 	}
-	u.icon(screen, icHeart, 64, 57, 42*beat, 1)
-	u.bar(screen, 100, 42, 376, 28, frac, g.hudHP/r.Stats.MaxHP, rgba(236, 62, 96, 255), r.Stats.MaxHP, 10)
-	u.textOutlined(screen, fmt.Sprintf("%.0f / %.0f", hp, r.Stats.MaxHP), fBold, 18, 288, 44, cWhite, alignCenter)
+	u.icon(screen, icHeart, vx+64, 57, 42*beat, 1)
+	u.bar(screen, vx+100, 42, 338, 28, frac, g.hudHP/r.Stats.MaxHP, rgba(236, 62, 96, 255), r.Stats.MaxHP, 10)
+	u.textOutlined(screen, fmt.Sprintf("%.0f / %.0f", hp, r.Stats.MaxHP), fBold, 18, vx+269, 44, cWhite, alignCenter)
 	pop := g.goldPop
-	u.icon(screen, icCoin, 64, 101, 30*(1+0.25*pop), 1)
+	u.icon(screen, icCoin, vx+64, 101, 30*(1+0.25*pop), 1)
 	gs := 26 * (1 + 0.16*pop)
-	u.textOutlined(screen, itoa(int(math.Round(g.hudGold))), fBold, gs, 92, 101-gs*0.64, mixc(cGold, cWhite, pop*0.6), alignLeft)
+	u.textOutlined(screen, itoa(int(math.Round(g.hudGold))), fBold, gs, vx+92, 101-gs*0.64, mixc(cGold, cWhite, pop*0.6), alignLeft)
 	if L.Barrier > 0 {
-		x := 470.0
+		x := vx + 432.0
 		for i := 0; i < L.Barrier; i++ {
 			u.icon(screen, icShield, x, 101, 26, 1)
 			x -= 30
@@ -141,6 +145,9 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		u.frame(screen, 960-w/2, 108, w, 42, 0.88)
 		u.icon(screen, icShard, 960-w/2+28, 129, 24, 1)
 		u.text(screen, s, fBold, 18, 960-w/2+48, 117, rgba(176, 222, 255, 255), alignLeft)
+		g.drawOmenTag(screen, L, 156)
+	} else {
+		g.drawOmenTag(screen, L, 108)
 	}
 
 	// ---- combo (top-right)
@@ -248,6 +255,8 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		strokePath(screen, hex, 1.6*S, ca(th.Edge, 0.95), false)
 		u.drawEmblem(screen, modEmblem(m), cx, cy, 36, 1)
 	}
+
+	g.drawScrolls(screen, L)
 
 	// ---- launch prompt
 	if L.anyStuck() && !L.Cleared {
