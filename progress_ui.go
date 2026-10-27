@@ -136,7 +136,10 @@ func (g *Game) drawCodex(s *ebiten.Image) {
 			if seen {
 				found++
 			}
-			hv := u.hover(x, y, tile, tile)
+			hv, _ := u.hit("cx"+m.ID, x, y, tile, tile)
+			if hv && u.nav.mode {
+				u.focusRing(s, x, y, tile, tile, 14)
+			}
 			rc := rarityColors[m.Rarity]
 			bg := boxPath(u.X(x), u.Y(y), tile*u.S, tile*u.S, 14*u.S, false)
 			fillPath(s, bg, rgba(26, 20, 44, 230), rgba(12, 9, 24, 240), vgrad(u.Y(y), u.Y(y+tile)), false)

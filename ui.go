@@ -27,6 +27,8 @@ type UI struct {
 	DT        float64            // frame delta for widget animation
 	Held      bool               // left mouse button down
 	anims     map[string]float64 // per-widget eased hover/press values
+	nav       navState           // keyboard / gamepad focus
+	time      float64            // seconds since start, for widget pulses
 }
 
 type fontID int
@@ -209,4 +211,28 @@ func itoa(n int) string {
 		b = append([]byte{'-'}, b...)
 	}
 	return string(b)
+}
+
+// rawFace returns a face at an absolute pixel size (for offscreen art).
+func (u *UI) rawFace(f fontID, px float64) text.Face {
+	k := faceKey{f, -int(px)} // negative keys never collide with scaled faces
+	if fc, ok := u.faces[k]; ok {
+		return fc
+	}
+	fc, err := opentype.NewFace(u.fonts[f], &opentype.FaceOptions{Size: px, DPI: 72, Hinting: font.HintingNone})
+	if err != nil {
+		panic(err)
+	}
+	tf := text.NewGoXFace(fc)
+	u.faces[k] = tf
+	return tf
+}
+
+// drawRawText centres text horizontally at (cx, y) in pixel space.
+func (u *UI) drawRawText(dst *ebiten.Image, s string, face text.Face, cx, y float64, c color.RGBA) {
+	op := &text.DrawOptions{}
+	op.PrimaryAlign = text.AlignCenter
+	op.GeoM.Translate(cx, y)
+	op.ColorScale.ScaleWithColor(prem(c, 1))
+	text.Draw(dst, s, face, op)
 }

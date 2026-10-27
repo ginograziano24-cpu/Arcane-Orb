@@ -1035,6 +1035,24 @@ var recipes = map[string]recipe{
 			b.whoosh(0, 0.25, 600, 5000, 0.35)
 		})
 	}},
+	"bossintro": {1, func(p []int, v int, r *rand.Rand) []byte {
+		return one(5.5, r.Int63(), verbBig.with(0.95), func(b *sb) {
+			// three slow war-drum hits, a rising brass swell and a dark choir pad
+			for i, tm := range []float64{0.0, 0.9, 1.8} {
+				b.sub(tm, 70-float64(i)*6, 34, 1.2, 1.0)
+				b.noise(tm, 0.4, expEnv(0.002, 7), fLP, cst(600), 0.8, 0.6)
+			}
+			for _, st := range []int{0, 7, 12} {
+				b.brass(1.9, 2.8, semis(55, st), 0.28)
+			}
+			for _, st := range []int{0, 3, 7, 10} {
+				b.pad(0.4, 4.6, semis(110, st), 0.11)
+			}
+			b.riser(2.2, 1.6, 0.5)
+			b.impact(3.85, 0.9)
+			b.sub(3.85, 90, 30, 1.4, 1.2)
+		})
+	}},
 	"abilready": {1, func(p []int, v int, r *rand.Rand) []byte {
 		return one(1.2, r.Int63(), verbMid.with(0.4), func(b *sb) {
 			b.glass(0, 1318.5, 0.5)
@@ -1159,7 +1177,7 @@ func prewarmNames() []string {
 	}
 	for _, n := range []string{"crit", "steel", "shieldhit", "pad.0", "wall", "launch", "laser", "boom", "zap",
 		"thump", "coinbig", "hover", "click", "cardhover", "deal", "mapenter", "lose.0", "clear.0", "pick.0.0", "pick.1.0",
-		"pick.2.0", "pick.3.0", "pick.4.0", "synergy.0", "actstart.0", "heartbeat", "firestorm", "thunder", "abilready"} {
+		"pick.2.0", "pick.3.0", "pick.4.0", "synergy.0", "actstart.0", "heartbeat", "firestorm", "thunder", "abilready", "bossintro", "parry"} {
 		out = append(out, n)
 	}
 	for i := 0; i < 12; i++ {

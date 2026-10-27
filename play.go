@@ -149,6 +149,7 @@ type Particle struct {
 	Col       color.RGBA
 	Kind      int
 	Grav      float64
+	Rot, Spin float64 // debris tumble
 }
 
 type Ring struct {
@@ -185,6 +186,8 @@ type Boss struct {
 // ---------------------------------------------------------------- level
 
 type Level struct {
+	introT, introMax float64 // boss intro cinematic
+	hitStop  float64
 	cls                   classState
 	lastPadX              float64
 	igniteN               int
@@ -285,6 +288,9 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 	}
 	if node == NBoss {
 		L.setupBoss()
+		L.introT, L.introMax = 5.2, 5.2
+		g.snd.Play("bossintro")
+		g.snd.Duck(0.8, 4)
 	}
 	L.Walls = levelgen.Arena(L.Data.Shape)
 	L.PaddleX = 0
@@ -428,6 +434,39 @@ func (L *Level) paddleTarget() float64 {
 func (L *Level) Update(dt float64, in Input) {
 	g := L.g
 	r := g.run
+	// boss intro: the arena holds still while the Guardian assembles
+	if L.introT > 0 {
+		L.T += dt
+		was := L.introT
+		L.introT -= dt
+		if in.Fire && L.introMax-L.introT > 0.4 {
+			L.introT = math.Min(L.introT, 0.25)
+		}
+		L.updateBricks(dt)
+		L.updateEffects(dt)
+		L.Shake = math.Max(0, L.Shake-dt*2)
+		for _, b := range L.Bricks {
+			if b.BossPart && b.Appear > 0 && b.Appear-dt*4 <= 0 {
+				L.Shake = math.Max(L.Shake, 0.12)
+			}
+		}
+		if was > 1.0 && L.introT <= 1.0 {
+			L.g.snd.Play("boom")
+			L.Shake = math.Max(L.Shake, 0.6)
+			L.Flash = math.Max(L.Flash, 0.3)
+		}
+		if L.introT <= 0 {
+			for _, b := range L.Bricks {
+				b.Appear, b.FallY = 1, 0
+			}
+		}
+		return
+	}
+	// hit-stop: a few frames of near-freeze sell the big impacts
+	if L.hitStop > 0 {
+		L.hitStop -= dt
+		dt *= 0.12
+	}
 	L.T += dt
 	for i := range L.Timers {
 		if L.Timers[i] > 0 {
@@ -1211,6 +1250,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	}
 	r.Score += pts * (1 + L.Combo/10)
 	L.debris(V3{x, 0.5, z}, 10, b.Col)
+	L.breakPop(b, x, z)
 	L.g.snd.BrickBreak(L.Combo, b.MaxHP >= 2 || b.Kind == levelgen.Elite)
 
 	// gold
@@ -1669,7 +1709,7 @@ func (L *Level) updateBricks(dt float64) {
 			continue
 		}
 		b.Appear = math.Min(1, b.Appear+dt*4)
-		if b.FallY > 0 {
+		if b.FallY > 0 && b.Appear > 0 {
 			b.FallY = math.Max(0, b.FallY-dt*7)
 		}
 		b.Flash = math.Max(0, b.Flash-dt*6)
@@ -1921,11 +1961,13 @@ func (L *Level) updateEffects(dt float64) {
 		}
 		p.V.Y -= p.Grav * dt
 		p.P = p.P.Add(p.V.Mul(dt))
+		p.Rot += p.Spin * dt
 		if p.Kind == pDebris && p.P.Y < p.Size/2 {
 			p.P.Y = p.Size / 2
 			p.V.Y = math.Abs(p.V.Y) * 0.35
 			p.V.X *= 0.6
 			p.V.Z *= 0.6
+			p.Spin *= 0.5
 		}
 		i++
 	}
@@ -2010,7 +2052,13 @@ func (L *Level) debris(p V3, n int, c color.RGBA) {
 		n = n / 3
 	}
 	rnd := func() float64 { return L.rng.Float64() - 0.5 }
-	add := func(pp Particle) { L.Parts = append(L.Parts, &pp) }
+	add := func(pp Particle) {
+		if pp.Kind == pDebris {
+			pp.Rot = L.rng.Float64() * 6.28
+			pp.Spin = (L.rng.Float64() - 0.5) * 18
+		}
+		L.Parts = append(L.Parts, &pp)
+	}
 	world := WNeon
 	if L.Biome != nil {
 		world = L.Biome.ID
@@ -2075,6 +2123,9 @@ func (L *Level) setupBoss() {
 			if row[c] == '#' {
 				br := L.addBrick(r+2, c, levelgen.Basic, 2+float64(act), body)
 				br.BossPart = true
+				// assemble row by row from the top during the intro
+				br.Appear = -(1.6 + float64(len(shape)-r)*0.95 + math.Abs(float64(c)-6.5)*0.12)
+				br.FallY = 4
 				L.Left--
 				b.body = append(b.body, [2]int{r + 2, c})
 			}
@@ -2178,4 +2229,22 @@ func (L *Level) killBoss() {
 	L.Flash = 0.8
 	L.g.snd.PlayKeyed("bossdie")
 	L.g.snd.Duck(0.75, 4)
+}
+
+// breakPop is the instant of a brick breaking: a flash in its colour, a
+// quick ring on the floor and, for big bricks, a hit-stop and shockwave.
+func (L *Level) breakPop(b *Brick, x, z float64) {
+	c := lighten(b.Col, 0.45)
+	L.Parts = append(L.Parts, &Particle{P: V3{x, 0.7, z}, Life: 0.16, Max: 0.16, Size: 2.8, Col: c, Kind: pSpark})
+	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 0.9, Life: 0.22, Max: 0.22, Col: c})
+	switch {
+	case b.Kind == levelgen.Elite:
+		L.hitStop = math.Max(L.hitStop, 0.09)
+		L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 4, Life: 0.5, Max: 0.5, Col: color.RGBA{255, 210, 120, 255}})
+		L.sparks(V3{x, 1, z}, 26, color.RGBA{255, 220, 140, 255}, 11)
+		L.Flash = math.Max(L.Flash, 0.25)
+	case b.MaxHP >= 3:
+		L.hitStop = math.Max(L.hitStop, 0.035)
+		L.sparks(V3{x, 0.8, z}, 8, c, 7)
+	}
 }

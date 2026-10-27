@@ -58,6 +58,10 @@ func (u *UI) medallion(dst *ebiten.Image, x, y, rad float64, c color.RGBA) {
 
 // drawHUD renders the in-level overlay.
 func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
+	if L.introT > 0 {
+		g.drawBossIntro(screen, L)
+		return
+	}
 	u := g.ui
 	r := g.run
 	dt := u.DT
@@ -248,11 +252,14 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	// ---- launch prompt
 	if L.anyStuck() && !L.Cleared {
 		a := 0.75 + 0.25*math.Sin(L.T*4)
-		t2 := "or click to launch"
-		w1 := u.measure("SPACE", fBold, 16) + 28
+		t2, kc := "or click to launch", "SPACE"
+		if g.padActive {
+			t2, kc = "to launch", "A"
+		}
+		w1 := u.measure(kc, fBold, 16) + 28
 		w2 := u.measure(t2, fBold, 22)
 		x := 960 - (w1+14+w2)/2
-		u.keycap(screen, "SPACE", x, 960, a)
+		u.keycap(screen, kc, x, 960, a)
 		u.textOutlined(screen, t2, fBold, 22, x+w1+14, 962, ca(cWhite, a), alignLeft)
 	}
 
@@ -320,8 +327,13 @@ func (g *Game) drawAbility(screen *ebiten.Image, L *Level) {
 	tx := cx + rad + 16
 	u.text(screen, strings.ToUpper(a.Ability), fBold, 18, tx, cy-30, lighten(col, 0.4), alignLeft)
 	if ready {
-		kw := u.keycap(screen, "E", tx, cy-2, 1)
-		u.text(screen, "or right-click", fReg, 15, tx+kw+8, cy+6, cDim, alignLeft)
+		if g.padActive {
+			kw := u.keycap(screen, "X", tx, cy-2, 1)
+			u.text(screen, "or RB", fReg, 15, tx+kw+8, cy+6, cDim, alignLeft)
+		} else {
+			kw := u.keycap(screen, "E", tx, cy-2, 1)
+			u.text(screen, "or right-click", fReg, 15, tx+kw+8, cy+6, cDim, alignLeft)
+		}
 	} else {
 		u.text(screen, "recharging", fReg, 15, tx, cy+6, cDim, alignLeft)
 	}
@@ -396,4 +408,29 @@ func (g *Game) drawPassive(screen *ebiten.Image, L *Level) {
 	u.text(screen, label, fBold, 15, 74, y-19, lighten(col, 0.35), alignLeft)
 	u.text(screen, val, fBold, 14, 22+w-16, y-19, cWhite, alignRight)
 	u.meter(screen, 74, y+4, w-92, frac, col)
+}
+
+// drawBossIntro is the cinematic overlay while a Guardian assembles.
+func (g *Game) drawBossIntro(screen *ebiten.Image, L *Level) {
+	u := g.ui
+	S := u.S
+	sw, sh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
+	k := 1 - L.introT/L.introMax
+	out := clamp01(L.introT / 0.45)
+	bh := 118 * ease(clamp01(k*4)) * out
+	fillRect(screen, 0, 0, sw, bh*S+u.Y(0), rgba(0, 0, 0, 255))
+	fillRect(screen, 0, u.Y(1080-bh), sw, sh-u.Y(1080-bh), rgba(0, 0, 0, 255))
+	a := ease(clamp01((k-0.32)*3.5)) * out
+	if a > 0.01 {
+		acc := lighten(L.Biome.Trim, 0.25)
+		g.drawSigil(screen, 960, 800, 170+20*k, L.T*0.2, acc, 0.6*a)
+		drawSprite(screen, sprSoft, u.X(960-520), u.Y(800-150), 1040*S, 300*S, ca(rgba(0, 0, 0, 255), 0.55*a), false)
+		act := g.run.AI()
+		cap := "GUARDIAN OF " + strings.ToUpper(acts[act].Name)
+		u.text(screen, cap, fSerif, 24, 960, 718-(1-a)*10, ca(acc, a), alignCenter)
+		u.headingW(screen, L.Boss.Name, 86, 752+(1-a)*14, rgba(255, 226, 196, 255), a, 940)
+	}
+	if k > 0.1 && out > 0.5 {
+		u.text(screen, "Click to skip", fSerif, 18, 1880, 1080-bh+(bh-30)/2, ca(cDim, 0.6*out), alignRight)
+	}
 }

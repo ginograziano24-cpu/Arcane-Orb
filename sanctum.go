@@ -343,9 +343,12 @@ func (g *Game) arcaneItem(dst *ebiten.Image, id, label string, x, y float64, ena
 	u := g.ui
 	size := 31.0
 	w := u.measure(label, fSerif, size) + 60
-	hv := enabled && u.hover(x-30, y-4, w+40, 52)
+	var hv, clk bool
+	if enabled {
+		hv, clk = u.hit(id, x-30, y-4, w+40, 52)
+	}
 	k := u.anim("ai"+id, hv, 12)
-	if hv {
+	if hv && !u.nav.mode {
 		u.hoverID = id
 		if u.lastHover != id {
 			g.snd.Play("hover")
@@ -364,7 +367,7 @@ func (g *Game) arcaneItem(dst *ebiten.Image, id, label string, x, y float64, ena
 	}
 	u.text(dst, label, fSerif, size, x+2, y+8+2, ca(cBlack, 0.7), alignLeft)
 	u.text(dst, label, fSerif, size, x+12*k, y+8, c, alignLeft)
-	if hv && u.Click {
+	if clk {
 		g.snd.Play("click")
 		return true
 	}

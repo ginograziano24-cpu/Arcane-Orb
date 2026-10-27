@@ -542,8 +542,14 @@ func (u *UI) anim(id string, on bool, speed float64) float64 {
 // the semantic colour (confirm, danger, gold, neutral).
 func (u *UI) button(dst *ebiten.Image, id, label string, x, y, w, h float64, accent color.RGBA, enabled bool) bool {
 	th := u.theme()
-	hv := enabled && u.hover(x, y, w, h)
-	if hv {
+	var hv, clk bool
+	if enabled {
+		hv, clk = u.hit(id, x, y, w, h)
+	}
+	if hv && u.nav.mode {
+		u.focusRing(dst, x, y, w, h, math.Min(h/2, 14))
+	}
+	if hv && !u.nav.mode {
 		u.hoverID = id
 		if u.lastHover != id && u.snd != nil {
 			u.snd.Play("hover")
@@ -589,7 +595,7 @@ func (u *UI) button(dst *ebiten.Image, id, label string, x, y, w, h float64, acc
 	}
 	size := math.Min(26, h*0.42)
 	u.text(dst, label, fBold, size, x+w/2, y+h/2-size*0.64, tc, alignCenter)
-	if hv && u.Click {
+	if clk {
 		if u.snd != nil {
 			u.snd.Play("click")
 		}
@@ -602,6 +608,15 @@ func (u *UI) button(dst *ebiten.Image, id, label string, x, y, w, h float64, acc
 func (u *UI) slider(dst *ebiten.Image, label string, x, y, w float64, v float64, held bool) float64 {
 	th := u.theme()
 	S := u.S
+	if f, _ := u.navReg("sl"+label, x, y-6, w, 44, true); f {
+		u.focusRing(dst, x-10, y-6, w+20, 44, 12)
+		if u.nav.adjust != 0 {
+			v = math.Max(0, math.Min(1, math.Round(v*20+float64(u.nav.adjust))/20))
+			if u.snd != nil {
+				u.snd.Play("hover")
+			}
+		}
+	}
 	u.text(dst, label, fBold, 22, x, y, cWhite, alignLeft)
 	bx, by, bw, bh := x+300, y+10, w-380, 12.0
 	track := boxPath(u.X(bx), u.Y(by), bw*S, bh*S, bh/2*S, false)
@@ -627,8 +642,11 @@ func (u *UI) switchCtl(dst *ebiten.Image, id string, x, y float64, on bool) bool
 	th := u.theme()
 	S := u.S
 	w, h := 92.0, 42.0
-	hv := u.hover(x, y, w, h)
-	if hv {
+	hv, clk := u.hit(id, x-460, y-6, w+460+60, h+12)
+	if hv && u.nav.mode {
+		u.focusRing(dst, x-760+60, y-6, 760+w-20, h+12, 12)
+	}
+	if hv && !u.nav.mode {
 		u.hoverID = id
 		if u.lastHover != id && u.snd != nil {
 			u.snd.Play("hover")
@@ -652,7 +670,7 @@ func (u *UI) switchCtl(dst *ebiten.Image, id string, x, y float64, on bool) bool
 		lbl = "ON"
 	}
 	u.text(dst, lbl, fBold, 18, lx, y+10, mixc(cDim, cWhite, k), alignLeft)
-	if hv && u.Click {
+	if clk {
 		if u.snd != nil {
 			u.snd.Play("click")
 		}
@@ -736,3 +754,4 @@ func (g *Game) drawTransition(dst *ebiten.Image, dt float64) {
 		u.glowLine(dst, 960-half-40, 960+half+40, 540, 2, u.theme().Accent, k)
 	}
 }
+func smootherstep(x float64) float64 { x = clamp01(x); return x * x * x * (x*(x*6-15) + 10) }

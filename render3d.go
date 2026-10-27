@@ -62,7 +62,7 @@ func (c *Camera) ScreenToFloorX(sx, zLine float64) float64 {
 
 // ---------------------------------------------------------------- atlas
 
-const atlasSize = 512
+const atlasSize = 1024
 
 type Sprite struct{ X0, Y0, X1, Y1 float32 }
 

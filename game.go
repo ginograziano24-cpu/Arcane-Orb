@@ -91,6 +91,16 @@ type Game struct {
 	archPar     [2]float64
 	frontT      float64 // front-end animation clock
 	clickLatch  bool
+	navLatch    navInput
+	stickT      float64
+	stickHeld   bool
+	archActivate bool
+	padActive    bool // last input came from a gamepad: show pad glyphs
+	helpPage     int
+	helpShown    int
+	helpT        float64
+	lastCurX     int
+	lastCurY     int
 	keyLatch    map[ebiten.Key]bool
 	drawnSince  bool
 	seedText    string
@@ -259,15 +269,16 @@ func (g *Game) Update() error {
 			g.updateSeedInput()
 		}
 		debugMenuKeys(g)
-		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if backPressed() {
 			if g.state == StMenu {
-				g.quit = true
+				// point at Quit rather than closing the game outright
+				g.ui.nav.mode, g.ui.nav.focus = true, "menu8"
 			} else {
 				g.setState(StMenu)
 			}
 		}
 	case StLevel:
-		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyP) {
+		if pausePressed() {
 			g.setState(StPause)
 			return nil
 		}
@@ -287,11 +298,11 @@ func (g *Game) Update() error {
 	case StMap:
 		debugMapKeys(g)
 	case StPause:
-		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyP) {
+		if pausePressed() || padJust(ebiten.StandardGamepadButtonRightRight) {
 			g.setState(StLevel)
 		}
 	case StSettings:
-		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if backPressed() {
 			writeSave(&g.save)
 			g.setState(g.prevState)
 		}
@@ -353,6 +364,27 @@ func (g *Game) readInput() Input {
 	in.Fast = ebiten.IsKeyPressed(ebiten.KeyShift)
 	in.Fire = g.ui.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace)
 	in.Ability = inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) || inpututil.IsKeyJustPressed(ebiten.KeyE)
+	// gamepad: left stick or d-pad steers (analog), A launches, X / RB / RT fire the ability
+	ax := padAxis(ebiten.StandardGamepadAxisLeftStickHorizontal)
+	if padDown(ebiten.StandardGamepadButtonLeftLeft) {
+		ax = -1
+	}
+	if padDown(ebiten.StandardGamepadButtonLeftRight) {
+		ax = 1
+	}
+	if math.Abs(ax) > 0.15 {
+		g.useKeys = true
+		in.UseKeys = true
+		// ease the dead zone so small tilts are precise
+		in.KeyDir = math.Copysign((math.Abs(ax)-0.15)/0.85, ax)
+		in.Fast = math.Abs(ax) > 0.92
+	}
+	if padJust(ebiten.StandardGamepadButtonRightBottom) {
+		in.Fire = true
+	}
+	if padJust(ebiten.StandardGamepadButtonRightLeft) || padJust(ebiten.StandardGamepadButtonFrontTopRight) || padJust(ebiten.StandardGamepadButtonFrontBottomRight) {
+		in.Ability = true
+	}
 	return in
 }
 
@@ -570,8 +602,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.ui.Th = &themes[g.themeWorld()]
 	g.ui.DT = ddt
 	g.ui.Held = ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+	g.bakeBadges()
 	// clicks and key presses from every Update since the last frame
 	g.ui.Click = g.clickLatch
+	g.ui.time += ddt
+	g.ui.beginNav(g.navLatch)
 	g.drawnSince = true
 	act := 1
 	if g.run != nil {
@@ -647,6 +682,20 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.drawActIntro(screen)
 	case StStory:
 		g.drawStory(screen)
+	}
+	// controller hint bar for menus
+	if g.padActive && g.state != StLevel && g.state != StStory && g.state != StActIntro {
+		u := g.ui
+		x := 1880.0
+		for _, hnt := range [][2]string{{"B", "Back"}, {"A", "Select"}} {
+			w := u.measure(hnt[1], fBold, 18)
+			x -= w
+			u.text(screen, hnt[1], fBold, 18, x, 1036, rgba(220, 214, 236, 255), alignLeft)
+			kw := u.measure(hnt[0], fBold, 16) + 28
+			x -= kw + 8
+			u.keycap(screen, hnt[0], x, 1030, 0.95)
+			x -= 26
+		}
 	}
 	if g.bannerT > 0 {
 		u := g.ui
@@ -751,7 +800,7 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 		{"Play a Seed", func() { g.seedText = ""; g.endlessMode = false; g.setState(StSeed) }, true},
 		{"Sanctum  ·  " + itoa(g.save.Shards) + " shards", func() { g.setState(StSanctum) }, true},
 		{"Codex", func() { g.codexTab = 0; g.setState(StCodex) }, true},
-		{"How to Play", func() { g.setState(StHelp) }, true},
+		{"How to Play", func() { g.helpPage = 0; g.setState(StHelp) }, true},
 		{"Settings", func() { g.setState(StSettings) }, true},
 		{"Quit", func() { g.quit = true }, true},
 	}
@@ -835,41 +884,6 @@ func (g *Game) drawSeed(s *ebiten.Image) {
 	}
 }
 
-func (g *Game) drawHelp(s *ebiten.Image) {
-	u := g.ui
-	u.panel(s, 200, 60, 1520, 960, 0.92)
-	u.heading(s, "HOW TO PLAY", 64, 80, cGold, 1)
-	lines := []string{
-		"Move the paddle with the mouse (or A/D, arrow keys; hold Shift to move faster). Click or Space launches the orb.",
-		"Each act is a branching map. Pick your route: battles, elites, shops, events, treasure and rest sites, then a boss.",
-		"Losing the orb costs health. Reach zero and the run ends — but you keep the shards you earned for the Sanctum.",
-		"After each battle choose an upgrade. Elites, treasure and bosses give relics. Own 3 items with the same tag to awaken a SYNERGY.",
-		"Brick types: gold-trimmed tall bricks take extra hits · steel can't break · armoured bricks need crits, explosions, elements or void ·",
-		"bombs explode · bolts chain lightning · crystals rain gold · shields protect neighbours · ? bricks are a gamble · crowned elites pay big.",
-		"Esc pauses. F11 toggles fullscreen. Every level shows its seed so you can share and replay it.",
-	}
-	y := 200.0
-	for _, l := range lines {
-		y = u.paragraph(s, l, fReg, 23, 260, y, 1400, cWhite, alignLeft) + 14
-	}
-	y += 10
-	u.text(s, "Power-ups", fBold, 28, 260, y, cGold, alignLeft)
-	y += 50
-	for i, p := range powerDefs {
-		x := 260 + float64(i%2)*720
-		yy := y + float64(i/2)*44
-		u.rrect(s, x, yy, 50, 30, 15, p.Col)
-		u.text(s, p.Letter, fBold, 20, x+25, yy+3, color.RGBA{20, 20, 30, 255}, alignCenter)
-		c := cWhite
-		if !p.Good {
-			c = cRed
-		}
-		u.text(s, p.Name, fReg, 22, x+66, yy+2, c, alignLeft)
-	}
-	if u.button(s, "hback", "Back", 860, 940, 200, 56, cAcc, true) {
-		g.setState(StMenu)
-	}
-}
 
 func (g *Game) runPanel(s *ebiten.Image) {
 	u := g.ui
@@ -1013,14 +1027,22 @@ func (g *Game) drawMap(s *ebiten.Image) {
 			strokePath(s, circlePath(u.X(x), u.Y(y), (rad+13)*u.S), 3*u.S, ca(cWhite, 0.9), false)
 		}
 		g.nodeIcon(s, n.Type, x, y, rad*1.1)
-		hv := math.Hypot(u.MX-x, u.MY-y) < rad
+		var hv, clk bool
+		if reach[i] {
+			hv, clk = u.hit("node"+itoa(i), x-rad, y-rad, rad*2, rad*2)
+			if hv && u.nav.mode {
+				strokePath(s, circlePath(u.X(x), u.Y(y), (rad+24)*u.S), 3*u.S, ca(cWhite, 0.6+0.4*math.Sin(u.time*6)), false)
+			}
+		} else {
+			hv = math.Hypot(u.MX-x, u.MY-y) < rad
+		}
 		if hv {
 			g.tooltip = nodeNames[n.Type]
 			if reach[i] {
 				g.tooltip += " — click to enter"
 			}
 		}
-		if hv && reach[i] && u.Click {
+		if clk {
 			g.snd.Play("click")
 			g.enterNode(i)
 			return
@@ -1063,7 +1085,10 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 	u := g.ui
 	th := u.theme()
 	S := u.S
-	hv := u.hover(x, y, w, h)
+	hv, clk := u.hit("card"+m.ID, x, y, w, h)
+	if hv && u.nav.mode {
+		u.focusRing(s, x, y-14, w, h, 20)
+	}
 	if hv {
 		u.hoverID = "card" + m.ID
 		if u.lastHover != u.hoverID {
@@ -1178,7 +1203,7 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 		strokePath(s, p, 2*S, ca(pc, 0.9), false)
 		u.iconLabel(s, icCoin, itoa(price), fBold, 24, x+w/2, py+7, pc, alignCenter)
 	}
-	return hv && u.Click
+	return clk
 }
 
 func (g *Game) drawReward(s *ebiten.Image) {

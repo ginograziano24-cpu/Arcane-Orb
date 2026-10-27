@@ -75,14 +75,7 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		g.archSel = 0
 	}
 	// keyboard
-	if g.keyHit(ebiten.KeyArrowUp) || g.keyHit(ebiten.KeyW) {
-		g.archSel = (g.archSel + n - 1) % n
-		g.snd.Play("hover")
-	}
-	if g.keyHit(ebiten.KeyArrowDown) || g.keyHit(ebiten.KeyS) {
-		g.archSel = (g.archSel + 1) % n
-		g.snd.Play("hover")
-	}
+	defer func() { g.archActivate = false }()
 	a := &archetypes[g.archSel]
 	info := classInfo[a.ID]
 	col := info.Col
@@ -169,15 +162,18 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		c := &archetypes[i]
 		ci := classInfo[c.ID]
 		y := ly + float64(i)*86
-		hv := u.hover(60, y, 470, 78)
-		if hv && u.lastHover != "arch"+c.ID {
+		// pointer: hovering selects; pad/keys: focus selects, A begins
+		f, clk := u.navReg("arch"+c.ID, 60, y, 470, 78, false)
+		hv := f || (!u.nav.mode && u.hover(60, y, 470, 78))
+		if hv && !u.nav.mode && u.lastHover != "arch"+c.ID {
 			g.snd.Play("hover")
 		}
 		if hv {
 			u.hoverID = "arch" + c.ID
-			if u.Click || g.archSel != i {
-				g.archSel = i
-			}
+			g.archSel = i
+		}
+		if clk {
+			g.archActivate = true
 		}
 		k := u.anim("archrow"+c.ID, g.archSel == i, 12)
 		if k > 0.01 {
@@ -264,7 +260,7 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	by := ry + 820 - 96
 	if locked {
 		can := g.save.Shards >= a.Cost
-		if u.button(s, "unlock"+a.ID, fmt.Sprintf("Unlock  ·  %d shards", a.Cost), cx, by, rw-72, 64, cGold, can) {
+		if u.button(s, "unlock"+a.ID, fmt.Sprintf("Unlock  ·  %d shards", a.Cost), cx, by, rw-72, 64, cGold, can) || (g.archActivate && can) {
 			g.save.Shards -= a.Cost
 			g.save.Unlocked[a.ID] = true
 			writeSave(&g.save)
@@ -276,7 +272,8 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	} else {
 		pulse := 0.5 + 0.5*math.Sin(g.stateT*3)
 		drawSprite(s, sprSoft, u.X(cx-40), u.Y(by-30), (rw-72+80)*S, 124*S, ca(col, 0.12+0.1*pulse), true)
-		if u.button(s, "begin", "Begin", cx, by, rw-72, 64, cGreen, true) || g.keyHit(ebiten.KeyEnter) {
+		if u.button(s, "begin", "Begin", cx, by, rw-72, 64, cGreen, true) || g.archActivate {
+			g.archActivate = false
 			g.startRun(a)
 			return
 		}

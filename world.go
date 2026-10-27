@@ -25,6 +25,17 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		cam.Eye = V3{L.PaddleX * 0.1, 21, -6.5}
 		cam.Target = V3{L.PaddleX * 0.04, 0, 17.5}
 	}
+	if L.introT > 0 {
+		// boss intro: start low beside the Guardian and pull back to the
+		// playing view as it finishes assembling
+		k := 1 - L.introT/L.introMax
+		e := smootherstep(clamp01((k - 0.18) / 0.78))
+		orbit := 1 - k
+		eye0 := V3{-7 + 4*k, 6.5 + 2*k, 1 + 3*k}
+		tgt0 := V3{0, 3.8 + orbit*0.6, 24}
+		cam.Eye = eye0.Add(cam.Eye.Sub(eye0).Mul(e))
+		cam.Target = tgt0.Add(cam.Target.Sub(tgt0).Mul(e))
+	}
 	if sh2 > 0 {
 		cam.Eye = cam.Eye.Add(V3{(g.rng.Float64() - 0.5) * sh2, (g.rng.Float64() - 0.5) * sh2, 0})
 	}
@@ -244,8 +255,11 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		f := p.Life / p.Max
 		switch p.Kind {
 		case pDebris:
+			// tumbling shards: a spinning prism, slightly flattened
 			s := p.Size * (0.5 + 0.5*f)
-			B.Box(p.P.X-s, p.P.Y-s, p.P.Z-s, p.P.X+s, p.P.Y+s, p.P.Z+s, p.Col, sprWhite, 0)
+			fp := rotQuad(p.P.X, p.P.Z, s*2, s*1.4, p.Rot)
+			hh := s * (0.6 + 0.4*math.Abs(math.Sin(p.Rot*0.7)))
+			B.Prism(fp, p.P.Y-hh, p.P.Y+hh, 0.8, p.Col, 0.05)
 		case pSmoke:
 			B.Billboard(p.P, p.Size*(1.5-f*0.5), sprSoft, alpha(p.Col, 0.35*f), false)
 		case pAmbient:
@@ -300,7 +314,10 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 
 func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	x, z := b.X()+b.OffX, b.Z()+b.OffZ
-	ap := b.Appear
+	ap := clamp01(b.Appear)
+	if ap <= 0 {
+		return
+	}
 	ap = 1 - (1-ap)*(1-ap)
 	hw, hd := CellW/2*0.94, CellD/2*0.9
 	frac := b.HP / b.MaxHP
@@ -370,7 +387,8 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		B.Box(x-hw-0.02, y0+h*0.42, z-hd-0.02, x+hw+0.02, y0+h*0.58, z+hd+0.02, trim, sprWhite, 0.25)
 	}
 	h = y0 + h
-	if ic, ok := kindIcon[b.Kind]; ok {
+	g.drawBadge(B, b, x, h, z, t)
+	if ic, ok := kindIcon[b.Kind]; ok && false {
 		icCol := color.RGBA{255, 255, 255, 230}
 		switch b.Kind {
 		case levelgen.Explosive:
@@ -385,7 +403,6 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	}
 	if b.Kind == levelgen.Crystal {
 		bob := h + 0.7 + 0.15*math.Sin(t*3+x)
-		B.Billboard(V3{x, bob, z}, 0.9, sprIcons["gem"], color.RGBA{180, 240, 255, 255}, true)
 		B.Billboard(V3{x, bob, z}, 2.2, sprSoft, alpha(crystalGlow, 0.35), true)
 	}
 	if b.Kind == levelgen.Explosive && math.Mod(t*3+x, 1) < 0.5 {
