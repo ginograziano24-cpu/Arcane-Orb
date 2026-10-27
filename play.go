@@ -188,6 +188,7 @@ type Boss struct {
 type Level struct {
 	introT, introMax float64 // boss intro cinematic
 	hitStop  float64
+	lostOrbs int // orbs dropped this chamber (for Untouchable)
 	cls                   classState
 	lastPadX              float64
 	igniteN               int
@@ -1613,6 +1614,7 @@ func (L *Level) loseBall() {
 	g := L.g
 	r := g.run
 	dmg := r.Stats.BallLossDmg
+	L.lostOrbs++
 	L.hurt(dmg, "ORB LOST")
 	if g.state != StLevel {
 		return
@@ -1656,6 +1658,9 @@ func (L *Level) clear() {
 	r := g.run
 	L.Cleared = true
 	L.clearT = 0
+	if L == g.level && r.SeedCode != "MENU" {
+		g.unlock("ACH_FIRST_CHAMBER")
+	}
 	reward := 12 + r.Act*4
 	if L.Node == NElite {
 		reward += 25
@@ -2223,6 +2228,14 @@ func (L *Level) killBoss() {
 	b.Dead = true
 	b.HP = 0
 	L.g.run.Bosses++
+	if L == L.g.level {
+		if L.g.run.Act <= numActs {
+			L.g.unlock("ACH_GUARDIAN_" + itoa(L.g.run.Act))
+		}
+		if L.lostOrbs == 0 {
+			L.g.unlock("ACH_FLAWLESS")
+		}
+	}
 	L.Rocks = nil
 	L.text(V3{0, 4, 28}, b.Name+" FALLS!", color.RGBA{255, 220, 120, 255}, true)
 	L.Shake = 1

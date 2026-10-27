@@ -94,13 +94,26 @@ func (g *Game) drawSanctum(s *ebiten.Image) {
 func (g *Game) drawCodex(s *ebiten.Image) {
 	u := g.ui
 	u.heading(s, "THE CODEX", 72, 40, cGold, 1)
-	tabs := []string{"Upgrades", "Relics", "Fusions", "Endless Records"}
+	tabs := []string{"Upgrades", "Relics", "Fusions", "Achievements", "Endless Records"}
+	// Q/E or the shoulder buttons flip tabs
+	if g.navLatch.pageL {
+		g.codexTab = (g.codexTab + len(tabs) - 1) % len(tabs)
+		g.snd.Play("hover")
+	}
+	if g.navLatch.pageR {
+		g.codexTab = (g.codexTab + 1) % len(tabs)
+		g.snd.Play("hover")
+	}
+	if g.padActive {
+		u.keycap(s, "LB", 960-600-70, 152, 0.9)
+		u.keycap(s, "RB", 960+600+14, 152, 0.9)
+	}
 	for i, t := range tabs {
 		acc := cAcc
 		if g.codexTab == i {
 			acc = cGold
 		}
-		tx := 960 - 470 + float64(i)*240
+		tx := 960 - 590 + float64(i)*240
 		if u.button(s, "ctab"+itoa(i), t, tx, 140, 220, 50, acc, true) {
 			g.codexTab = i
 		}
@@ -109,6 +122,13 @@ func (g *Game) drawCodex(s *ebiten.Image) {
 		}
 	}
 	if g.codexTab == 3 {
+		g.drawAchievementsTab(s, 236)
+		if u.button(s, "cback", "Back", 60, 990, 200, 56, cAcc, true) {
+			g.setState(StMenu)
+		}
+		return
+	}
+	if g.codexTab == 4 {
 		g.drawRecords(s, 236)
 		if u.button(s, "cback", "Back", 60, 990, 200, 56, cAcc, true) {
 			g.setState(StMenu)

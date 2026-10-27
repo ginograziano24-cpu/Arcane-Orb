@@ -13,6 +13,14 @@ import (
 
 // Developer shortcuts, only compiled with -tags debug.
 func debugMenuKeys(g *Game) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF8) { // unlock the next achievement
+		for _, a := range achievements {
+			if !g.save.Ach[a.ID] {
+				g.unlock(a.ID)
+				break
+			}
+		}
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyF10) {
 		g.save.XP += 3000
 		g.save.Shards += 900

@@ -130,6 +130,9 @@ func (L *Level) passiveOnBreak() {
 			if c.rage == 20 {
 				L.text(V3{L.PaddleX, 1.6, PaddleZ + 2.5}, "RAMPAGE!", color.RGBA{255, 70, 50, 255}, true)
 				L.g.snd.PlayVol("crit", 0.8)
+				if L == L.g.level {
+					L.g.unlock("ACH_RAMPAGE")
+				}
 			}
 		}
 		c.rageT = 4
@@ -150,6 +153,9 @@ func (L *Level) passiveOnPaddle(b *Ball, t float64) {
 		b.Storm = 4
 		L.text(V3{b.X, 1.4, b.Z + 1}, "SUPERCHARGED", color.RGBA{150, 210, 255, 255}, true)
 		L.g.snd.PlayVol("thunder", 0.55)
+		if L == L.g.level {
+			L.g.unlock("ACH_SUPERCHARGE")
+		}
 		L.Rings = append(L.Rings, &Ring{X: b.X, Z: b.Z, MaxR: 2.6, Life: 0.35, Max: 0.35, Col: color.RGBA{150, 210, 255, 255}})
 	}
 }

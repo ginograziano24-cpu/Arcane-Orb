@@ -72,11 +72,13 @@ type SaveData struct {
 	BestLoop  int             `json:"best_endless_loop"`
 	Board     []EndlessEntry  `json:"endless_board"` // local top-10
 	StorySeen bool            `json:"story_seen"`
+	Ach       map[string]bool `json:"achievements"` // unlocked achievement API names
+	Elites    int             `json:"elites"`       // elite bricks broken, all runs
 	Settings  Settings        `json:"settings"`
 }
 
 func defaultSave() SaveData {
-	return SaveData{Version: 2, Upg: map[string]int{}, Unlocked: map[string]bool{}, Daily: map[string]int{}, Seen: map[string]bool{}, Fusions: map[string]bool{},
+	return SaveData{Version: 2, Upg: map[string]int{}, Unlocked: map[string]bool{}, Daily: map[string]int{}, Seen: map[string]bool{}, Fusions: map[string]bool{}, Ach: map[string]bool{},
 		Settings: Settings{Master: 1, Music: 0.6, SFX: 0.8, Shake: true, Flashes: true, Particles: 1, VSync: true, Fullscreen: true}}
 }
 
@@ -114,6 +116,9 @@ func loadSave() SaveData {
 	}
 	if s.Fusions == nil {
 		s.Fusions = map[string]bool{}
+	}
+	if s.Ach == nil {
+		s.Ach = map[string]bool{}
 	}
 	s.AscSel = max(0, min(s.AscSel, s.AscMax))
 	return s

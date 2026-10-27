@@ -34,6 +34,9 @@ func makeIcon(size int) image.Image {
 }
 
 func main() {
+	if steamInit() {
+		return // Steam is relaunching the game through the client
+	}
 	buildAtlas()
 	ebiten.SetWindowSize(1600, 900)
 	ebiten.SetWindowTitle("Arcane Orb")
@@ -46,3 +49,6 @@ func main() {
 		log.Fatal(err)
 	}
 }
+
+// gameVersion is shown on the title screen.
+const gameVersion = "v1.0 RC"

@@ -236,6 +236,7 @@ type Run struct {
 	FinalScore   int
 	xpPaid       int // XP already awarded (victory before endless)
 	shardsPaid   int
+	statsPaid    [3]int // bricks, bosses, elites already added to the save
 	metaLuck     int
 
 	// statistics

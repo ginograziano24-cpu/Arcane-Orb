@@ -144,6 +144,12 @@ type Game struct {
 	bannerIcon  *ebiten.Image
 	bannerCol   color.RGBA
 	shopFree    int
+
+	// achievements
+	achQueue  []string // popups waiting to show (when Steam's overlay is absent)
+	achT      float64
+	achTick   int
+	achScroll float64
 }
 
 func NewGame() *Game {
@@ -231,6 +237,8 @@ func (g *Game) Update() error {
 	dt = math.Max(0, math.Min(dt, 1.0/30))
 	g.stateT += dt
 	g.bannerT -= dt
+	steamTick()
+	g.checkAchievements()
 
 	if inpututil.IsKeyJustPressed(ebiten.KeyF11) || (inpututil.IsKeyJustPressed(ebiten.KeyEnter) && ebiten.IsKeyPressed(ebiten.KeyAlt)) {
 		g.settings.Fullscreen = !g.settings.Fullscreen
@@ -572,8 +580,11 @@ func (g *Game) endRun(win bool) {
 	for _, f := range r.Fused {
 		g.save.Fusions[f] = true
 	}
-	g.save.Bosses += r.Bosses
-	g.save.Bricks += r.Bricks
+	// a won run can continue into Endless and end again: only add what's new
+	g.save.Bricks += r.Bricks - r.statsPaid[0]
+	g.save.Bosses += r.Bosses - r.statsPaid[1]
+	g.save.Elites += r.Elites - r.statsPaid[2]
+	r.statsPaid = [3]int{r.Bricks, r.Bosses, r.Elites}
 	g.save.BestAct = max(g.save.BestAct, r.Act)
 	g.save.MaxCombo = max(g.save.MaxCombo, r.MaxCombo)
 	score := r.Score + r.Gold*5 + r.Depth*200 + r.Loop()*2500
@@ -587,6 +598,7 @@ func (g *Game) endRun(win bool) {
 		k := r.SeedCode
 		g.save.Daily[k] = max(g.save.Daily[k], score)
 	}
+	g.onRunEnd(r, win)
 	writeSave(&g.save)
 	g.setState(StSummary)
 }
@@ -732,6 +744,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 		g.tooltip = ""
 	}
+	g.drawAchievementPopup(screen)
 	g.drawTransition(screen, ddt)
 }
 
@@ -824,7 +837,7 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 	if best, ok := g.save.Daily[dailyCode()]; ok {
 		u.textOutlined(s, fmt.Sprintf("Today's daily best: %d", best), fBold, 17, ox, 1038, cGold, alignCenter)
 	}
-	u.text(s, "v0.9", fReg, 16, 1890, 1048, rgba(120, 110, 140, 255), alignRight)
+	u.text(s, gameVersion, fReg, 16, 1890, 1048, rgba(120, 110, 140, 255), alignRight)
 }
 
 // archPreview draws a paddle silhouette and stat meters on a paddle card.
