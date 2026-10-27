@@ -8,10 +8,10 @@ package main
 
 import (
 	"image/color"
-	"syscall/js"
 	"math"
 	"math/rand"
 	"strings"
+	"syscall/js"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -105,7 +105,7 @@ var trailerShots = []shot{
 		powers:  []Power{PMulti, PMulti},
 		ability: []float64{2.6}, cam: camLow}},
 	{at: 12, dur: 4, play: &playShot{world: WMeadow, act: 3, arch: "storm", seed: 5202, depth: 16, preroll: 1.8,
-		mods:    []string{"twin", "static", "conductor", "storm", "thunder", "echo", "sharp", "precision", "staticfield", "tesla"},
+		mods:   []string{"twin", "static", "conductor", "storm", "thunder", "echo", "sharp", "precision", "staticfield", "tesla"},
 		powers: []Power{PMulti, PMulti}, ability: []float64{1.8}, cam: camOrbit(1)}},
 	{at: 16, dur: 4, enter: enterOrigins, step: stepOrigins},
 	{at: 20, dur: 4, play: &playShot{world: WCaverns, act: 3, arch: "arcane", seed: 6303, depth: 17, preroll: 1.8,
@@ -124,8 +124,8 @@ var trailerShots = []shot{
 	{at: 32, dur: 6, play: &playShot{act: 1, arch: "guardian", seed: 1111, depth: 12, boss: true,
 		mods: []string{"twin", "kindling", "static", "split"}}},
 	{at: 38, dur: 4, play: &playShot{act: 3, arch: "storm", seed: 3333, depth: 30, boss: true, preroll: 6.8,
-		mods:    []string{"twin", "bane", "slayer", "excalibur", "static", "kindling", "meteor", "fuse", "split", "conductor"},
-		powers:  []Power{PMulti}, ability: []float64{1.2}, cam: camLow}},
+		mods:   []string{"twin", "bane", "slayer", "excalibur", "static", "kindling", "meteor", "fuse", "split", "conductor"},
+		powers: []Power{PMulti}, ability: []float64{1.2}, cam: camLow}},
 	{at: 42, dur: 1, play: &playShot{world: WNeon, act: 3, arch: "arcane", seed: 1212, depth: 17, preroll: 1.8, designed: true,
 		mods: []string{"twin", "split", "mirror", "kindling", "wildfire", "static"}, powers: []Power{PMulti}}},
 	{at: 43, dur: 1, play: &playShot{world: WMachine, act: 3, arch: "engineer", seed: 1313, depth: 18, preroll: 1.8,
