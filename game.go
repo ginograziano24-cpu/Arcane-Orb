@@ -1582,13 +1582,13 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 	g.snd.SFX = st.SFX * st.Master
 	g.snd.Music = st.Music * st.Master
 	g.snd.updateVolumes()
-	y += 200
+	y += 180
 	toggle := func(id, label string, v bool) bool {
 		u.text(s, label, fBold, 22, 520, y+12, cWhite, alignLeft)
 		if u.switchCtl(s, id, 1260, y+4, v) {
 			v = !v
 		}
-		y += 66
+		y += 58
 		return v
 	}
 	st.Shake = toggle("shake", "Screen shake", st.Shake)
@@ -1604,6 +1604,7 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 	vs := toggle("vs", "VSync", st.VSync)
 	st.ShowFPS = toggle("fps", "Show FPS", st.ShowFPS)
 	st.NoBloom = !toggle("bloom", "Bloom & colour grading", !st.NoBloom)
+	st.Classic = toggle("classic", "Classic backdrop (painted picture, no 3D scenery)", st.Classic)
 	if fs != st.Fullscreen || vs != st.VSync {
 		st.Fullscreen, st.VSync = fs, vs
 		g.applySettings()

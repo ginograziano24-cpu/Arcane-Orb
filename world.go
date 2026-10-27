@@ -49,7 +49,10 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	}
 	cam.Setup(sw, sh)
 	// sky, aligned so its horizon matches the 3D horizon
-	if g.sky != nil {
+	classic := g.settings.Classic
+	if classic && g.sky != nil {
+		g.drawClassicBackdrop(screen, L)
+	} else if g.sky != nil {
 		_, hy, _ := cam.Project(V3{cam.Eye.X, 0, cam.Eye.Z + 4000})
 		bw, bh := float64(g.sky.Bounds().Dx()), float64(g.sky.Bounds().Dy())
 		sc := sw / bw
@@ -67,7 +70,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	B.fogNear, B.fogFar = bio.FogNear, bio.FogFar
 	B.SetLight(bio.LightDir, bio.LightCol, bio.AmbCol)
 
-	g.drawScenery(B, L)
+	if !classic {
+		g.drawScenery(B, L)
+	}
 
 	// platform under the arena
 	n0 := len(B.quads)
@@ -495,4 +500,19 @@ func bossHeight(r, c int) float64 {
 	dx := math.Abs(float64(c)-6.5) / 6.5
 	dome := 1 - dx*dx
 	return 1.0 + 3.0*dome*(0.5+0.5*(1-gr/6))
+}
+
+// drawClassicBackdrop is the "classic" look: the world's painting fills
+// the screen as a still picture behind the arena, like the arcade
+// brick-breakers of the early 2000s.
+func (g *Game) drawClassicBackdrop(screen *ebiten.Image, L *Level) {
+	sw, sh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
+	bw, bh := float64(g.sky.Bounds().Dx()), float64(g.sky.Bounds().Dy())
+	sc := math.Max(sw/bw, sh/bh) * 1.04
+	op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+	op.GeoM.Scale(sc, sc)
+	op.GeoM.Translate((sw-bw*sc)/2, (sh-bh*sc)*0.35)
+	op.ColorScale.Scale(0.86, 0.86, 0.9, 1) // keep the play field readable
+	screen.DrawImage(g.sky, op)
+	vignette(screen, sw, sh, 210)
 }

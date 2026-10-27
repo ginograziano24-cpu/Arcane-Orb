@@ -100,6 +100,9 @@ func captureUpdate(g *Game) bool {
 	if v := js.Global().Get("__showHUD"); v.Type() == js.TypeBoolean {
 		hideHUD = !v.Bool()
 	}
+	if v := js.Global().Get("__classic"); v.Type() == js.TypeBoolean {
+		g.settings.Classic = v.Bool()
+	}
 	return false
 }
 

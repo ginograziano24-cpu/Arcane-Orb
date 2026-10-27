@@ -17,6 +17,7 @@ type Settings struct {
 	VSync      bool    `json:"vsync"`
 	ShowFPS    bool    `json:"show_fps"`
 	NoBloom    bool    `json:"no_bloom"`
+	Classic    bool    `json:"classic_backdrop"` // flat painted picture instead of 3D scenery
 }
 
 // EndlessEntry is one line of the local Endless leaderboard.
