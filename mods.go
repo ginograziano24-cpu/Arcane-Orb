@@ -49,6 +49,7 @@ type Stats struct {
 	Shatter, EagleEye, MeteorHeart, FrozenBonus, PrismOrb, Hydra     bool
 	BarrierRegen, CritPierce, VoidDouble, GoldPerBrick, ChainRecast  bool
 	StartElement                                                     string
+	StartGold                                                        float64 // extra gold at the start of a run
 	FreeRerolls                                                      int
 
 	// added in 0.5

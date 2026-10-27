@@ -189,6 +189,7 @@ type Level struct {
 	introT, introMax      float64 // boss intro cinematic
 	hitStop               float64
 	lostOrbs              int // orbs dropped this chamber (for Untouchable)
+	startLeft             int // required bricks at the start, for the last-brick assist
 	cls                   classState
 	lastPadX              float64
 	igniteN               int
@@ -267,7 +268,7 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 	if node == NBoss {
 		L.Data = &levelgen.Level{Name: b.BossName, Formation: "boss", Seed: seed}
 	} else {
-		L.Data = levelgen.Generate(levelgen.Params{Seed: seed, Depth: r.Depth + (act-1)*2, Act: act, Elite: node == NElite})
+		L.Data = pacedLevel(levelgen.Params{Seed: seed, Depth: r.Depth + (act-1)*2, Act: act, Elite: node == NElite})
 		L.Designed = strings.HasPrefix(L.Data.Formation, "design")
 	}
 	hpMul := (1.0 + float64(act-1)*0.35) * (1 + 0.02*float64(r.Depth)) * ascHP(r.Asc, node == NElite, false) * math.Pow(1.25, float64(r.Loop()))
@@ -292,6 +293,12 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 		L.introT, L.introMax = 5.2, 5.2
 		g.snd.Play("bossintro")
 		g.snd.Duck(0.8, 4)
+	}
+	L.startLeft = L.Left
+	if r.hasAbility() && node != NBoss {
+		// abilities come in partly charged, so they shape a chamber
+		// rather than open it
+		r.AbilT = math.Max(r.AbilT, r.Arch.Cooldown*0.4)
 	}
 	L.Walls = levelgen.Arena(L.Data.Shape)
 	L.PaddleX = 0
@@ -407,7 +414,7 @@ func (L *Level) ballR() float64 { return math.Min(0.75, 0.32*L.g.run.Stats.SizeM
 
 func (L *Level) speed() float64 {
 	r := L.g.run
-	base := math.Min(22, 13.5+float64(r.Depth)*0.28+float64(r.Act-1)*1.4)
+	base := math.Min(22, 16+float64(r.Depth)*0.22+float64(r.Act-1)*1.0)
 	base += math.Min(4, L.T*0.035)
 	base *= r.Stats.SpeedMult
 	if L.Timers[PSlow] > 0 {
@@ -884,6 +891,11 @@ func (L *Level) collidePaddle(b *Ball) {
 	sp := math.Hypot(b.VX, b.VZ)
 	t := math.Max(-1, math.Min(1, (b.X-L.PaddleX)/half))
 	ang := t * 62 * math.Pi / 180
+	if a, ok := L.lastBrickAim(b); ok {
+		// the last few bricks: bounces lean toward them so a chamber
+		// never ends in a long hunt for one brick
+		ang += (a - ang) * 0.55
+	}
 	b.VX, b.VZ = sp*math.Sin(ang), sp*math.Cos(ang)
 	b.Z = z1 + b.R
 	L.passiveOnPaddle(b, t)
@@ -1237,6 +1249,14 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	b.Alive = false
 	L.passiveOnBreak()
 	L.removeFromColumn(b)
+	if bo := L.Boss; b.BossPart && !b.Core && bo != nil && !bo.Dead {
+		// every slab of armour torn off wounds the Guardian a little
+		bo.HP -= bo.MaxHP * 0.02
+		bo.Hurt = math.Max(bo.Hurt, 0.4)
+		if bo.HP <= 0 {
+			L.killBoss()
+		}
+	}
 	if b.Kind.Required() && !b.BossPart {
 		L.Left--
 	}
@@ -1911,7 +1931,7 @@ func (L *Level) updateDrops(dt float64) {
 				if bm == 0 {
 					bm = 1
 				}
-				L.damage(b, Hit{Dmg: math.Max(1, st.Damage*0.6) * (1 + st.LaserDmg) * bm, Silent: true, Void: bl.Pierce > 0})
+				L.damage(b, Hit{Dmg: math.Max(0.6, st.Damage*st.DmgMult*0.6) * (1 + st.LaserDmg) * bm, Silent: true, Void: bl.Pierce > 0})
 				L.sparks(V3{bl.X, 0.6, bl.Z}, 5, color.RGBA{255, 100, 100, 255}, 4)
 				if st.TeslaCoil {
 					L.lightning(bl.X, bl.Z, 2, math.Max(1, st.Damage*0.5), b, false)
@@ -2152,11 +2172,18 @@ func (L *Level) moveCore() {
 			br.Col = bossBody(L.Biome)
 		}
 	}
-	var cands []*Brick
+	// prefer armour the orb can reach: nothing in front of it
+	var cands, open []*Brick
 	for _, br := range L.Bricks {
 		if br.Alive && br.BossPart {
 			cands = append(cands, br)
+			if br.R+1 >= levelgen.MaxRows || L.Grid[br.R+1][br.C] == nil {
+				open = append(open, br)
+			}
 		}
+	}
+	if len(open) > 0 && L.rng.Float64() < 0.8 {
+		cands = open
 	}
 	if len(cands) == 0 {
 		// golem fully stripped: rebuild a core in the chest
@@ -2200,7 +2227,7 @@ func (L *Level) updateBoss(dt float64) {
 		b.rebuildT = 0
 		for _, p := range b.body {
 			if L.Grid[p[0]][p[1]] == nil && !L.ballNear(cellX(p[1]), cellZ(p[0])) {
-				br := L.addBrick(p[0], p[1], levelgen.Basic, 2+float64(L.g.run.Act), darken(L.Biome.Wall, 0.8))
+				br := L.addBrick(p[0], p[1], levelgen.Basic, 2+float64(L.g.run.Act), bossBody(L.Biome))
 				br.BossPart = true
 				L.Left--
 				break
@@ -2264,3 +2291,89 @@ func (L *Level) breakPop(b *Brick, x, z float64) {
 
 // bossBody is the Guardian's armour: the world's stone, touched by its trim.
 func bossBody(b *Biome) color.RGBA { return mixc(darken(b.Wall, 0.6), b.Trim, 0.16) }
+
+// ---------------------------------------------------------------- pacing
+
+// levelUnits is a chamber's work: the brick health it holds before the
+// act and depth multipliers (steel doesn't count; stacks do).
+func levelUnits(d *levelgen.Level) float64 {
+	u := 0.0
+	for _, row := range d.Cells {
+		for _, c := range row {
+			if c.Kind.Required() {
+				u += float64(max(1, c.HP) * max(1, c.Stack))
+			}
+		}
+	}
+	return u
+}
+
+// chamberBudget is how much work a chamber at this depth should be, so a
+// fresh run opens with short, readable chambers and they grow from there.
+func chamberBudget(p levelgen.Params) float64 {
+	u := (26 + 4.5*float64(min(p.Depth, 26))) * (1 + 0.2*float64(p.Act-1))
+	if p.Elite {
+		u *= 1.3
+	}
+	return u
+}
+
+// pacedLevel generates a few candidates and keeps the one closest to the
+// budget; anything still far too big is trimmed.
+func pacedLevel(p levelgen.Params) *levelgen.Level {
+	want := chamberBudget(p)
+	var best *levelgen.Level
+	bestD := math.Inf(1)
+	for k := 0; k < 8; k++ {
+		q := p
+		q.Seed = p.Seed + int64(k)*7919
+		d := levelgen.Generate(q)
+		u := levelUnits(d)
+		dist := math.Abs(math.Log(u / want))
+		if dist < bestD {
+			best, bestD = d, dist
+		}
+		if u > want*0.7 && u < want*1.3 {
+			break
+		}
+	}
+	if u := levelUnits(best); u > want*1.4 {
+		// thin it out: lower health first, then shorter stacks
+		k := want * 1.25 / u
+		for r := range best.Cells {
+			for c := range best.Cells[r] {
+				cl := &best.Cells[r][c]
+				if !cl.Kind.Required() {
+					continue
+				}
+				cl.HP = max(1, int(math.Round(float64(cl.HP)*math.Sqrt(k))))
+				if cl.Stack > 1 {
+					cl.Stack = max(1, int(math.Round(float64(cl.Stack)*math.Sqrt(k))))
+				}
+			}
+		}
+	}
+	return best
+}
+
+// lastBrickAim gives the launch angle toward the nearest remaining brick
+// once only a handful are left.
+func (L *Level) lastBrickAim(b *Ball) (float64, bool) {
+	if L.Boss != nil || L.Left <= 0 || L.Left > max(3, L.startLeft/12) {
+		return 0, false
+	}
+	best := math.Inf(1)
+	ang := 0.0
+	for _, br := range L.Bricks {
+		if !br.Alive || !br.Kind.Required() {
+			continue
+		}
+		dx, dz := br.X()-b.X, br.Z()-b.Z
+		if d := dx*dx + dz*dz; d < best {
+			best = d
+			ang = math.Atan2(dx, dz)
+		}
+	}
+	lim := 62 * math.Pi / 180
+	return math.Max(-lim, math.Min(lim, ang)), true
+}

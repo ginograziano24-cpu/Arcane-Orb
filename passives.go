@@ -63,7 +63,7 @@ func (L *Level) updatePassives(dt float64) {
 		}
 	}
 	if s.ClassStatic && c.static < 100 {
-		c.static = math.Min(100, c.static+math.Abs(L.PaddleX-L.lastPadX)*100/(6*HalfW))
+		c.static = math.Min(100, c.static+math.Abs(L.PaddleX-L.lastPadX)*100/(10*HalfW))
 		if c.static >= 100 {
 			L.g.snd.PlayVol("abilready", 0.5)
 		}
@@ -84,7 +84,7 @@ func (L *Level) updatePassives(dt float64) {
 func (L *Level) passiveDamage(b *Brick, dmg float64) float64 {
 	s := &L.g.run.Stats
 	if s.ClassRage {
-		dmg *= 1 + 0.04*float64(L.cls.rage)
+		dmg *= 1 + 0.05*float64(L.cls.rage)
 	}
 	if s.ClassHighRoller {
 		dmg *= 1 + highRollerBonus(L.g.run.Gold)
@@ -97,25 +97,25 @@ func (L *Level) passiveDamage(b *Brick, dmg float64) float64 {
 	return dmg
 }
 
-func highRollerBonus(gold int) float64 { return math.Min(0.6, float64(gold)/8/100) }
+func highRollerBonus(gold int) float64 { return math.Min(0.6, float64(gold)/6/100) }
 
 // passiveOnHit fires after a ball hits a brick.
 func (L *Level) passiveOnHit(ball *Ball, b *Brick, dmg float64) {
 	s := &L.g.run.Stats
 	bx, bz := b.X(), b.Z()
 	if ball.Storm > 0 {
-		L.lightning(bx, bz, 2, math.Max(1, dmg*0.45), b, false)
+		L.lightning(bx, bz, 2, math.Max(0.5, dmg*0.4), b, false)
 	}
-	if s.ClassAttune && L.rng.Float64() < 0.35 && b.Alive {
+	if s.ClassAttune && L.rng.Float64() < 0.5 && b.Alive {
 		switch L.cls.attuneEl {
 		case 0:
 			b.Burn = 3.5
 		case 1:
 			b.Frozen = 3 + s.FreezeDur
 		case 2:
-			L.lightning(bx, bz, 2, math.Max(1, dmg*0.5), b, false)
+			L.lightning(bx, bz, 2, math.Max(1, dmg*0.6), b, false)
 		case 3:
-			L.damage(b, Hit{Dmg: dmg * 0.6, Void: true, Silent: true})
+			L.damage(b, Hit{Dmg: dmg * 0.8, Void: true, Silent: true})
 		}
 		L.sparks(V3{bx, 0.8, bz}, 6, attuneCols[L.cls.attuneEl], 5)
 	}
@@ -135,7 +135,7 @@ func (L *Level) passiveOnBreak() {
 				}
 			}
 		}
-		c.rageT = 4
+		c.rageT = 5
 	}
 }
 
@@ -150,7 +150,7 @@ func (L *Level) passiveOnPaddle(b *Ball, t float64) {
 	}
 	if s.ClassStatic && c.static >= 100 && b.Phantom <= 0 {
 		c.static = 0
-		b.Storm = 4
+		b.Storm = 3
 		L.text(V3{b.X, 1.4, b.Z + 1}, "SUPERCHARGED", color.RGBA{150, 210, 255, 255}, true)
 		L.g.snd.PlayVol("thunder", 0.55)
 		if L == L.g.level {

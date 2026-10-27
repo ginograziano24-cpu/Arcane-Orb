@@ -79,7 +79,7 @@ func (L *Level) firestorm() bool {
 	if second >= 0 {
 		rows[second] = true
 	}
-	dmg := L.abilityDmg() * 2.5 * (1 + 0.5*L.g.run.Stats.BurnMult)
+	dmg := L.abilityDmg() * 1.5 * (1 + 0.5*L.g.run.Stats.BurnMult)
 	var targets []*Brick
 	for _, b := range L.Bricks {
 		if b.Alive && b.Layer == 0 && rows[b.R] {
@@ -130,15 +130,18 @@ func (L *Level) thunderstrike() bool {
 		return false
 	}
 	s := &L.g.run.Stats
-	dmg := L.abilityDmg() * 6 * (1 + s.ChainMult)
+	dmg := L.abilityDmg() * 4 * (1 + s.ChainMult)
+	if best.Core {
+		dmg *= 0.35 // a Guardian's heart resists a single bolt
+	}
 	x, z := best.X(), best.Z()
 	for i := 0; i < 3; i++ {
 		L.Arcs = append(L.Arcs, &Arc{Pts: jag(V3{x + (L.rng.Float64()-0.5)*4, 16, z + (L.rng.Float64()-0.5)*2}, V3{x, 0.8, z}, L.rng), Life: 0.5, Col: color.RGBA{190, 225, 255, 255}})
 	}
 	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 3.6, Life: 0.4, Max: 0.4, Col: color.RGBA{150, 210, 255, 255}})
 	L.sparks(V3{x, 0.8, z}, 30, color.RGBA{200, 230, 255, 255}, 12)
-	L.damage(best, Hit{Dmg: dmg, Crit: true, Elemental: true})
-	L.lightningRaw(x, z, 4+s.ChainCount, dmg*0.4, best, s.StormCaller || s.ChainRecast)
+	L.damage(best, Hit{Dmg: dmg, Elemental: true})
+	L.lightningRaw(x, z, 3+s.ChainCount/2, dmg*0.35, best, s.StormCaller || s.ChainRecast)
 	L.text(V3{x, 2.6, z}, "THUNDERSTRIKE", color.RGBA{180, 220, 255, 255}, true)
 	L.Shake = math.Max(L.Shake, 0.55)
 	L.Flash = math.Max(L.Flash, 0.4)

@@ -34,17 +34,19 @@ var archetypes = []Archetype{
 			s.ClassParry = true
 		}},
 	{ID: "berserker", Name: "Berserker", Passive: "Rampage",
-		Desc: "Every brick you break adds Rage: +4% damage each, up to +80%. Rage fades after 4 seconds without a break, or when you drop the orb. Narrow paddle, +10% crit.",
+		Desc: "Every brick you break adds Rage: +5% damage each, up to +100%. Rage fades after 5 seconds without a break, or when you drop the orb. Narrow paddle, +0.2 damage, +10% crit.",
 		Apply: func(s *Stats) {
-			s.PaddleWidth -= 0.15
+			s.PaddleWidth -= 0.1
+			s.Damage += 0.2
 			s.CritChance += 0.1
 			s.CritMult += 0.5
 			s.ClassRage = true
 		}},
 	{ID: "arcane", Name: "Arcanist", Passive: "Attunement",
-		Desc: "Your orb cycles Fire, Frost, Storm and Void every 8 seconds; each hit has a 35% chance to unleash the current element.",
+		Desc: "Your orb cycles Fire, Frost, Storm and Void every 8 seconds; each hit has a 50% chance to unleash the current element. +0.15 damage.",
 		Apply: func(s *Stats) {
 			s.ClassAttune = true
+			s.Damage += 0.15
 		}},
 	{ID: "engineer", Name: "Engineer", Passive: "Overclock", Cost: 60,
 		Desc: "Paddle lasers fire every 2 seconds. Hold the paddle still for 1.5 seconds to overclock: the next volley is a piercing beam for double damage.",
@@ -53,27 +55,28 @@ var archetypes = []Archetype{
 			s.ClassOverclock = true
 		}},
 	{ID: "lucky", Name: "Gambler", Passive: "High Roller", Cost: 90,
-		Desc: "Gold is power: +1% damage for every 8 gold you carry, up to +60%. Spend or hoard? +40% gold, +30% power-ups and a free shop reroll.",
+		Desc: "Gold is power: +1% damage for every 6 gold you carry, up to +60%. Starts with 25 extra gold. Spend or hoard? +40% gold, +30% power-ups, +8% crit and a free shop reroll.",
 		Apply: func(s *Stats) {
 			s.GoldMult += 0.4
 			s.Luck += 0.3
+			s.CritChance += 0.08
 			s.FreeRerolls++
 			s.ClassHighRoller = true
+			s.StartGold += 25
 		}},
 	{ID: "pyro", Name: "Pyromancer", Passive: "Stoke", Cost: 120,
-		Desc: "Every 4th hit ignites. Hitting a burning brick stokes it: +50% damage and the fire is renewed. Fire burns 50% hotter.",
+		Desc: "Every 5th hit ignites. Hitting a burning brick stokes it: +50% damage and the fire is renewed. Fire burns 50% hotter.",
 		Apply: func(s *Stats) {
-			s.ClassIgnite = 4
+			s.ClassIgnite = 5
 			s.BurnMult += 0.5
 			s.ClassStoke = true
-		}, Ability: "Firestorm", AbilityDesc: "Set the two lowest rows ablaze.", Cooldown: 22},
+		}, Ability: "Firestorm", AbilityDesc: "Set the two lowest rows ablaze.", Cooldown: 32},
 	{ID: "storm", Name: "Stormcaller", Passive: "Static Charge", Cost: 120,
-		Desc: "Sweep the paddle back and forth to build static. When full, your next bounce supercharges the orb: for 4 seconds every hit arcs lightning. Lightning +30%.",
+		Desc: "Sweep the paddle back and forth to build static. When full, your next bounce supercharges the orb: for 3 seconds every hit arcs lightning. Lightning +10%.",
 		Apply: func(s *Stats) {
-			s.ChainMult += 0.3
-			s.ChainCount++
+			s.ChainMult += 0.1
 			s.ClassStatic = true
-		}, Ability: "Thunderstrike", AbilityDesc: "Smite the toughest brick; it chains to 4 more.", Cooldown: 18},
+		}, Ability: "Thunderstrike", AbilityDesc: "Smite the toughest brick; it chains to 3 more.", Cooldown: 28},
 }
 
 // ---------------------------------------------------------------- map
@@ -260,7 +263,7 @@ func NewRun(code string, arch *Archetype, meta *SaveData, daily bool) *Run {
 		r.Add(els[r.Rng.Intn(len(els))], meta)
 	}
 	r.HP = r.Stats.MaxHP
-	r.Gold = 20 + 20*meta.Upg["purse"]
+	r.Gold = 20 + 20*meta.Upg["purse"] + int(r.Stats.StartGold)
 	// Sanctum: start with relics / upgrades
 	rng := rand.New(rand.NewSource(levelgen.Mix(n, 9)))
 	for i := 0; i < meta.Upg["collector"]; i++ {

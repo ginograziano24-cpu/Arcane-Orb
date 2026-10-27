@@ -1,0 +1,259 @@
+//go:build capture && js
+
+package main
+
+// A headless balance harness: every origin plays the same chambers with
+// the same items under an imperfect autopilot, and we compare how fast
+// they clear and how much they get hurt. Call from the page:
+//
+//	__balance('{"seeds":6,"maxT":150}')
+
+import (
+	"encoding/json"
+	"math"
+	"math/rand"
+	"syscall/js"
+)
+
+type balScenario struct {
+	Name  string
+	Act   int
+	Depth int
+	Gold  int
+	Boss  bool
+	Mods  []string
+}
+
+var balScenarios = []balScenario{
+	{Name: "a1-early", Act: 1, Depth: 2},
+	{Name: "a1-late", Act: 1, Depth: 6, Mods: []string{"heavy", "sharp", "twin"}},
+	{Name: "a1-boss", Act: 1, Depth: 8, Boss: true, Gold: 80, Mods: []string{"heavy", "sharp", "twin", "kindling"}},
+	{Name: "a2-mid", Act: 2, Depth: 10, Gold: 150, Mods: []string{"heavy", "sharp", "twin", "kindling", "temper", "wide", "fort", "blast"}},
+	{Name: "a3-mid", Act: 3, Depth: 16, Gold: 220, Mods: []string{"heavy", "sharp", "twin", "kindling", "temper", "wide", "fort", "blast",
+		"static", "pierce", "brutal", "comboeng", "frost", "eagle", "afterburn"}},
+}
+
+type balResult struct {
+	Arch, Scen       string
+	Seeds, Cleared   int
+	Time, HPLost     float64
+	Orbs, Hits, Abil float64
+	Left, Start      float64
+	T50, T90, Bounce float64
+}
+
+// sloppy is the autopilot with human limits: it re-reads the play only
+// every so often, misjudges where the orb lands, and is not always fast.
+type sloppy struct {
+	rng     *rand.Rand
+	target  float64
+	think   float64
+	stuckT  float64
+	errSD   float64
+	reactMS float64
+}
+
+func (a *sloppy) input(L *Level, dt float64) Input {
+	in := Input{UseKeys: true}
+	a.think -= dt
+	if a.think <= 0 {
+		a.think = a.reactMS / 1000 * (0.7 + 0.6*a.rng.Float64())
+		zp := PaddleZ + PaddleD/2
+		bt := math.Inf(1)
+		x := L.PaddleX
+		for _, b := range L.Balls {
+			if b.Stuck || b.VZ >= 0 || b.Phantom > 0 {
+				continue
+			}
+			t := (b.Z - zp - b.R) / -b.VZ
+			if t < bt {
+				bt = t
+				x = foldX(b.X+b.VX*t, HalfW-b.R)
+			}
+		}
+		// with nothing urgent, go and catch a falling power-up
+		if bt > 1.2 && a.rng.Float64() < 0.7 {
+			for _, d := range L.Drops {
+				if d.Z < 12 && powerDefs[d.P].Good {
+					x, bt = d.X, 0
+					break
+				}
+			}
+		}
+		// the further away the orb, the bigger the misread
+		err := a.rng.NormFloat64() * a.errSD * math.Min(1.6, 0.4+bt*0.5)
+		a.target = x + err + (a.rng.Float64()*2-1)*L.PaddleW*0.25
+	}
+	d := a.target - L.PaddleX
+	in.Fast = math.Abs(d) > 2.5
+	sp := 30.0
+	if in.Fast {
+		sp = 46
+	}
+	in.KeyDir = math.Max(-1, math.Min(1, d/(sp*dt)))
+	if L.anyStuck() && L.introT <= 0 {
+		a.stuckT += dt
+		if a.stuckT > 0.6 {
+			in.Fire, a.stuckT = true, 0
+		}
+	}
+	if L.g.run.hasAbility() && L.g.run.AbilT == 0 {
+		in.Ability = true
+	}
+	return in
+}
+
+func runBalance(g *Game, seeds int, maxT, errSD, react float64) []balResult {
+	rec := capState.recording
+	capState.recording = false
+	defer func() { capState.recording = rec }()
+	var out []balResult
+	for ai := range archetypes {
+		arch := &archetypes[ai]
+		for _, sc := range balScenarios {
+			res := balResult{Arch: arch.ID, Scen: sc.Name, Seeds: seeds}
+			for s := 0; s < seeds; s++ {
+				sv := defaultSave()
+				r := NewRun("SIM", arch, &sv, false)
+				r.Act = sc.Act
+				for _, id := range sc.Mods {
+					r.Add(id, &sv)
+				}
+				r.Gold = sc.Gold
+				r.Depth = sc.Depth - 1
+				g.run = r
+				node := NCombat
+				if sc.Boss {
+					node = NBoss
+				}
+				seed := int64(1000*sc.Act + 37*s + sc.Depth)
+				L := g.newLevel(node, seed)
+				g.level, g.state = L, StLevel
+				r.HP = r.Stats.MaxHP
+				ap := &sloppy{rng: rand.New(rand.NewSource(seed * 7)), errSD: errSD, reactMS: react}
+				const dt = 1.0 / 60
+				hp0 := r.HP
+				res.Start += float64(L.Left)
+				lost, abil := 0, 0
+				t := 0.0
+				t50, t90 := maxT, maxT
+				pads := 0
+				for ; t < maxT && !L.Cleared; t += dt {
+					if float64(L.Left) <= float64(L.startLeft)*0.5 && t50 == maxT {
+						t50 = t
+					}
+					if float64(L.Left) <= float64(L.startLeft)*0.1 && t90 == maxT {
+						t90 = t
+					}
+					for _, b := range L.Balls {
+						if !b.Stuck && b.VZ < 0 && b.Z < PaddleZ+PaddleD/2+b.R+0.3 {
+							pads++
+						}
+					}
+					lb := L.lostOrbs
+					in := ap.input(L, dt)
+					if in.Ability {
+						abil++
+					}
+					L.Update(dt, in)
+					lost += L.lostOrbs - lb
+					if r.HP < 1e5 { // never die in the harness; count the damage
+						hp0 += 1e6
+						r.HP += 1e6
+					}
+				}
+				if L.Cleared {
+					res.Cleared++
+				}
+				res.Left += float64(L.Left)
+				res.T50 += math.Min(t50, t)
+				res.T90 += math.Min(t90, t)
+				res.Bounce += float64(pads) / t
+				hits := 0
+				for _, b := range L.Bricks {
+					if b.Alive && b.Kind.Required() {
+						hits++
+					}
+				}
+				res.Hits += float64(hits)
+				res.Time += t
+				res.HPLost += hp0 - r.HP
+				res.Orbs += float64(lost)
+				res.Abil += float64(abil)
+			}
+			n := float64(seeds)
+			res.Time /= n
+			res.HPLost /= n
+			res.Orbs /= n
+			res.Abil /= n
+			res.Left /= n
+			res.T50 /= n
+			res.T90 /= n
+			res.Bounce /= n
+			res.Start /= n
+			res.Hits /= n
+			out = append(out, res)
+		}
+	}
+	g.state = StMenu
+	return out
+}
+
+func init() {
+	js.Global().Set("__balance", js.FuncOf(func(this js.Value, args []js.Value) any {
+		p := struct {
+			Seeds int
+			MaxT  float64
+			Err   float64
+			React float64
+		}{6, 150, 1.4, 180}
+		if len(args) > 0 {
+			_ = json.Unmarshal([]byte(args[0].String()), &p)
+		}
+		b, _ := json.Marshal(runBalance(theGame, p.Seeds, p.MaxT, p.Err, p.React))
+		return string(b)
+	}))
+}
+
+func init() {
+	js.Global().Set("__levelStats", js.FuncOf(func(this js.Value, args []js.Value) any {
+		g := theGame
+		type row struct {
+			Act, Depth           int
+			Bricks, HP, Designed float64
+			Min, Max             float64
+		}
+		var out []row
+		for act := 1; act <= 3; act++ {
+			for d := 1; d <= 14; d += 1 {
+				rw := row{Act: act, Depth: d, Min: 1e9}
+				n := 40
+				for s := 0; s < n; s++ {
+					sv := defaultSave()
+					r := NewRun("SIM", &archetypes[0], &sv, false)
+					r.Act, r.Depth = act, d-1
+					g.run = r
+					L := g.newLevel(NCombat, int64(s*7919+d*31+act))
+					hp := 0.0
+					for _, b := range L.Bricks {
+						if b.Kind.Required() {
+							hp += b.HP
+						}
+					}
+					rw.Bricks += float64(L.Left)
+					rw.HP += hp
+					rw.Min = math.Min(rw.Min, float64(L.Left))
+					rw.Max = math.Max(rw.Max, float64(L.Left))
+					if L.Designed {
+						rw.Designed++
+					}
+				}
+				rw.Bricks /= float64(n)
+				rw.HP /= float64(n)
+				out = append(out, rw)
+			}
+		}
+		b, _ := json.Marshal(out)
+		return string(b)
+	}))
+}
