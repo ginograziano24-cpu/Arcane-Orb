@@ -180,3 +180,64 @@ func (L *Level) passiveOnLoss() {
 	L.cls.rage = 0
 	L.cls.static = 0
 }
+
+// ---------------------------------------------------------------- arena sigil
+
+// floorLine lays a thin glowing line on the arena floor.
+func floorLine(B *Batch, x0, z0, x1, z1, w float64, col color.RGBA) {
+	dx, dz := x1-x0, z1-z0
+	l := math.Hypot(dx, dz)
+	if l == 0 {
+		return
+	}
+	nx, nz := -dz/l*w/2, dx/l*w/2
+	y := 0.014
+	B.Quad([4]V3{{x0 + nx, y, z0 + nz}, {x1 + nx, y, z1 + nz}, {x1 - nx, y, z1 - nz}, {x0 - nx, y, z0 - nz}}, sprWhite, col, [4]float32{1, 1, 1, 1}, true)
+}
+
+// drawArenaSigil paints a turning magic circle on the arena floor that
+// brightens with the combo, flares on paddle hits and blooms when the
+// chamber is cleared.
+func (g *Game) drawArenaSigil(B *Batch, L *Level) {
+	cx, cz := 0.0, PaddleZ+6.5
+	R := 4.6
+	k := 0.1 + 0.22*math.Min(1, float64(L.Combo)/20) + 0.25*L.paddleBounce
+	if L.Cleared {
+		e := math.Min(1, L.clearT*1.4)
+		R *= 1 + 0.35*e
+		k = math.Max(k, 0.9*(1-math.Max(0, L.clearT-0.8)/1.6))
+	}
+	if k <= 0.01 {
+		return
+	}
+	col := L.Biome.Trim
+	rot := L.T * 0.15
+	ring := func(r, w, a float64) {
+		const n = 56
+		for i := 0; i < n; i++ {
+			a0 := float64(i) / n * 2 * math.Pi
+			a1 := float64(i+1) / n * 2 * math.Pi
+			floorLine(B, cx+math.Cos(a0)*r, cz+math.Sin(a0)*r*0.92, cx+math.Cos(a1)*r, cz+math.Sin(a1)*r*0.92, w, alpha(col, a*k))
+		}
+	}
+	ring(R, 0.07, 0.9)
+	ring(R*0.9, 0.04, 0.7)
+	ring(R*0.55, 0.05, 0.7)
+	for i := 0; i < 36; i++ {
+		an := rot + float64(i)/36*2*math.Pi
+		l0 := R * 0.91
+		if i%3 == 0 {
+			l0 = R * 0.84
+		}
+		floorLine(B, cx+math.Cos(an)*l0, cz+math.Sin(an)*l0*0.92, cx+math.Cos(an)*R*0.99, cz+math.Sin(an)*R*0.99*0.92, 0.05, alpha(col, 0.8*k))
+	}
+	for tri := 0; tri < 2; tri++ {
+		for j := 0; j < 3; j++ {
+			a0 := -rot*1.5 + float64(tri)*math.Pi/3 + float64(j)*2*math.Pi/3
+			a1 := a0 + 2*math.Pi/3
+			r := R * 0.55
+			floorLine(B, cx+math.Cos(a0)*r, cz+math.Sin(a0)*r*0.92, cx+math.Cos(a1)*r, cz+math.Sin(a1)*r*0.92, 0.05, alpha(col, 0.7*k))
+		}
+	}
+	B.Decal(cx, cz, 0.012, R*1.6, R*1.5, sprSoft, alpha(col, 0.18*k), true)
+}

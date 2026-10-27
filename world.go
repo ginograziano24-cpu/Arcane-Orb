@@ -44,6 +44,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		op.GeoM.Scale(sc, sc)
 		op.GeoM.Translate(0, hy-bh*skyHorizon*sc)
 		screen.DrawImage(g.sky, op)
+		g.drawSkyFX(screen, L.Biome.ID, hy, L.T)
 	}
 	B := g.batch
 	B.Reset()
@@ -92,6 +93,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	}
 	// glowing lane line near the paddle
 	B.Decal(0, PaddleZ-1.3, 0.01, HalfW*2, 0.12, sprWhite, alpha(bio.Trim, 0.35), true)
+	g.drawArenaSigil(B, L)
 	// walls follow the arena outline
 	wallH := 1.4
 	wallTop, wallSide := matTop[bio.BrickMat], matSide[bio.BrickMat]

@@ -1,4 +1,4 @@
-ARCANE ORB  -  build 0.8
+ARCANE ORB  -  build 0.9
 =====================================
 
 Run ArcaneOrb.exe. No install needed. Starts fullscreen at your
@@ -10,6 +10,26 @@ CONTROLS
   Click / Space .... launch orb, fire   Shift ........... faster keyboard move
   Esc / P .......... pause              F11 ............. fullscreen
   Right-click / E .. class ability (Pyromancer, Stormcaller)
+
+NEW IN 0.9  -  polish pass
+  - Arcane lettering (Cinzel) for every heading, banner, card name, boss
+    name and the world title on the HUD
+  - Cinematic act intros: the realm's name rises over a turning sigil,
+    then its Guardian; a first click finishes the reveal
+  - Story chapters now play out in the moonlit hall
+  - Map: glowing ley lines with flowing motes along your open routes,
+    turning rune rings around reachable chambers, new node emblems,
+    a darker chart backdrop, and your origin's passive in the Build panel
+  - Events get an illustration in a turning sigil; the campfire burns
+  - Cards fit their text: long names shrink to one line, descriptions
+    shrink to fit, and the shop's relic row uses a compact layout
+    (fixes text spilling over tags and prices)
+  - A magic circle on the arena floor glows with your combo, flares on
+    paddle hits and blooms gold when a chamber is cleared
+  - Living skies: aurora, sun shafts, dust, smoke and magic motes
+  - The run summary shows your origin beside the tally
+  - Fixed clicks and key presses being ignored when a frame ran long,
+    and one press acting twice across a screen change
 
 NEW IN 0.8  -  the arcane hall, living origins, real passives
   - New dark title screen: a moonlit gothic hall drawn live by a shader,

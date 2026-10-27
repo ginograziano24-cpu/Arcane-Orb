@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
 // Class select: a list of origins on the left, the selected character's
@@ -76,11 +75,11 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		g.archSel = 0
 	}
 	// keyboard
-	if inpututil.IsKeyJustPressed(ebiten.KeyArrowUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
+	if g.keyHit(ebiten.KeyArrowUp) || g.keyHit(ebiten.KeyW) {
 		g.archSel = (g.archSel + n - 1) % n
 		g.snd.Play("hover")
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyArrowDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
+	if g.keyHit(ebiten.KeyArrowDown) || g.keyHit(ebiten.KeyS) {
 		g.archSel = (g.archSel + 1) % n
 		g.snd.Play("hover")
 	}
@@ -277,7 +276,7 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	} else {
 		pulse := 0.5 + 0.5*math.Sin(g.stateT*3)
 		drawSprite(s, sprSoft, u.X(cx-40), u.Y(by-30), (rw-72+80)*S, 124*S, ca(col, 0.12+0.1*pulse), true)
-		if u.button(s, "begin", "Begin", cx, by, rw-72, 64, cGreen, true) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		if u.button(s, "begin", "Begin", cx, by, rw-72, 64, cGreen, true) || g.keyHit(ebiten.KeyEnter) {
 			g.startRun(a)
 			return
 		}

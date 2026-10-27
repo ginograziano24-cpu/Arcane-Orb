@@ -79,3 +79,18 @@ func debugKeys(g *Game) {
 		g.run.Gold += 200
 	}
 }
+
+// debugMapKeys: on the map, digits 1-7 jump straight into a node of that
+// type (combat, elite, shop, treasure, event, rest, boss).
+func debugMapKeys(g *Game) {
+	for d := 0; d < 7; d++ {
+		if inpututil.IsKeyJustPressed(ebiten.Key1 + ebiten.Key(d)) {
+			for i, n := range g.run.Map.Nodes {
+				if int(n.Type) == d {
+					g.enterNode(i)
+					return
+				}
+			}
+		}
+	}
+}

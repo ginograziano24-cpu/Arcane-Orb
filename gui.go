@@ -346,8 +346,8 @@ func (u *UI) heading(dst *ebiten.Image, s string, size, y float64, col color.RGB
 // headingW is heading with the ornament rules kept within maxHalf of centre.
 func (u *UI) headingW(dst *ebiten.Image, s string, size, y float64, col color.RGBA, a, maxHalf float64) {
 	th := u.theme()
-	w := u.measure(s, fTitle, size)
-	u.textOutlined(dst, s, fTitle, size, 960, y, ca(col, a), alignCenter)
+	w := u.measure(s, fRune, size)
+	u.textOutlined(dst, s, fRune, size, 960, y, ca(col, a), alignCenter)
 	cy := y + size*0.64
 	ln := math.Min(math.Min(220, 40+size*2.4), maxHalf-(w/2+28+12))
 	for _, sg := range []float64{-1, 1} {

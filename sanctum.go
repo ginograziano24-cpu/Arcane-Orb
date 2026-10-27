@@ -370,3 +370,15 @@ func (g *Game) arcaneItem(dst *ebiten.Image, id, label string, x, y float64, ena
 	}
 	return false
 }
+
+// vignette darkens the screen edges with four soft gradients.
+func vignette(dst *ebiten.Image, sw, sh float64, a uint8) {
+	e := sw * 0.22
+	clr := color.RGBA{0, 0, 0, 0}
+	blk := color.RGBA{0, 0, 0, a}
+	fillPath(dst, boxPath(0, 0, e, sh, 0, false), blk, clr, hgrad(0, e), false)
+	fillPath(dst, boxPath(sw-e, 0, e, sh, 0, false), clr, blk, hgrad(sw-e, sw), false)
+	ev := sh * 0.25
+	fillPath(dst, boxPath(0, 0, sw, ev, 0, false), blk, clr, vgrad(0, ev), false)
+	fillPath(dst, boxPath(0, sh-ev, sw, ev, 0, false), clr, blk, vgrad(sh-ev, sh), false)
+}

@@ -5,3 +5,4 @@ package main
 func debugKeys(g *Game) {}
 
 func debugMenuKeys(g *Game) {}
+func debugMapKeys(g *Game)  {}

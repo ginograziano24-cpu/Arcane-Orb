@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
 // The story frames the three-act run: a prologue, a card between acts
@@ -112,21 +111,22 @@ func (g *Game) drawStory(s *ebiten.Image) {
 	}
 	if g.storyIdx == len(storyCards)-1 && g.save.Wins == 0 && t > last {
 		k := ease(clamp01(t - last))
-		u.textOutlined(s, "THE END", fTitle, 40, 960, y+20, ca(cGold, k), alignCenter)
+		u.textOutlined(s, "The End", fRune, 44, 960, y+20, ca(cGold, k), alignCenter)
 		u.text(s, "Endless Mode is now unlocked: how far can you go?", fBold, 22, 960, y+78, ca(rgba(255, 140, 120, 255), k), alignCenter)
 	}
 
 	done := t >= last
-	adv := u.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEnter)
+	adv := u.Click || g.keyHit(ebiten.KeySpace) || g.keyHit(ebiten.KeyEnter)
 	if g.stateT > 0.3 && adv {
 		if !done {
 			g.storySkip = last - g.stateT // reveal everything
+			g.consumeInput()
 		} else {
 			g.finishStory()
 			return
 		}
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+	if g.keyHit(ebiten.KeyEscape) {
 		g.finishStory()
 		return
 	}

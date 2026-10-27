@@ -90,6 +90,9 @@ type Game struct {
 	archGlow    color.RGBA
 	archPar     [2]float64
 	frontT      float64 // front-end animation clock
+	clickLatch  bool
+	keyLatch    map[ebiten.Key]bool
+	drawnSince  bool
 	seedText    string
 	daily       bool
 	rewards     []rewardSet
@@ -179,6 +182,7 @@ func (g *Game) setState(s State) {
 	}
 	g.state = s
 	g.stateT = 0
+	g.consumeInput() // the press that changed screens must not act on the next one
 	switch s {
 	case StActIntro:
 		if g.run != nil {
@@ -224,6 +228,7 @@ func (g *Game) Update() error {
 		writeSave(&g.save)
 	}
 	g.ui.Click = inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
+	g.latchInput()
 	g.mouseHeld = ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
 
 	// music
@@ -279,6 +284,8 @@ func (g *Game) Update() error {
 		if g.state == StLevel && g.level.Cleared && g.level.clearT > 1.2 && (g.ui.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace) || g.level.clearT > 4) {
 			g.afterLevel()
 		}
+	case StMap:
+		debugMapKeys(g)
 	case StPause:
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyP) {
 			g.setState(StLevel)
@@ -563,6 +570,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.ui.Th = &themes[g.themeWorld()]
 	g.ui.DT = ddt
 	g.ui.Held = ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+	// clicks and key presses from every Update since the last frame
+	g.ui.Click = g.clickLatch
+	g.drawnSince = true
 	act := 1
 	if g.run != nil {
 		act = g.run.Act
@@ -593,12 +603,16 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			g.drawHall(screen, 960, 200, false)
 		}
 		fillRect(screen, 0, 0, sw, sh, color.RGBA{6, 4, 14, 170})
+	case StStory:
+		g.frontT += ddt
+		g.drawHall(screen, 960, 140, false)
 	default:
 		g.ensureSky(&biomes[(act-1)%numActs], int64(act)*7)
 		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		op.GeoM.Scale(sw/float64(g.sky.Bounds().Dx()), sh/float64(g.sky.Bounds().Dy()))
 		screen.DrawImage(g.sky, op)
-		fillRect(screen, 0, 0, sw, sh, color.RGBA{6, 4, 14, 120})
+		fillRect(screen, 0, 0, sw, sh, color.RGBA{6, 4, 14, 135})
+		vignette(screen, sw, sh, 200)
 	}
 	switch g.state {
 	case StMenu:
@@ -637,7 +651,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.bannerT > 0 {
 		u := g.ui
 		a := ease(math.Min(g.bannerT, 4-g.bannerT) * 3)
-		w := math.Min(1500, math.Max(760, math.Max(u.measure(g.banner, fTitle, 44), u.measure(g.bannerDesc, fReg, 22))+300))
+		w := math.Min(1500, math.Max(760, math.Max(u.measure(g.banner, fRune, 40), u.measure(g.bannerDesc, fReg, 22))+300))
 		y := 150 - (1-a)*24
 		bc := g.bannerCol
 		if bc.A == 0 {
@@ -653,7 +667,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			u.icon(screen, icStar, 960-w/2+64, y+64, 58, a)
 			u.icon(screen, icStar, 960+w/2-64, y+64, 58, a)
 		}
-		u.textOutlined(screen, g.banner, fTitle, 44, 960, y+14, ca(lighten(bc, 0.2), a), alignCenter)
+		u.textOutlined(screen, g.banner, fRune, 40, 960, y+16, ca(lighten(bc, 0.2), a), alignCenter)
 		u.text(screen, g.bannerDesc, fReg, 22, 960, y+76, ca(cWhite, a), alignCenter)
 	}
 	g.drawToasts(screen, ddt)
@@ -761,7 +775,7 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 	if best, ok := g.save.Daily[dailyCode()]; ok {
 		u.textOutlined(s, fmt.Sprintf("Today's daily best: %d", best), fBold, 17, ox, 1038, cGold, alignCenter)
 	}
-	u.text(s, "v0.8", fReg, 16, 1890, 1048, rgba(120, 110, 140, 255), alignRight)
+	u.text(s, "v0.9", fReg, 16, 1890, 1048, rgba(120, 110, 140, 255), alignRight)
 }
 
 // archPreview draws a paddle silhouette and stat meters on a paddle card.
@@ -861,7 +875,7 @@ func (g *Game) runPanel(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
 	u.panel(s, 30, 30, 360, 300, 0.85)
-	u.text(s, r.Arch.Name, fTitle, 36, 50, 42, cGold, alignLeft)
+	u.text(s, r.Arch.Name, fRune, 34, 50, 42, cGold, alignLeft)
 	u.iconLabel(s, icHeart, fmt.Sprintf("%.0f / %.0f", r.HP, r.Stats.MaxHP), fBold, 26, 52, 100, color.RGBA{255, 130, 140, 255}, alignLeft)
 	u.iconLabel(s, icCoin, fmt.Sprintf("%d gold", r.Gold), fBold, 26, 52, 140, cGold, alignLeft)
 	u.text(s, fmt.Sprintf("%s  ·  Act %d", biomes[r.AI()].Name, r.Act), fReg, 21, 50, 186, cDim, alignLeft)
@@ -872,8 +886,25 @@ func (g *Game) runPanel(s *ebiten.Image) {
 	}
 	// inventory
 	u.panel(s, 1530, 30, 360, 1020, 0.85)
-	u.text(s, "Build", fTitle, 36, 1550, 42, cGold, alignLeft)
+	u.text(s, "Build", fRune, 34, 1550, 42, cGold, alignLeft)
 	y := 100.0
+	if ci, ok := classInfo[r.Arch.ID]; ok {
+		fillPath(s, boxPath(u.X(1546), u.Y(y-6), 328*u.S, 58*u.S, 8*u.S, false), ca(darken(ci.Col, 0.3), 0.5), ca(darken(ci.Col, 0.15), 0.3), vgrad(u.Y(y-6), u.Y(y+52)), false)
+		u.drawEmblem(s, glyphImage(ci.Glyph, ci.Col), 1574, y+23, 36, 1)
+		u.text(s, strings.ToUpper(r.Arch.Passive), fBold, 15, 1600, y, lighten(ci.Col, 0.4), alignLeft)
+		ab := "No active ability"
+		if r.Arch.Ability != "" {
+			ab = "Active: " + r.Arch.Ability
+		}
+		u.text(s, ab, fReg, 15, 1600, y+24, cDim, alignLeft)
+		if u.hover(1546, y-6, 328, 58) {
+			g.tooltip = r.Arch.Passive + " — " + r.Arch.Desc
+		}
+		y += 70
+	}
+	if len(r.Order) == 0 && len(r.Fused) == 0 {
+		u.paragraph(s, "Upgrades, relics and fusions you collect will gather here.", fReg, 18, 1710, y+20, 300, ca(cDim, 0.7), alignCenter)
+	}
 	for _, id := range r.Fused {
 		f := fusionByID[id]
 		u.drawEmblem(s, fusionEmblem(f), 1562, y+13, 30, 1)
@@ -912,6 +943,8 @@ func (g *Game) drawMap(s *ebiten.Image) {
 	if l := r.Loop(); l > 0 {
 		title = fmt.Sprintf("Endless %d  ·  %s", l, title)
 	}
+	// a dark pool behind the chart so routes read over any painting
+	drawSprite(s, sprSoft, u.X(960-640), u.Y(40), 1280*u.S, 1060*u.S, rgba(0, 0, 0, 175), false)
 	u.heading(s, title, 56, 30, cGold, 1)
 	pos := func(n *MapNode) (float64, float64) {
 		x := 960 + (float64(n.Lane)-1.5)*230
@@ -930,10 +963,16 @@ func (g *Game) drawMap(s *ebiten.Image) {
 		for _, j := range n.Next {
 			x1, y1 := pos(r.Map.Nodes[j])
 			switch {
-			case i == r.Cur && reach[j]:
+			case (i == r.Cur && reach[j]) || (r.Cur < 0 && false):
 				c := rgba(255, 222, 140, 255)
 				strokeLine(s, u.X(x0), u.Y(y0), u.X(x1), u.Y(y1), 12*u.S, prem(c, 0.18))
 				strokeLine(s, u.X(x0), u.Y(y0), u.X(x1), u.Y(y1), 4*u.S, prem(c, 0.95))
+				// motes of light flowing along the open ley line
+				for k := 0; k < 3; k++ {
+					f := math.Mod(g.stateT*0.6+float64(k)/3, 1)
+					px, py := x0+(x1-x0)*f, y0+(y1-y0)*f
+					drawSprite(s, sprSoft, u.X(px-14), u.Y(py-14), 28*u.S, 28*u.S, ca(c, 0.9*math.Sin(f*math.Pi)), true)
+				}
 			case n.Visited && r.Map.Nodes[j].Visited:
 				strokeLine(s, u.X(x0), u.Y(y0), u.X(x1), u.Y(y1), 4*u.S, prem(u.theme().Accent, 0.85))
 			default:
@@ -959,6 +998,15 @@ func (g *Game) drawMap(s *ebiten.Image) {
 		if reach[i] {
 			p := 0.5 + 0.5*math.Sin(g.stateT*5)
 			drawSprite(s, sprSoft, u.X(x-rad*2.2), u.Y(y-rad*2.2), rad*4.4*u.S, rad*4.4*u.S, ca(c, 0.35+0.3*p), true)
+			// turning rune ring
+			for k := 0; k < 16; k++ {
+				an := g.stateT*0.8 + float64(k)/16*2*math.Pi
+				r0, r1 := rad+10, rad+16
+				if k%4 == 0 {
+					r1 = rad + 20
+				}
+				strokeLine(s, u.X(x+math.Cos(an)*r0), u.Y(y+math.Sin(an)*r0), u.X(x+math.Cos(an)*r1), u.Y(y+math.Sin(an)*r1), 2*u.S, prem(lighten(c, 0.4), 0.8))
+			}
 		}
 		u.medallion(s, x, y, rad, c)
 		if i == r.Cur {
@@ -1051,24 +1099,45 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 		kind = "RELIC"
 	}
 	u.text(s, kind+"   ·   "+strings.ToUpper(rarityNames[m.Rarity]), fBold, 16, x+w/2, y+24, lighten(rc, 0.15), alignCenter)
-	// emblem medallion
-	ex, ey := u.X(x+w/2), u.Y(y+130)
-	drawSprite(s, sprSoft, ex-90*S, ey-90*S, 180*S, 180*S, ca(tagc, 0.35), true)
-	fillPath(s, circlePath(ex, ey+4*S, 66*S), ca(cBlack, 0.4), ca(cBlack, 0.4), grad{}, false)
-	fillPath(s, circlePath(ex, ey, 66*S), lighten(th.Edge, 0.3), darken(th.Edge, 0.45), vgrad(ey-66*S, ey+66*S), false)
-	fillPath(s, circlePath(ex, ey, 59*S), rgba(12, 9, 22, 255), rgba(12, 9, 22, 255), grad{}, false)
-	fillPath(s, circlePath(ex, ey, 55*S), darken(tagc, 0.62), darken(tagc, 0.22), vgrad(ey-55*S, ey+55*S), false)
-	fillPath(s, circlePath(ex, ey-20*S, 36*S), rgba(255, 255, 255, 50), rgba(255, 255, 255, 0), vgrad(ey-56*S, ey), false)
+	// emblem medallion (compact on short cards)
+	ey0, er, nameTop := 130.0, 1.0, 212.0
+	if h < 400 {
+		ey0, er, nameTop = 88, 0.68, 148
+	}
+	ex, ey := u.X(x+w/2), u.Y(y+ey0)
+	drawSprite(s, sprSoft, ex-90*er*S, ey-90*er*S, 180*er*S, 180*er*S, ca(tagc, 0.35), true)
+	fillPath(s, circlePath(ex, ey+4*S, 66*er*S), ca(cBlack, 0.4), ca(cBlack, 0.4), grad{}, false)
+	fillPath(s, circlePath(ex, ey, 66*er*S), lighten(th.Edge, 0.3), darken(th.Edge, 0.45), vgrad(ey-66*er*S, ey+66*er*S), false)
+	fillPath(s, circlePath(ex, ey, 59*er*S), rgba(12, 9, 22, 255), rgba(12, 9, 22, 255), grad{}, false)
+	fillPath(s, circlePath(ex, ey, 55*er*S), darken(tagc, 0.62), darken(tagc, 0.22), vgrad(ey-55*er*S, ey+55*er*S), false)
+	fillPath(s, circlePath(ex, ey-20*er*S, 36*er*S), rgba(255, 255, 255, 50), rgba(255, 255, 255, 0), vgrad(ey-56*er*S, ey), false)
 	if m.Relic {
 		for i := 0; i < 8; i++ {
 			a := float64(i)/8*2*math.Pi + math.Pi/8
-			u.gem(s, x+w/2+math.Cos(a)*62.5, y+130+math.Sin(a)*62.5, 3.5, 3.5, rc, 1)
+			u.gem(s, x+w/2+math.Cos(a)*62.5*er, y+ey0+math.Sin(a)*62.5*er, 3.5, 3.5, rc, 1)
 		}
 	}
-	u.drawEmblem(s, modEmblem(m), x+w/2, y+130, 104, 1)
-	nameY := u.paragraph(s, m.Name, fTitle, 34, x+w/2, y+212, w-40, cWhite, alignCenter)
+	u.drawEmblem(s, modEmblem(m), x+w/2, y+ey0, 104*er, 1)
+	// the name shrinks to stay on one line; the description shrinks to
+	// fit above the fusion hint and tags
+	ns := 32.0
+	for ns > 20 && u.measure(m.Name, fSerif, ns) > w-36 {
+		ns -= 1
+	}
+	u.text(s, m.Name, fSerif, ns, x+w/2, y+nameTop+(32-ns)*0.5, cWhite, alignCenter)
+	nameY := y + nameTop + 32*1.35
 	u.glowLine(s, x+w*0.2, x+w*0.8, nameY+8, 1.5, rc, 0.7)
-	u.paragraph(s, m.Desc, fReg, 22, x+w/2, nameY+20, w-50, cDim, alignCenter)
+	limit := y + h - 62
+	if g.run.fusionWith(m.ID) != nil {
+		limit = y + h - 104
+	} else if len(fusionPartners(m.ID)) > 0 {
+		limit = y + h - 92
+	}
+	ds := 22.0
+	for ds > 15 && nameY+20+float64(len(u.wrap(m.Desc, fReg, ds, w-50)))*ds*1.35 > limit {
+		ds -= 1
+	}
+	u.paragraph(s, m.Desc, fReg, ds, x+w/2, nameY+20, w-50, cDim, alignCenter)
 	// fusion hint
 	if f := g.run.fusionWith(m.ID); f != nil {
 		fy := y + h - 96
@@ -1189,7 +1258,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		}
 		if it.Sold {
 			u.panel(s, x, y, w, h, 0.4)
-			u.text(s, "SOLD", fTitle, 40, x+w/2, y+h/2-24, cDim, alignCenter)
+			u.text(s, "SOLD", fRune, 40, x+w/2, y+h/2-24, cDim, alignCenter)
 			continue
 		}
 		afford := r.Gold >= it.Price
@@ -1262,7 +1331,19 @@ func (g *Game) drawEvent(s *ebiten.Image) {
 		}
 		return
 	}
-	cy := math.Max(y+50, 560)
+	// event illustration: emblem floating in a turning sigil
+	if g.eventMsg == "" {
+		gl := eventGlyphs[ev.Title]
+		if gl == "" {
+			gl = "star"
+		}
+		col := u.theme().Accent
+		bob := math.Sin(g.stateT*1.6) * 6
+		g.drawSigil(s, 960, 462, 92, g.stateT*0.25, col, 0.55)
+		drawSprite(s, sprSoft, u.X(960-110), u.Y(462-110), 220*u.S, 220*u.S, ca(col, 0.3), true)
+		u.drawEmblem(s, glyphImage(gl, col), 960, 462+bob, 116, 1)
+	}
+	cy := math.Max(y+50, 590)
 	for i, c := range ev.Choices {
 		ok := c.Can == nil || c.Can(g)
 		if u.button(s, "ev"+itoa(i), c.Label, 560, cy, 800, 64, cAcc, ok) && g.stateT > 0.3 {
@@ -1278,11 +1359,45 @@ func (g *Game) drawEvent(s *ebiten.Image) {
 	}
 }
 
+var eventGlyphs = map[string]string{
+	"Mysterious Merchant": "flask", "Gambling Den": "clover", "Upgrade Shrine": "gem",
+	"Cursed Room": "eye", "Abandoned Forge": "anvil", "Wandering Spirit": "feather",
+}
+
+// drawCampfire paints a small animated fire with logs and sparks.
+func (g *Game) drawCampfire(s *ebiten.Image, cx, cy float64) {
+	u := g.ui
+	S := u.S
+	t := g.stateT
+	drawSprite(s, sprSoft, u.X(cx-320), u.Y(cy-260), 640*S, 400*S, rgba(255, 120, 40, 90), true)
+	for _, l := range [][4]float64{{-70, 18, 60, -6}, {70, 18, -60, -6}, {-60, 6, 66, 10}} {
+		strokePath(s, linePath(u.X(cx+l[0]), u.Y(cy+l[1]), u.X(cx+l[2]), u.Y(cy+l[3])), 20*S, rgba(52, 32, 22, 255), false)
+		strokePath(s, linePath(u.X(cx+l[0]), u.Y(cy+l[1]-6), u.X(cx+l[2]), u.Y(cy+l[3]-6)), 5*S, rgba(110, 66, 40, 255), false)
+	}
+	for i := 0; i < 34; i++ {
+		f := float64(i)
+		life := math.Mod(t*(0.8+0.5*math.Mod(f*0.37, 1))+f*0.0731, 1)
+		x := cx + (math.Mod(f*0.618, 1)-0.5)*70*(1-life) + math.Sin(t*6+f)*6*life
+		y := cy - 6 - life*150
+		c := mixc(rgba(255, 236, 160, 255), rgba(255, 70, 20, 255), life)
+		r := (42 - 30*life)
+		drawSprite(s, sprSoft, u.X(x-r), u.Y(y-r), 2*r*S, 2*r*S, ca(c, 0.7*(1-life)), true)
+	}
+	for i := 0; i < 10; i++ {
+		f := float64(i)
+		life := math.Mod(t*0.35+f*0.1, 1)
+		x := cx + math.Sin(f*2.3+t)*40*life
+		y := cy - 30 - life*260
+		drawSprite(s, sprSoft, u.X(x-3), u.Y(y-3), 6*S, 6*S, ca(rgba(255, 190, 90, 255), math.Sin(life*math.Pi)), true)
+	}
+}
+
 func (g *Game) drawRest(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
 	g.runPanel(s)
 	u.heading(s, "A QUIET CAMPFIRE", 60, 200, cGold, 1)
+	g.drawCampfire(s, 960, 790)
 	u.text(s, "Rest your hands, or train your craft.", fReg, 26, 960, 300, cDim, alignCenter)
 	healPct := 0.35
 	if r.Asc >= 6 {
@@ -1303,27 +1418,90 @@ func (g *Game) drawRest(s *ebiten.Image) {
 
 func (g *Game) drawActIntro(s *ebiten.Image) {
 	u := g.ui
+	S := u.S
 	r := g.run
 	b := biomes[r.AI()]
-	a := math.Min(1, g.stateT*1.5)
+	t := g.stateT
+	sw, sh := float64(s.Bounds().Dx()), float64(s.Bounds().Dy())
+	// darken the world painting into a stage for the title
+	fillRect(s, 0, 0, sw, sh, rgba(3, 2, 8, 150))
+	drawSprite(s, sprSoft, u.X(960-900), u.Y(170), 1800*S, 560*S, rgba(0, 0, 0, 170), false)
+	acc := lighten(u.theme().Accent, 0.25)
+	// a great sigil turning behind the name
+	sa := ease(clamp01(t * 0.9))
+	g.drawSigil(s, 960, 450, 300*(0.9+0.1*sa), t*0.12, acc, 0.5*sa)
+	drawSprite(s, sprSoft, u.X(960-500), u.Y(450-300), 1000*S, 600*S, ca(acc, 0.12*sa), true)
+
 	sub := strings.ToUpper(b.Subtitle)
 	if l := r.Loop(); l > 0 {
 		sub = fmt.Sprintf("ENDLESS  ·  LOOP %d", l)
 	} else if r.Endless {
 		sub = "ENDLESS  ·  " + sub
 	}
-	u.textOutlined(s, sub, fBold, 30, 960, 330-(1-a)*20, alpha(lighten(u.theme().Accent, 0.3), a), alignCenter)
-	u.heading(s, strings.ToUpper(b.Name), 110, 384, cGold, a)
-	u.text(s, "Guardian:  "+b.BossName, fBold, 26, 960, 548, alpha(cWhite, a), alignCenter)
+	a1 := ease(clamp01(t * 1.6))
+	u.text(s, sub, fSerif, 28, 960, 300-(1-a1)*16, ca(acc, a1), alignCenter)
+	a2 := ease(clamp01((t - 0.25) * 1.3))
+	u.headingW(s, b.Name, 96, 360+(1-a2)*12, rgba(240, 222, 176, 255), a2, 940)
+	a3 := ease(clamp01((t - 0.7) * 1.5))
+	u.text(s, "GUARDIAN", fBold, 15, 960, 512, ca(cDim, a3), alignCenter)
+	u.text(s, b.BossName, fRune, 34, 960, 534, ca(rgba(255, 214, 190, 255), a3), alignCenter)
 	if l := r.Loop(); l > 0 {
 		u.text(s, fmt.Sprintf("Bricks ×%.2f health   ·   orbs +%d%% speed   ·   orb loss +%d damage", math.Pow(1.25, float64(l)), 6*l, 3*l),
-			fReg, 22, 960, 596, alpha(rgba(255, 140, 120, 255), a), alignCenter)
+			fReg, 22, 960, 600, ca(rgba(255, 140, 120, 255), a3), alignCenter)
 	}
-	if g.stateT > 0.8 {
-		u.text(s, "Click to continue", fReg, 22, 960, 640, alpha(cDim, 0.6+0.4*math.Sin(g.stateT*4)), alignCenter)
-		if u.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace) || inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+	if (u.Click || g.keyHit(ebiten.KeySpace) || g.keyHit(ebiten.KeyEnter)) && t < 0.8 && t > 0.05 {
+		g.stateT = 0.81 // first press finishes the reveal
+		g.consumeInput()
+		return
+	}
+	if t > 0.8 {
+		u.text(s, "Click to begin", fSerif, 22, 960, 660, ca(cDim, 0.55+0.35*math.Sin(t*3)), alignCenter)
+		if u.Click || g.keyHit(ebiten.KeySpace) || g.keyHit(ebiten.KeyEnter) {
 			g.setState(StMap)
 		}
+	}
+}
+
+// drawSigil paints an arcane circle: rings, rune ticks, a hexagram and
+// node gems, all additive.
+func (g *Game) drawSigil(s *ebiten.Image, cx, cy, R, rot float64, col color.RGBA, a float64) {
+	if a <= 0.01 {
+		return
+	}
+	u := g.ui
+	S := u.S
+	X, Y := u.X(cx), u.Y(cy)
+	ring := func(r, w, al float64) {
+		strokePath(s, circlePath(X, Y, r*S), w*S, ca(col, al*a), true)
+	}
+	ring(R, 2, 0.8)
+	ring(R*0.92, 1.2, 0.6)
+	ring(R*0.6, 1.4, 0.6)
+	ring(R*0.32, 1.2, 0.5)
+	// rune ticks between the outer rings
+	for i := 0; i < 48; i++ {
+		an := rot + float64(i)/48*2*math.Pi
+		l0, l1 := R*0.93, R*0.99
+		if i%4 == 0 {
+			l0 = R * 0.9
+		}
+		c, sn := math.Cos(an), math.Sin(an)
+		strokePath(s, linePath(X+c*l0*S, Y+sn*l0*S, X+c*l1*S, Y+sn*l1*S), 1.3*S, ca(col, 0.7*a), true)
+	}
+	// hexagram turning the other way
+	for tri := 0; tri < 2; tri++ {
+		for k := 0; k < 3; k++ {
+			a0 := -rot*1.4 + float64(tri)*math.Pi/3 + float64(k)*2*math.Pi/3
+			a1 := a0 + 2*math.Pi/3
+			r := R * 0.6
+			strokePath(s, linePath(X+math.Cos(a0)*r*S, Y+math.Sin(a0)*r*S, X+math.Cos(a1)*r*S, Y+math.Sin(a1)*r*S), 1.4*S, ca(col, 0.55*a), true)
+		}
+	}
+	for k := 0; k < 6; k++ {
+		an := rot*2 + float64(k)*math.Pi/3
+		px, py := X+math.Cos(an)*R*0.76*S, Y+math.Sin(an)*R*0.76*S
+		fillPath(s, circlePath(px, py, 4*S), ca(lighten(col, 0.5), 0.9*a), ca(col, 0.9*a), grad{}, true)
+		drawSprite(s, sprSoft, px-14*S, py-14*S, 28*S, 28*S, ca(col, 0.5*a), true)
 	}
 }
 
@@ -1374,13 +1552,11 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 
 var nodeIconName = []string{"bolt", "crown", "", "gem", "q", "plus", "rock"}
 
+var nodeGlyphs = map[NodeType]string{
+	NCombat: "sword", NElite: "crown", NShop: "coin", NTreasure: "gem",
+	NEvent: "eye", NRest: "flame", NBoss: "mask",
+}
+
 func (g *Game) nodeIcon(s *ebiten.Image, t NodeType, x, y, size float64) {
-	u := g.ui
-	dark := color.RGBA{20, 14, 30, 255}
-	if t == NShop {
-		u.text(s, "$", fBold, size*0.9, x, y-size*0.58, dark, alignCenter)
-		return
-	}
-	spr := sprIcons[nodeIconName[t]]
-	drawSprite(s, spr, u.X(x-size/2), u.Y(y-size/2), size*u.S, size*u.S, dark, false)
+	g.ui.drawEmblemDark(s, glyphImage(nodeGlyphs[t], cWhite), x, y, size*1.25, 0.95)
 }

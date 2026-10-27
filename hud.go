@@ -118,13 +118,13 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	if L.Boss == nil {
 		sub += "   ·   seed " + itoa(int(L.Data.Seed%100000000))
 	}
-	tW := u.measure(title, fTitle, 30)
+	tW := u.measure(title, fSerif, 30)
 	nw := u.measure(node, fBold, 14) + 26
 	rowW := tW + 14 + nw
 	pw := math.Max(440, math.Max(rowW, u.measure(sub, fReg, 16))+110)
 	u.frame(screen, 960-pw/2, 16, pw, 82, 0.9)
 	tx := 960 - rowW/2
-	u.textOutlined(screen, title, fTitle, 30, tx, 24, cGold, alignLeft)
+	u.textOutlined(screen, title, fSerif, 30, tx, 22, cGold, alignLeft)
 	nc := nodeColors[L.Node]
 	chip := boxPath(u.X(tx+tW+14), u.Y(32), nw*S, 24*S, 12*S, false)
 	fillPath(screen, chip, ca(nc, 0.32), ca(darken(nc, 0.5), 0.32), vgrad(u.Y(32), u.Y(56)), false)
@@ -185,7 +185,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		g.hudBoss += (bb.HP - g.hudBoss) * math.Min(1, dt*2.4)
 		y := 110.0
 		u.frame(screen, 470, y, 980, 80, 0.92)
-		u.textOutlined(screen, strings.ToUpper(bb.Name), fTitle, 26, 960, y+8, rgba(255, 216, 194, 255), alignCenter)
+		u.textOutlined(screen, bb.Name, fRune, 28, 960, y+8, rgba(255, 216, 194, 255), alignCenter)
 		col := mixc(rgba(226, 50, 60, 255), cWhite, bb.Hurt*0.5)
 		u.bar(screen, 504, y+46, 912, 20, bb.HP/bb.MaxHP, g.hudBoss/bb.MaxHP, col, 10, 1)
 		u.gem(screen, 488, y+56, 8, 11, th.Edge, 1)

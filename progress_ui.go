@@ -268,6 +268,27 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 	} else if r.Endless {
 		title, col = fmt.Sprintf("ENDLESS  ·  LOOP %d", r.Loop()), rgba(255, 140, 120, 255)
 	}
+	// your origin stands beside the tally: lit in victory, dimmed in defeat
+	if img := portrait(r.Arch.ID); img != nil {
+		ph := 760.0
+		pw := ph * 0.75
+		px, py := 210-pw/2, 1080-ph+10
+		k := ease(clamp01(g.stateT * 1.5))
+		ci := classInfo[r.Arch.ID]
+		gc := ci.Col
+		if !g.victory && !r.Endless {
+			gc = rgba(120, 40, 50, 255)
+		}
+		drawSprite(s, sprSoft, u.X(px-60), u.Y(py+80), (pw+120)*u.S, (ph)*u.S, ca(gc, 0.25*k), true)
+		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		op.GeoM.Scale(pw*u.S/float64(img.Bounds().Dx()), ph*u.S/float64(img.Bounds().Dy()))
+		op.GeoM.Translate(u.X(px), u.Y(py+(1-k)*20))
+		if !g.victory && !r.Endless {
+			op.ColorScale.Scale(0.5, 0.4, 0.45, 1)
+		}
+		op.ColorScale.ScaleAlpha(float32(k))
+		s.DrawImage(img, op)
+	}
 	u.panel(s, 400, 60, 1120, 960, 0.92)
 	u.heading(s, title, 90, 80, col, 1)
 	lines := []string{
@@ -305,7 +326,7 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 	y += 120
 	if rank > g.rankBefore {
 		pulse := 0.8 + 0.2*math.Sin(g.stateT*6)
-		u.textOutlined(s, fmt.Sprintf("RANK UP!  Arcane Rank %d", rank), fTitle, 40, 960, y, ca(cGold, pulse), alignCenter)
+		u.textOutlined(s, fmt.Sprintf("Rank Up!  Arcane Rank %d", rank), fRune, 40, 960, y, ca(cGold, pulse), alignCenter)
 		y += 58
 		var news []*Mod
 		for rk := g.rankBefore + 1; rk <= rank; rk++ {
@@ -336,7 +357,7 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 		}
 		if g.boardRank == 1 {
 			pulse := 0.75 + 0.25*math.Sin(g.stateT*6)
-			u.textOutlined(s, "NEW ENDLESS RECORD!", fTitle, 38, 960, ty, ca(cGold, pulse), alignCenter)
+			u.textOutlined(s, "New Endless Record!", fRune, 38, 960, ty, ca(cGold, pulse), alignCenter)
 		} else if g.boardRank > 0 {
 			u.textOutlined(s, fmt.Sprintf("Endless leaderboard  ·  #%d", g.boardRank), fBold, 26, 960, ty, rgba(255, 170, 130, 255), alignCenter)
 		}
