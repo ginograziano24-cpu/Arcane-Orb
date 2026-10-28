@@ -243,7 +243,8 @@ type Run struct {
 	Endless      bool     // continued past the final boss
 	EndlessStart bool     // started from the Endless menu (no story)
 	FinalScore   int
-	xpPaid       int // XP already awarded (victory before endless)
+	Assisted     bool // played with the speed assist (kept off the global boards)
+	xpPaid       int  // XP already awarded (victory before endless)
 	shardsPaid   int
 	statsPaid    [3]int // bricks, bosses, elites already added to the save
 	metaLuck     int

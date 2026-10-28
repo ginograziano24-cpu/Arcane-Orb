@@ -63,7 +63,7 @@ func (g *Game) renderScale(ddt float64) float64 {
 
 // ---------------------------------------------------------------- screen
 
-var settingTabs = []string{"Audio", "Display", "Effects"}
+var settingTabs = []string{"Audio", "Display", "Effects", "Controls", "Access"}
 
 func (g *Game) drawSettings(s *ebiten.Image) {
 	u := g.ui
@@ -81,12 +81,13 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		if g.setTab == i {
 			acc = cGold
 		}
-		tx := 960 - 345 + float64(i)*240
-		if u.button(s, "stab"+itoa(i), t, tx, 196, 210, 50, acc, true) {
+		tx := 960 - 470 + float64(i)*190
+		if u.button(s, "stab"+itoa(i), t, tx, 196, 180, 50, acc, true) {
 			g.setTab = i
+			g.rebinding = ""
 		}
 		if g.setTab == i {
-			u.glowLine(s, tx+20, tx+190, 254, 3, cGold, 1)
+			u.glowLine(s, tx+20, tx+160, 254, 3, cGold, 1)
 		}
 	}
 	y := 300.0
@@ -101,6 +102,21 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 	note := func(t string) {
 		u.paragraph(s, t, fReg, 18, 960, y, 860, cDim, alignCenter)
 		y += 50
+	}
+	choice := func(id, label string, names []string, cur int, bw float64) int {
+		u.text(s, label, fBold, 22, 520, y+12, cWhite, alignLeft)
+		x := 1400 - float64(len(names))*(bw+10) + 10
+		for i, n := range names {
+			acc := cAcc
+			if cur == i {
+				acc = cGold
+			}
+			if u.button(s, id+itoa(i), n, x+float64(i)*(bw+10), y, bw, 48, acc, true) {
+				cur = i
+			}
+		}
+		y += 70
+		return cur
 	}
 	switch g.setTab {
 	case 0:
@@ -132,11 +148,19 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		}
 		y += 70
 		st.DynRes = toggle("dynres", "Dynamic resolution (holds the frame rate on busy moments)", st.DynRes)
-		fs := toggle("fs", "Fullscreen (F11)", st.Fullscreen)
+		wm := 2
+		switch {
+		case st.Fullscreen:
+			wm = 0
+		case st.Borderless:
+			wm = 1
+		}
+		nwm := choice("win", "Display mode (F11)", []string{"Fullscreen", "Borderless", "Windowed"}, wm, 150)
 		vs := toggle("vs", "VSync", st.VSync)
 		st.ShowFPS = toggle("fps", "Show FPS", st.ShowFPS)
-		if fs != st.Fullscreen || vs != st.VSync {
-			st.Fullscreen, st.VSync = fs, vs
+		st.CenterHUD = !toggle("edgehud", "Ultrawide: spread the HUD to the screen edges", !st.CenterHUD)
+		if nwm != wm || vs != st.VSync {
+			st.Fullscreen, st.Borderless, st.VSync = nwm == 0, nwm == 1, vs
 			g.applySettings()
 		}
 		note("Below 100% the 3D scene renders at a lower resolution and is sharpened back up to your screen; menus and text always stay at full resolution.")
@@ -151,9 +175,36 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		}
 		st.NoBloom = !toggle("bloom", "Bloom & colour grading", !st.NoBloom)
 		st.Classic = toggle("classic", "Classic backdrop (painted picture, no 3D scenery)", st.Classic)
+		st.FastAnim = toggle("fastanim", "Fast animations (no slow motion or hit-stop, quicker screens)", st.FastAnim)
 		if was != [3]bool{st.NoBloom, st.Particles == 1, st.Classic} && st.Quality != 3 {
 			st.Quality = 3
 		}
+	case 3:
+		g.drawControls(s, y)
+	case 4:
+		ts := (g.textScale() - 0.9) / 0.45
+		nt := u.sliderFmt(s, "Text size", 520, y, 880, ts, g.mouseHeld, func(v float64) string {
+			return fmt.Sprintf("%.0f%%", (0.9+0.45*v)*100)
+		})
+		if math.Abs(nt-ts) > 1e-6 {
+			st.TextScale = 0.9 + 0.45*nt
+		}
+		y += 70
+		gs := (g.gameSpeed() - 0.5) / 0.5
+		ng := u.sliderFmt(s, "Game speed", 520, y, 880, gs, g.mouseHeld, func(v float64) string {
+			return fmt.Sprintf("%.0f%%", (0.5+0.5*v)*100)
+		})
+		if math.Abs(ng-gs) > 1e-6 {
+			st.GameSpeed = 0.5 + 0.5*math.Round(ng*10)/10
+		}
+		y += 70
+		st.ColorBlind = choice("cb", "Colour filter", colorBlindNames, st.ColorBlind, 170)
+		st.NoTips = !toggle("tips", "First-time tips", !st.NoTips)
+		if u.button(s, "tipsreset", "Show all tips again", 520, y, 300, 48, cAcc, len(g.save.Hints) > 0) {
+			g.save.Hints = nil
+		}
+		y += 76
+		note("A slower game speed makes every chamber easier to read and react to. Endless runs played below 100% are kept off the global leaderboard.")
 	}
 	if u.button(s, "setback", "Back", 760, 900, 400, 60, cGreen, true) {
 		writeSave(&g.save)

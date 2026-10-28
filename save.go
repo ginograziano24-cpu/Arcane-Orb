@@ -7,21 +7,28 @@ import (
 )
 
 type Settings struct {
-	Master     float64 `json:"master"`
-	Music      float64 `json:"music"`
-	SFX        float64 `json:"sfx"`
-	Shake      bool    `json:"shake"`
-	Flashes    bool    `json:"flashes"`
-	Particles  int     `json:"particles"` // 0 reduced, 1 full
-	Fullscreen bool    `json:"fullscreen"`
-	VSync      bool    `json:"vsync"`
-	ShowFPS    bool    `json:"show_fps"`
-	NoBloom    bool    `json:"no_bloom"`
-	Classic    bool    `json:"classic_backdrop"` // flat painted picture instead of 3D scenery
-	Quality    int     `json:"quality"`          // 0 low, 1 medium, 2 high, 3 custom
-	RenderRes  float64 `json:"render_scale"`     // 3D resolution, 0.5..1 (0 = full)
-	DynRes     bool    `json:"dynamic_res"`      // lower the 3D resolution when frames run long
-	FastAnim   bool    `json:"fast_animations"`  // shorter transitions, no slow-motion or hit-stop
+	Master     float64              `json:"master"`
+	Music      float64              `json:"music"`
+	SFX        float64              `json:"sfx"`
+	Shake      bool                 `json:"shake"`
+	Flashes    bool                 `json:"flashes"`
+	Particles  int                  `json:"particles"` // 0 reduced, 1 full
+	Fullscreen bool                 `json:"fullscreen"`
+	VSync      bool                 `json:"vsync"`
+	ShowFPS    bool                 `json:"show_fps"`
+	NoBloom    bool                 `json:"no_bloom"`
+	Classic    bool                 `json:"classic_backdrop"` // flat painted picture instead of 3D scenery
+	Quality    int                  `json:"quality"`          // 0 low, 1 medium, 2 high, 3 custom
+	RenderRes  float64              `json:"render_scale"`     // 3D resolution, 0.5..1 (0 = full)
+	DynRes     bool                 `json:"dynamic_res"`      // lower the 3D resolution when frames run long
+	FastAnim   bool                 `json:"fast_animations"`  // shorter transitions, no slow-motion or hit-stop
+	NoTips     bool                 `json:"no_tips"`          // hide first-time coach tips
+	CenterHUD  bool                 `json:"center_hud"`       // ultrawide: keep the HUD in the 16:9 centre
+	TextScale  float64              `json:"text_scale"`       // body text size, 1 = default (0 = default)
+	GameSpeed  float64              `json:"game_speed"`       // chamber speed assist, 0.5..1 (0 = 1)
+	ColorBlind int                  `json:"color_blind"`      // 0 off, 1 protanopia, 2 deuteranopia, 3 tritanopia
+	Borderless bool                 `json:"borderless"`       // windowed without a frame, filling the monitor
+	Binds      map[string]savedBind `json:"binds,omitempty"`
 }
 
 // EndlessEntry is one line of the local Endless leaderboard.
@@ -81,6 +88,7 @@ type SaveData struct {
 	Elites     int             `json:"elites"`            // elite bricks broken, all runs
 	History    []runHistory    `json:"history,omitempty"` // finished runs, newest first
 	Challenges map[string]int  `json:"challenges"`        // best act reached per challenge (4 = sealed)
+	Hints      map[string]bool `json:"hints"`             // coach tips already shown
 	Settings   Settings        `json:"settings"`
 }
 

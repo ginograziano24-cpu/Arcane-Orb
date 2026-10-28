@@ -1,0 +1,13 @@
+"lang"
+{
+	"Language"	"english"
+	"Tokens"
+	{
+		"#Status_Menu"		"In the main menu"
+		"#Status_Run"		"%class% · Act %act% · %world%"
+		"#Status_Boss"		"%class% · Facing %boss%"
+		"#Status_Endless"	"%class% · Endless, loop %loop%"
+		"#Status_Daily"		"Daily Challenge · %class% · Act %act%"
+		"#Status_Challenge"	"%challenge% · %class% · Act %act%"
+	}
+}

@@ -277,27 +277,7 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 	// ---- right column: damage and the story of the run
 	rx, rw := 1210.0, 640.0
 	u.text(s, "WHERE THE DAMAGE CAME FROM", fBold, 18, rx+rw/2, 190, lighten(u.theme().Accent, 0.3), alignCenter)
-	rows, total := dmgRows(r)
-	yy := 226.0
-	if total <= 0 {
-		u.text(s, "No damage dealt.", fReg, 18, rx+rw/2, yy+10, cDim, alignCenter)
-	}
-	grow := ease(clamp01(g.stateT / 1.4))
-	for i, row := range rows {
-		if i >= 8 {
-			break
-		}
-		f := row.Amt / total
-		c := dmgColor(row.Src)
-		u.text(s, row.Src, fBold, 17, rx, yy, cWhite, alignLeft)
-		u.text(s, fmt.Sprintf("%.0f%%", f*100), fBold, 17, rx+rw, yy, c, alignRight)
-		bw := (rw - 200) * f * grow
-		fillPath(s, boxPath(u.X(rx+150), u.Y(yy+4), (rw-200)*S, 14*S, 7*S, false), rgba(0, 0, 0, 150), rgba(20, 16, 30, 150), grad{}, false)
-		if bw > 2 {
-			fillPath(s, boxPath(u.X(rx+150), u.Y(yy+4), bw*S, 14*S, 7*S, false), lighten(c, 0.25), darken(c, 0.45), vgrad(u.Y(yy+4), u.Y(yy+18)), false)
-		}
-		yy += 32
-	}
+	yy := g.drawDmgBars(s, r, rx, 226, rw, 8, ease(clamp01(g.stateT/1.4)))
 	yy = math.Max(yy+18, 500)
 	u.text(s, "THE RUN", fBold, 18, rx+rw/2, yy, lighten(u.theme().Accent, 0.3), alignCenter)
 	yy += 34
@@ -469,4 +449,33 @@ func plural(n int, word string) string {
 		return "1 " + word
 	}
 	return itoa(n) + " " + word + "s"
+}
+
+// drawDmgBars lists where the run's damage came from as bars; it returns
+// the y below the last row.
+func (g *Game) drawDmgBars(s *ebiten.Image, r *Run, rx, yy, rw float64, maxRows int, grow float64) float64 {
+	u := g.ui
+	S := u.S
+	rows, total := dmgRows(r)
+	if total <= 0 {
+		u.text(s, "No damage dealt yet.", fReg, 18, rx+rw/2, yy+10, cDim, alignCenter)
+		return yy + 32
+	}
+	lw := math.Min(150, rw*0.36)
+	for i, row := range rows {
+		if i >= maxRows {
+			break
+		}
+		f := row.Amt / total
+		c := dmgColor(row.Src)
+		u.text(s, row.Src, fBold, 17, rx, yy, cWhite, alignLeft)
+		u.text(s, fmt.Sprintf("%.0f%%", f*100), fBold, 17, rx+rw, yy, c, alignRight)
+		bw := (rw - lw - 50) * f * grow
+		fillPath(s, boxPath(u.X(rx+lw), u.Y(yy+4), (rw-lw-50)*S, 14*S, 7*S, false), rgba(0, 0, 0, 150), rgba(20, 16, 30, 150), grad{}, false)
+		if bw > 2 {
+			fillPath(s, boxPath(u.X(rx+lw), u.Y(yy+4), bw*S, 14*S, 7*S, false), lighten(c, 0.25), darken(c, 0.45), vgrad(u.Y(yy+4), u.Y(yy+18)), false)
+		}
+		yy += 32
+	}
+	return yy
 }

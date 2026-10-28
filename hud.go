@@ -91,7 +91,25 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	}
 	g.goldPop = math.Max(0, g.goldPop-dt*3)
 
+	// on screens wider than 16:9 the corner groups hug the screen edges
+	ox := u.OX
+	defer func() { u.OX = ox }()
+	edge := func(side int) {
+		if g.settings.CenterHUD {
+			return
+		}
+		switch side {
+		case -1:
+			u.OX = 0
+		case 1:
+			u.OX = u.SW - 1920*S
+		default:
+			u.OX = ox
+		}
+	}
+
 	// ---- hero portrait and lives (top-left)
+	edge(-1)
 	g.drawHero(screen, L, 22, 18, 150, 186)
 	g.drawLives(screen, L, 97, 224)
 	// ---- vitals plate, beside the portrait
@@ -120,6 +138,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	}
 
 	// ---- location plaque (top-centre)
+	edge(0)
 	title := L.Biome.Name
 	node := strings.ToUpper(nodeNames[L.Node])
 	sub := L.Data.Name
@@ -151,6 +170,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	}
 
 	// ---- combo (top-right)
+	edge(1)
 	if L.Combo >= 3 {
 		g.comboShown = L.Combo
 	}
@@ -188,6 +208,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	}
 
 	// ---- boss bar
+	edge(0)
 	if L.Boss != nil {
 		bb := L.Boss
 		if g.hudBoss < bb.HP || g.hudBoss > bb.MaxHP {
@@ -204,6 +225,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	}
 
 	// ---- class ability (bottom-left, above power-ups)
+	edge(-1)
 	if r.hasAbility() {
 		g.drawAbility(screen, L)
 	}
@@ -236,6 +258,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	}
 
 	// ---- relics (bottom-right)
+	edge(1)
 	rx := 1898.0
 	for i := len(r.Order) - 1; i >= 0; i-- {
 		m := modByID[r.Order[i]]
@@ -259,6 +282,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	g.drawScrolls(screen, L)
 
 	// ---- launch prompt
+	edge(0)
 	if L.anyStuck() && !L.Cleared {
 		a := 0.75 + 0.25*math.Sin(L.T*4)
 		t2, kc := "or click to launch", "SPACE"

@@ -89,6 +89,7 @@ func (L *Level) loseLife(why string) {
 		g.snd.Duck(0.8, 3)
 		return
 	}
+	g.coach("life")
 	s := fmt.Sprintf("%s  ·  %d LIFE LEFT", why, r.Lives)
 	if r.Lives > 1 {
 		s = fmt.Sprintf("%s  ·  %d LIVES LEFT", why, r.Lives)

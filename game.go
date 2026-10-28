@@ -118,6 +118,16 @@ type Game struct {
 	pendingNode  int
 	quit         bool
 	tooltip      string
+	gloss        *glossReq
+	bindCache    map[string]*bindAction
+	rebinding    string // "action:slot" waiting for a key or button
+	restartHold  float64
+	kbdShown     bool
+	presenceT    float64
+	cbBuf        *ebiten.Image
+	cbShader     *ebiten.Shader
+	coachQ       []coachTip
+	coachT       float64
 
 	// HUD animation state
 	hudLevel   *Level
@@ -168,6 +178,9 @@ func NewGame() *Game {
 	g := &Game{rng: rand.New(rand.NewSource(time.Now().UnixNano())), last: time.Now(), skyAct: -1}
 	g.save = loadSave()
 	g.settings = &g.save.Settings
+	if steamOnDeck() && g.settings.TextScale == 0 {
+		g.settings.TextScale = 1.15 // a little larger on the Deck's 7" screen
+	}
 	g.snd = NewSounds()
 	g.ui = newUI(g.snd)
 	g.batch = newBatch(&g.cam)
@@ -193,6 +206,7 @@ func (g *Game) applySettings() {
 	g.snd.SFX = s.SFX * s.Master
 	g.snd.Music = s.Music * s.Master
 	ebiten.SetFullscreen(s.Fullscreen)
+	applyWindowMode(s)
 	ebiten.SetVsyncEnabled(s.VSync)
 }
 
@@ -228,6 +242,25 @@ func (g *Game) setState(s State) {
 	if s == StMap {
 		g.saveRun("map", -1)
 	}
+	if g.kbdShown && s != StSeed {
+		steamKeyboardClose()
+	}
+	g.kbdShown = false
+	if !pauseToggle {
+		switch s {
+		case StMap:
+			g.coach("map")
+		case StReward:
+			g.coach("reward")
+		case StShop:
+			g.coach("shop")
+		case StLevel:
+			g.coach("level")
+			if g.level != nil && g.level.Boss != nil {
+				g.coach("boss")
+			}
+		}
+	}
 	g.consumeInput() // the press that changed screens must not act on the next one
 	switch s {
 	case StActIntro:
@@ -257,6 +290,7 @@ func (g *Game) Layout(ow, oh int) (int, int) {
 // ---------------------------------------------------------------- update
 
 func (g *Game) Update() error {
+	defer g.guard("update")
 	if g.quit {
 		writeSave(&g.save)
 		steamShutdown()
@@ -269,9 +303,16 @@ func (g *Game) Update() error {
 	dt := now.Sub(g.last).Seconds()
 	g.last = now
 	dt = math.Max(0, math.Min(dt, 1.0/30))
+	if g.settings.FastAnim {
+		g.stateT += dt // screens play their entrances twice as fast
+	}
 	g.stateT += dt
 	g.bannerT -= dt
 	steamTick()
+	if g.presenceT -= dt; g.presenceT <= 0 {
+		g.presenceT = 2
+		g.updatePresence()
+	}
 	g.checkAchievements()
 	g.lbTick()
 
@@ -283,6 +324,9 @@ func (g *Game) Update() error {
 	g.ui.Click = inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
 	g.latchInput()
 	g.mouseHeld = ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+	if g.updateCoach(dt) {
+		return nil // a first-time tip is up; everything waits
+	}
 
 	// music
 	switch g.state {
@@ -323,7 +367,7 @@ func (g *Game) Update() error {
 			}
 		}
 	case StLevel:
-		if pausePressed() {
+		if g.pausePressed() {
 			g.setState(StPause)
 			return nil
 		}
@@ -334,7 +378,13 @@ func (g *Game) Update() error {
 			g.scrollInput(g.level)
 		}
 		debugKeys(g)
-		g.level.Update(dt, in)
+		if g.updateRestartHold(dt) {
+			return nil
+		}
+		if g.gameSpeed() < 1 {
+			g.run.Assisted = true
+		}
+		g.level.Update(dt*g.gameSpeed(), in)
 		g.updateHero(g.level, dt)
 		if r := g.run; r != nil && r.HP > 0 && r.HP < r.Stats.MaxHP*0.3 && !g.level.Cleared {
 			g.heartT -= dt
@@ -349,10 +399,15 @@ func (g *Game) Update() error {
 	case StMap:
 		debugMapKeys(g)
 	case StPause:
-		if pausePressed() || padJust(ebiten.StandardGamepadButtonRightRight) {
+		if g.pausePressed() || padJust(ebiten.StandardGamepadButtonRightRight) {
 			g.setState(StLevel)
 		}
 	case StSettings:
+		if g.rebinding != "" {
+			g.captureBind()
+			g.consumeInput()
+			break
+		}
 		if backPressed() {
 			writeSave(&g.save)
 			g.setState(g.prevState)
@@ -400,8 +455,8 @@ func (g *Game) readInput() Input {
 		g.lastMouseX = mx
 	}
 	in := Input{MouseX: float64(mx)}
-	left := ebiten.IsKeyPressed(ebiten.KeyArrowLeft) || ebiten.IsKeyPressed(ebiten.KeyA)
-	right := ebiten.IsKeyPressed(ebiten.KeyArrowRight) || ebiten.IsKeyPressed(ebiten.KeyD)
+	left := g.actDown("left")
+	right := g.actDown("right")
 	if left || right {
 		g.useKeys = true
 	}
@@ -412,9 +467,9 @@ func (g *Game) readInput() Input {
 		in.KeyDir += 1
 	}
 	in.UseKeys = g.useKeys
-	in.Fast = ebiten.IsKeyPressed(ebiten.KeyShift)
-	in.Fire = g.ui.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace)
-	in.Ability = inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) || inpututil.IsKeyJustPressed(ebiten.KeyE)
+	in.Fast = g.actDown("fast")
+	in.Fire = g.ui.Click || g.actJust("launch")
+	in.Ability = inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) || g.actJust("ability")
 	// gamepad: left stick or d-pad steers (analog), A launches, X / RB / RT fire the ability
 	ax := padAxis(ebiten.StandardGamepadAxisLeftStickHorizontal)
 	if padDown(ebiten.StandardGamepadButtonLeftLeft) {
@@ -430,10 +485,7 @@ func (g *Game) readInput() Input {
 		in.KeyDir = math.Copysign((math.Abs(ax)-0.15)/0.85, ax)
 		in.Fast = math.Abs(ax) > 0.92
 	}
-	if padJust(ebiten.StandardGamepadButtonRightBottom) {
-		in.Fire = true
-	}
-	if padJust(ebiten.StandardGamepadButtonRightLeft) || padJust(ebiten.StandardGamepadButtonFrontTopRight) || padJust(ebiten.StandardGamepadButtonFrontBottomRight) {
+	if padJust(ebiten.StandardGamepadButtonFrontTopRight) || padJust(ebiten.StandardGamepadButtonFrontBottomRight) {
 		in.Ability = true
 	}
 	return in
@@ -687,7 +739,9 @@ func (g *Game) endRun(win bool) {
 	g.boardRank = 0
 	if r.Endless && !win {
 		g.boardRank = g.save.addToBoard(EndlessEntry{Score: score, Loop: r.Loop(), Depth: r.Depth, Class: r.Arch.Name, Asc: r.Asc, Date: time.Now().Format("2006-01-02")})
-		lbSubmit(r, score)
+		if !r.Assisted {
+			lbSubmit(r, score)
+		}
 	}
 	if r.Daily {
 		k := r.SeedCode
@@ -707,6 +761,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if captureSkipDraw(g, screen) {
 		return
 	}
+	defer g.guard("draw")
+	g.drawFiltered(screen, g.drawFrame)
+}
+
+func (g *Game) drawFrame(screen *ebiten.Image) {
 	sw, sh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
 	g.ui.Setup(sw, sh)
 	now := nowFn()
@@ -848,16 +907,20 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.drawToasts(screen, ddt)
 	if g.tooltip != "" {
 		u := g.ui
-		lines := u.wrap(g.tooltip, fReg, 19, 380)
-		h := float64(len(lines))*26 + 20
+		ts := 19 * g.textScale()
+		lines := u.wrap(g.tooltip, fReg, ts, 380)
+		h := float64(len(lines))*ts*1.37 + 20
 		x := math.Min(u.MX+24, 1900-410)
 		y := math.Min(u.MY+16, 1070-h)
 		u.panel(screen, x, y, 410, h, 0.95)
 		for i, l := range lines {
-			u.text(screen, l, fReg, 19, x+16, y+10+float64(i)*26, color.RGBA{235, 235, 250, 255}, alignLeft)
+			u.text(screen, l, fReg, ts, x+16, y+10+float64(i)*ts*1.37, color.RGBA{235, 235, 250, 255}, alignLeft)
 		}
 		g.tooltip = ""
 	}
+	g.drawGloss(screen)
+	g.drawRestartHold(screen)
+	g.drawCoach(screen)
 	g.drawAchievementPopup(screen)
 	g.drawTransition(screen, ddt)
 	debugOverlay(g, screen)
@@ -1055,6 +1118,11 @@ func (g *Game) drawSeed(s *ebiten.Image) {
 	}
 	if u.button(s, "seedback", "Back", 860, 690, 200, 56, cAcc, true) {
 		g.setState(StMenu)
+	}
+	if steamOnDeck() || (g.padActive && steamActive()) {
+		if u.button(s, "seedkbd", "Keyboard", 1290, 458, 200, 64, cAcc, true) || g.stateT < 0.05 && !g.kbdShown {
+			g.kbdShown = steamKeyboard(int(u.X(660)), int(u.Y(440)), int(600*u.S), int(100*u.S))
+		}
 	}
 }
 
@@ -1271,6 +1339,13 @@ func (g *Game) drawPause(s *ebiten.Image) {
 		g.endRun(false)
 	}
 	g.runPanel(s)
+	// where the damage has come from so far
+	u.panel(s, 30, 380, 360, 330, 0.85)
+	u.text(s, "Damage so far", fRune, 26, 50, 394, cGold, alignLeft)
+	g.drawDmgBars(s, g.run, 50, 446, 320, 7, 1)
+	if !g.padActive {
+		u.text(s, "Hold "+keyLabel(g.bind("restart").Keys[0])+" in a chamber to restart the run", fReg, 17, 960, 760, cDim, alignCenter)
+	}
 }
 
 func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, afford bool) bool {
@@ -1282,6 +1357,11 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 		u.focusRing(s, x, y-14, w, h, 20)
 	}
 	if hv {
+		gh := h
+		if price > 0 {
+			gh += 62 // keep the price tag visible
+		}
+		g.wantGloss(m, x, y, w, gh)
 		u.hoverID = "card" + m.ID
 		if u.lastHover != u.hoverID {
 			g.snd.Play("cardhover")
@@ -1350,7 +1430,7 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 	} else if len(fusionPartners(m.ID)) > 0 {
 		limit = y + h - 92
 	}
-	ds := 22.0
+	ds := math.Round(22 * g.textScale())
 	descBottom := func() float64 { return nameY + 20 + float64(len(u.wrap(m.Desc, fReg, ds, w-50)))*ds*1.35 }
 	for ds > 12 && descBottom() > limit {
 		ds -= 1
@@ -1569,7 +1649,7 @@ func (g *Game) drawEvent(s *ebiten.Image) {
 	g.runPanel(s)
 	u.panel(s, 460, 160, 1000, 760, 0.9)
 	u.heading(s, ev.Title, 52, 192, cGold, 1)
-	y := u.paragraph(s, ev.Text, fReg, 26, 960, 300, 860, cWhite, alignCenter)
+	y := u.paragraph(s, ev.Text, fReg, 26*g.textScale(), 960, 300, 860, cWhite, alignCenter)
 	if g.eventMsg != "" {
 		u.paragraph(s, g.eventMsg, fBold, 26, 960, y+40, 860, cAcc, alignCenter)
 		if u.button(s, "evdone", "Continue", 760, 820, 400, 64, cGreen, true) {

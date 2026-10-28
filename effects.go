@@ -190,8 +190,12 @@ func (L *Level) startFinale() {
 // clearShown is how long the "chamber cleared" card has been up; it waits
 // for the last brick's slow motion to play out.
 func (L *Level) clearShown() float64 {
+	t := L.clearT
 	if L.hadFinale {
-		return L.clearT - 0.45
+		t -= 0.45
 	}
-	return L.clearT
+	if L.g.settings.FastAnim {
+		t *= 2
+	}
+	return t
 }

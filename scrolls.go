@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
 	"orb/levelgen"
 )
@@ -175,6 +174,7 @@ func (g *Game) addScroll(id string) bool {
 	g.save.Seen["scroll:"+id] = true
 	g.toastImg("Scroll found", sd.Name+" — "+sd.Desc, sd.Col, glyphImage(sd.Glyph, sd.Col))
 	g.snd.Play("pick.1." + itoa(g.snd.Key))
+	g.coach("scroll")
 	return true
 }
 
@@ -215,8 +215,8 @@ func (L *Level) useScroll(i int) {
 
 // scrollInput reads the scroll keys during a chamber.
 func (g *Game) scrollInput(L *Level) {
-	for i, k := range []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3} {
-		if inpututil.IsKeyJustPressed(k) {
+	for i, id := range []string{"scroll1", "scroll2", "scroll3"} {
+		if g.actJust(id) {
 			L.useScroll(i)
 		}
 	}
@@ -224,7 +224,7 @@ func (g *Game) scrollInput(L *Level) {
 		g.scrollSel = (g.scrollSel + 1) % len(g.run.Scrolls)
 		g.snd.Play("hover")
 	}
-	if padJust(ebiten.StandardGamepadButtonRightTop) {
+	if g.actJust("readsel") {
 		L.useScroll(g.scrollSel)
 	}
 }

@@ -88,6 +88,37 @@ under Proton the Windows path above already works.
   config **gamepad**, no launcher, no anti-cheat.
 - In Steamworks → *Steam Input*, choose "Gamepad" as the default
   configuration so the Deck's trackpads don't send mouse input.
+- Play a Seed opens the Deck's floating keyboard over the seed box (and
+  offers a Keyboard button), so seeds can be typed without a physical
+  keyboard.
+- On a Deck, body text starts at 115% (Settings → Access → Text size).
+- Every gameplay key and the pad's launch / ability / scroll / pause
+  buttons can be remapped in Settings → Controls.
+
+## 5b. Rich Presence
+
+`store/richpresence.vdf` holds the friends-list status lines. Upload it in
+Steamworks → *Community* → *Rich Presence Localization* (English). The
+game sets `steam_display` to one of these tokens and fills `%class%`,
+`%act%`, `%world%`, `%boss%`, `%loop%` and `%challenge%`:
+
+| Token | Shows as |
+|---|---|
+| `#Status_Menu` | In the main menu |
+| `#Status_Run` | Berserker · Act 2 · Neon Grove |
+| `#Status_Boss` | Berserker · Facing the Guardian |
+| `#Status_Endless` | Berserker · Endless, loop 3 |
+| `#Status_Daily` | Daily Challenge · Berserker · Act 1 |
+| `#Status_Challenge` | Glass Paddle · Berserker · Act 2 |
+
+## 5c. Crash reports
+
+If the game ever crashes it writes `crash.log` next to the save
+(`%APPDATA%\ArcaneOrb\crash.log`) with the version, the run (class, seed,
+act, build), graphics settings and a stack trace, shows the player where
+the file is, and exits. The run in progress was saved at its last safe
+point, so Continue resumes it. Ask players to attach this file to bug
+reports.
 
 ## 6. Depot layout
 

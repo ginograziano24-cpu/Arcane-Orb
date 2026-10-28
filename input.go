@@ -68,7 +68,6 @@ func backPressed() bool {
 }
 
 // pausePressed is Escape, P or the pad's Start button.
-func pausePressed() bool {
-	return inpututil.IsKeyJustPressed(ebiten.KeyEscape) || inpututil.IsKeyJustPressed(ebiten.KeyP) ||
-		padJust(ebiten.StandardGamepadButtonCenterRight)
+func (g *Game) pausePressed() bool {
+	return inpututil.IsKeyJustPressed(ebiten.KeyEscape) || g.actJust("pause")
 }

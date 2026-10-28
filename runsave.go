@@ -65,6 +65,7 @@ type savedRun struct {
 	MetaLuck                                int
 	Bricks, Bosses, Elites, MaxCombo, Score int
 	Elapsed                                 float64
+	Assisted                                bool
 	Recap                                   *runRecap
 }
 
@@ -96,7 +97,7 @@ func (g *Game) snapRun(phase string, node int) []byte {
 		Element: r.Element, Rerolls: r.Rerolls, Fused: r.Fused, Scrolls: r.Scrolls, Rank: r.Rank, Asc: r.Asc,
 		RunEndless: r.Endless, EndlessStart: r.EndlessStart, XPPaid: r.xpPaid, ShardsPaid: r.shardsPaid,
 		StatsPaid: r.statsPaid, MetaLuck: r.metaLuck, Bricks: r.Bricks, Bosses: r.Bosses, Elites: r.Elites,
-		MaxCombo: r.MaxCombo, Score: r.Score, Elapsed: time.Since(r.Start).Seconds(), Recap: r.recap}
+		MaxCombo: r.MaxCombo, Score: r.Score, Elapsed: time.Since(r.Start).Seconds(), Recap: r.recap, Assisted: r.Assisted}
 	for _, n := range r.Map.Nodes {
 		s.Map = append(s.Map, savedNode{n.Row, n.Lane, n.Type, n.Next, n.Visited, n.Seed, n.Omen})
 	}
@@ -155,7 +156,7 @@ func (g *Game) continueRun(s *savedRun) {
 		Fused: s.Fused, Scrolls: s.Scrolls, Rank: s.Rank, Asc: s.Asc, Endless: s.RunEndless, EndlessStart: s.EndlessStart,
 		xpPaid: s.XPPaid, shardsPaid: s.ShardsPaid, statsPaid: s.StatsPaid, metaLuck: s.MetaLuck,
 		Bricks: s.Bricks, Bosses: s.Bosses, Elites: s.Elites, MaxCombo: s.MaxCombo, Score: s.Score,
-		Start: time.Now().Add(-time.Duration(s.Elapsed * float64(time.Second))), recap: s.Recap}
+		Start: time.Now().Add(-time.Duration(s.Elapsed * float64(time.Second))), recap: s.Recap, Assisted: s.Assisted}
 	if r.Mods == nil {
 		r.Mods = map[string]int{}
 	}

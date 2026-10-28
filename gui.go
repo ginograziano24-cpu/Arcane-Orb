@@ -722,7 +722,11 @@ func (g *Game) drawToasts(dst *ebiten.Image, dt float64) {
 	for _, t := range g.toasts {
 		k := math.Min(ease(t.T/0.3), ease((toastDur-t.T)/0.35))
 		w, h := 410.0, 84.0
-		x := 1896 - w + (1-k)*(w+60)
+		right := 1896.0
+		if g.state == StPause || g.state == StMap || g.state == StShop || g.state == StEvent || g.state == StRest {
+			right = 1516 // keep clear of the build panel
+		}
+		x := right - w + (1-k)*(w+60)
 		u.frame(dst, x, y, w, h, k)
 		fillPath(dst, boxPath(u.X(x+12), u.Y(y+16), 5*u.S, (h-32)*u.S, 2.5*u.S, false), ca(t.Col, k), ca(darken(t.Col, 0.6), k), vgrad(u.Y(y+16), u.Y(y+h-16)), false)
 		if t.Img != nil {
@@ -748,6 +752,9 @@ func (g *Game) drawToasts(dst *ebiten.Image, dt float64) {
 func (g *Game) drawTransition(dst *ebiten.Image, dt float64) {
 	if g.fadeT <= 0 {
 		return
+	}
+	if g.settings.FastAnim {
+		dt *= 2
 	}
 	g.fadeT -= dt / 0.34
 	k := clamp01(g.fadeT)

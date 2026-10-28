@@ -161,3 +161,65 @@ func steamOnDeck() bool {
 }
 
 func steamActive() bool { return steam.ok }
+
+// ---------------------------------------------------------------- rich presence
+
+var presenceLast string
+
+// steamPresence sets the friends-list status. token is a localisation
+// token from richpresence.vdf; params fill its %placeholders%.
+func steamPresence(token string, params ...string) {
+	if !steam.ok || steam.friends == 0 {
+		return
+	}
+	key := token
+	for _, p := range params {
+		key += "|" + p
+	}
+	if key == presenceLast {
+		return
+	}
+	presenceLast = key
+	set := steam.dll.NewProc("SteamAPI_ISteamFriends_SetRichPresence")
+	if set.Find() != nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	put := func(k, v string) {
+		kb, vb := cstr(k), cstr(v)
+		set.Call(steam.friends, uintptr(unsafe.Pointer(&kb[0])), uintptr(unsafe.Pointer(&vb[0])))
+		runtime.KeepAlive(kb)
+		runtime.KeepAlive(vb)
+	}
+	for i := 0; i+1 < len(params); i += 2 {
+		put(params[i], params[i+1])
+	}
+	put("steam_display", token)
+}
+
+// steamKeyboard opens the Steam Deck's floating keyboard over a text box
+// (screen pixels); typed keys arrive as ordinary input.
+func steamKeyboard(x, y, w, h int) bool {
+	if !steam.ok || steam.utils == 0 {
+		return false
+	}
+	p := steam.dll.NewProc("SteamAPI_ISteamUtils_ShowFloatingGamepadTextInput")
+	if p.Find() != nil {
+		return false
+	}
+	defer func() { _ = recover() }()
+	r, _, _ := p.Call(steam.utils, 0, uintptr(x), uintptr(y), uintptr(w), uintptr(h))
+	return boolRet(r)
+}
+
+func steamKeyboardClose() {
+	if !steam.ok || steam.utils == 0 {
+		return
+	}
+	p := steam.dll.NewProc("SteamAPI_ISteamUtils_DismissFloatingGamepadTextInput")
+	if p.Find() != nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	p.Call(steam.utils)
+}

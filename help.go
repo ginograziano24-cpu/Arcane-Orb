@@ -117,7 +117,7 @@ func (g *Game) textBlock(s *ebiten.Image, title, body string, x, y, w, a float64
 		u.text(s, title, fBold, 22, x, y, ca(cGold, a), alignLeft)
 		y += 34
 	}
-	return u.paragraph(s, body, fReg, 20, x, y, w, ca(rgba(222, 216, 236, 255), a), alignLeft) + 18
+	return u.paragraph(s, body, fReg, 20*g.textScale(), x, y, w, ca(rgba(222, 216, 236, 255), a), alignLeft) + 18
 }
 
 // ---------------------------------------------------------------- page 1
@@ -457,7 +457,7 @@ func (g *Game) helpMeta(s *ebiten.Image, a float64) {
 		drawSprite(s, sprSoft, u.X(x+90-70), u.Y(y+100-70), 140*u.S, 140*u.S, ca(u.theme().Accent, 0.2+0.15*pulse), true)
 		u.drawEmblem(s, glyphImage(it.glyph, u.theme().Accent), x+90, y+100, 100, a)
 		u.text(s, it.title, fSerif, 26, x+170, y+30, ca(cGold, a), alignLeft)
-		u.paragraph(s, it.body, fReg, 19, x+170, y+76, 580, ca(rgba(222, 216, 236, 255), a), alignLeft)
+		u.paragraph(s, it.body, fReg, 19*g.textScale(), x+170, y+76, 580, ca(rgba(222, 216, 236, 255), a), alignLeft)
 	}
 }
 

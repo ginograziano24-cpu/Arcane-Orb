@@ -19,3 +19,7 @@ func steamLBFind(name string)                                                   
 func steamLBDownload(kind, from, to int)                                                      {}
 func steamLBUpload(score int, details []int32)                                                {}
 func steamLBPoll(onFound func(), onEntries func(tag string, rows []lbRow), onUploaded func()) {}
+
+func steamPresence(token string, params ...string) {}
+func steamKeyboard(x, y, w, h int) bool            { return false }
+func steamKeyboardClose()                          {}

@@ -52,6 +52,7 @@ func (g *Game) addCurse(rng *rand.Rand) *Mod {
 	r.Add(c.ID, &g.save)
 	r.log("curse", "Cursed: "+c.Name, c.Icon)
 	g.toastImg("Cursed", c.Name+" — "+c.Desc[len("Curse: "):], tagColors["curse"], modEmblem(c))
+	g.coach("curse")
 	return c
 }
 
