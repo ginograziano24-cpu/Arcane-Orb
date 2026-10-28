@@ -387,7 +387,8 @@ func init() {
 		// health runs dry
 		L.hurt(r.HP+5, "TEST")
 		say("after hp loss lives=%d hp=%.0f", r.Lives, r.HP)
-		// last life
+		// last life (once the paddle has reformed from the health loss)
+		step(90, Input{UseKeys: true})
 		L.release()
 		for _, b := range L.Balls {
 			b.X, b.Z, b.VX, b.VZ = 0, 1, 0, -10

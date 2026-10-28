@@ -32,3 +32,6 @@ ACH_CODEX,Archivist,Discover every upgrade and relic.,no,achievements/ACH_CODEX.
 ACH_DAILY,Daily Devotion,Complete a Daily Challenge run.,no,achievements/ACH_DAILY.jpg,achievements/ACH_DAILY_locked.jpg
 ACH_RAMPAGE,Rampage,Fill the Berserker's Rage to the brim.,yes,achievements/ACH_RAMPAGE.jpg,achievements/ACH_RAMPAGE_locked.jpg
 ACH_SUPERCHARGE,Living Lightning,Supercharge the orb as the Stormcaller.,yes,achievements/ACH_SUPERCHARGE.jpg,achievements/ACH_SUPERCHARGE_locked.jpg
+ACH_CHALLENGE,Tested,Finish a challenge run.,no,achievements/ACH_CHALLENGE.jpg,achievements/ACH_CHALLENGE_locked.jpg
+ACH_CHALLENGE_5,Proven,Finish five different challenge runs.,no,achievements/ACH_CHALLENGE_5.jpg,achievements/ACH_CHALLENGE_5_locked.jpg
+ACH_CHALLENGE_ALL,Master of Trials,Finish every challenge run.,no,achievements/ACH_CHALLENGE_ALL.jpg,achievements/ACH_CHALLENGE_ALL_locked.jpg

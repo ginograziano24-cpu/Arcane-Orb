@@ -10,6 +10,8 @@ CONTROLS
   Click / Space .... launch orb, fire   Shift ........... faster keyboard move
   Esc / P .......... pause              F11 ............. fullscreen
   Right-click / E .. class ability (Pyromancer, Stormcaller)
+  1 / 2 / 3 ........ read a scroll      Hold R .......... restart the run
+  Every key and pad button can be remapped in Settings > Controls.
 
   CONTROLLER (Xbox / PlayStation / Steam Deck)
   Left stick / D-pad  move paddle      A ............... launch orb
@@ -17,6 +19,31 @@ CONTROLS
   In menus: stick or D-pad to move, A to choose, B to go back,
   LB / RB to turn pages and switch Codex tabs. Keyboard menus work the
   same way with arrows / WASD, Enter or Space, Esc, and Q / E.
+
+NEW IN THIS BUILD  -  polish pass
+  - Save & quit: from the pause menu or the map. Continue on the main
+    menu resumes the exact moment (a chamber restarts from its start,
+    same layout). The run file syncs with Steam Cloud
+  - Run recap: where your damage came from, the run's key moments act
+    by act, your build, unlocks, and Play again. The Codex keeps your
+    last 40 runs in a new Run History tab
+  - The last brick of a chamber breaks in slow motion as the camera
+    leans in; crits land with a tiny freeze
+  - New item, Crescendo: combo hits ring a second note and show damage
+    numbers that grow and warm with the combo (tuned against Combo
+    Engine: a little stronger early, weaker late)
+  - Hover any card to see what its keywords mean; first-time tips walk
+    a new player through the map, chambers, rewards, shops and more
+  - Settings > Controls: remap keys and pad buttons. Settings > Access:
+    text size, game speed (slowed Endless runs stay off the global
+    board), colour filters for protanopia / deuteranopia / tritanopia,
+    tips on / off. Display: fullscreen, borderless or windowed; the HUD
+    spreads to the edges on ultrawide screens. Effects: fast animations
+  - Hold R in a chamber to restart; the pause screen shows your damage
+    so far
+  - Steam: friends see what you're playing (class, act, world), the
+    Deck's keyboard opens for seed entry, and a crash writes crash.log
+    next to your save
 
 NEW IN 1.0 RC  -  readability, Guardians, controllers, Steam
   - Special bricks carry clear floating badges (anvil = armoured, bomb =

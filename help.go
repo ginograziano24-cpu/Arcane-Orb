@@ -432,7 +432,7 @@ func (g *Game) helpOrigins(s *ebiten.Image, a float64) {
 		}
 	}
 	tx, y := 300.0, 620.0
-	y = g.textBlock(s, "", "Your origin decides how you play. Every origin has a passive that changes the rules, and some carry an active ability on right-click / E (X on a controller) that recharges over time.", tx, y, 1320, a)
+	y = g.textBlock(s, "", "Your origin decides how you play. Every origin has a passive that changes the rules, and some carry an active ability on "+g.bindText("ability")+" that recharges over time.", tx, y, 1320, a)
 	g.textBlock(s, "", "Four origins are locked at first. Unlock them with shards on the Choose your Origin screen. Each origin's passive also shows as a live meter in the corner of the screen.", tx, y, 1320, a)
 }
 
@@ -444,9 +444,9 @@ func (g *Game) helpMeta(s *ebiten.Image, a float64) {
 		{"star", "Arcane Rank", "Every run earns experience. Ranking up unlocks new upgrades and relics into the pool, so the game keeps growing."},
 		{"gem", "The Sanctum", "Shards earned on every run, won or lost, buy permanent boosts: more health, more gold, extra choices and more."},
 		{"halo", "Ascension", "Win a run to unlock Ascension: ten tiers of harder runs with bigger rewards."},
-		{"infinity", "Endless Mode", "Beat the story and the worlds loop forever, growing tougher each loop. Chase your best score on the local leaderboard."},
-		{"book", "The Codex", "Every upgrade, relic and fusion you discover is recorded, along with your Endless records."},
-		{"hourglass", "Daily Challenge & Seeds", "Everyone gets the same daily run. Every level shows its seed, so you can share and replay a run."},
+		{"infinity", "Endless Mode", "Beat the story and the worlds loop forever, growing tougher each loop. Chase your best score against friends and the world on the leaderboards."},
+		{"book", "The Codex", "Every upgrade, relic and fusion you discover is recorded, along with your Endless records and the story of your last 40 runs."},
+		{"hourglass", "Dailies, Challenges & Seeds", "Everyone gets the same daily run, and challenge runs bend the rules for bragging rights. Every run has a seed you can share and replay."},
 	}
 	for i, it := range items {
 		col, row := i%2, i/2
@@ -459,6 +459,8 @@ func (g *Game) helpMeta(s *ebiten.Image, a float64) {
 		u.text(s, it.title, fSerif, 26, x+170, y+30, ca(cGold, a), alignLeft)
 		u.paragraph(s, it.body, fReg, 19*g.textScale(), x+170, y+76, 580, ca(rgba(222, 216, 236, 255), a), alignLeft)
 	}
+	u.paragraph(s, "Save & quit from the pause menu or the map whenever you like; Continue on the main menu picks the run back up. Controls, text size, game speed and colour filters are all in Settings.",
+		fReg, 19*g.textScale(), 960, 896, 1500, ca(cDim, a), alignCenter)
 }
 
 // ---------------------------------------------------------------- scrolls
@@ -488,7 +490,7 @@ func (g *Game) helpScrolls(s *ebiten.Image, a float64) {
 	}
 
 	tx, y := 1010.0, 190.0
-	y = g.textBlock(s, "Scrolls", "One-shot spells you carry between chambers, three at a time. Read one mid-fight with 1, 2 or 3 (Y on a controller): meteors, frost novas, wildfire, extra orbs, healing and more. Elites and Guardians always leave one; shops and events sell them.", tx, y, 800, a)
+	y = g.textBlock(s, "Scrolls", "One-shot spells you carry between chambers, three at a time. Read one mid-fight with "+g.bindText("scrolls")+": meteors, frost novas, wildfire, extra orbs, healing and more. Elites and Guardians always leave one; shops and events sell them.", tx, y, 800, a)
 	y = g.textBlock(s, "Omens", "Some chambers on the map carry an omen. Some change the fight: gilded bricks, frenzied orbs, volatile powder. Others set a challenge, like a time limit or no dropped orbs, with a prize if you manage it. Hover a node to read it before you choose your path.", tx, y, 800, a)
 	y = g.textBlock(s, "Curses", "Bargains at events can lay a curse on you: a narrower paddle, weaker hits, a thinner purse. Curses sit in your build in crimson until you cleanse them.", tx, y, 800, a)
 	g.textBlock(s, "Campfires", "Rest to heal, Train for a new upgrade, Empower an upgrade you own to double it, or Cleanse a curse.", tx, y, 800, a)
