@@ -606,6 +606,11 @@ func (u *UI) button(dst *ebiten.Image, id, label string, x, y, w, h float64, acc
 
 // slider returns the new value (0..1).
 func (u *UI) slider(dst *ebiten.Image, label string, x, y, w float64, v float64, held bool) float64 {
+	return u.sliderFmt(dst, label, x, y, w, v, held, func(v float64) string { return itoa(int(math.Round(v*100))) + "%" })
+}
+
+// sliderFmt is a slider whose readout is formatted by show.
+func (u *UI) sliderFmt(dst *ebiten.Image, label string, x, y, w float64, v float64, held bool, show func(float64) string) float64 {
 	th := u.theme()
 	S := u.S
 	if f, _ := u.navReg("sl"+label, x, y-6, w, 44, true); f {
@@ -630,7 +635,7 @@ func (u *UI) slider(dst *ebiten.Image, label string, x, y, w float64, v float64,
 	strokePath(dst, knob, 2.5*S, ca(cBlack, 0.6), false)
 	fillPath(dst, knob, lighten(th.Edge, 0.55), darken(th.Edge, 0.55), vgrad(ky-14*S, ky+14*S), false)
 	fillPath(dst, circlePath(kx, ky, 5*S), th.Accent, th.Accent, grad{}, false)
-	u.text(dst, itoa(int(math.Round(v*100)))+"%", fBold, 20, x+w, y+1, cDim, alignRight)
+	u.text(dst, show(v), fBold, 20, x+w, y+1, cDim, alignRight)
 	if held && u.MY > y-10 && u.MY < y+40 && u.MX > bx-20 && u.MX < bx+bw+20 {
 		v = math.Max(0, math.Min(1, (u.MX-bx)/bw))
 	}

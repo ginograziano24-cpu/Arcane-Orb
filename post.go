@@ -62,7 +62,70 @@ func Fragment(dst vec4, src vec2, color vec4) vec4 {
 }
 `
 
+// upscaleSrc enlarges the scene when it renders below native resolution:
+// a 16-tap Catmull-Rom filter, clamped to the local min/max of the four
+// nearest texels so edges stay crisp without halos (in the spirit of AMD's
+// FSR 1 spatial upscaler).
+const upscaleSrc = `//kage:unit pixels
+package main
+
+var Sharp float
+
+func wts(f float) vec4 {
+	return vec4(
+		f*(-0.5+f*(1.0-0.5*f)),
+		1.0+f*f*(-2.5+1.5*f),
+		f*(0.5+f*(2.0-1.5*f)),
+		f*f*(-0.5+0.5*f))
+}
+
+func tap(p vec2) vec3 {
+	o := imageSrc0Origin()
+	sz := imageSrc0Size()
+	q := clamp(p, o+0.5, o+sz-0.5)
+	return imageSrc0UnsafeAt(q).rgb
+}
+
+func Fragment(dst vec4, src vec2, color vec4) vec4 {
+	t := src - 0.5
+	b := floor(t)
+	f := t - b
+	c0 := b + 0.5
+	wx := wts(f.x)
+	wy := wts(f.y)
+	acc := vec3(0)
+	for j := 0; j < 4; j++ {
+		row := vec3(0)
+		y := c0.y + float(j) - 1.0
+		row += tap(vec2(c0.x-1.0, y)) * wx.x
+		row += tap(vec2(c0.x, y)) * wx.y
+		row += tap(vec2(c0.x+1.0, y)) * wx.z
+		row += tap(vec2(c0.x+2.0, y)) * wx.w
+		if j == 0 {
+			acc += row * wy.x
+		} else if j == 1 {
+			acc += row * wy.y
+		} else if j == 2 {
+			acc += row * wy.z
+		} else {
+			acc += row * wy.w
+		}
+	}
+	a := tap(c0)
+	bb := tap(c0 + vec2(1, 0))
+	cc := tap(c0 + vec2(0, 1))
+	dd := tap(c0 + vec2(1, 1))
+	mn := min(min(a, bb), min(cc, dd))
+	mx := max(max(a, bb), max(cc, dd))
+	lin := mix(mix(a, bb, f.x), mix(cc, dd, f.x), f.y)
+	c := mix(lin, clamp(acc, mn, mx), Sharp)
+	return vec4(c, 1.0)
+}
+`
+
 type Post struct {
+	upscale             *ebiten.Shader
+	graded              *ebiten.Image
 	bright, blur, grade *ebiten.Shader
 	scene               *ebiten.Image
 	small, small2       *ebiten.Image
@@ -88,6 +151,9 @@ func newPost() *Post {
 	if p.grade, err = ebiten.NewShader([]byte(gradeSrc)); err != nil {
 		return p
 	}
+	if p.upscale, err = ebiten.NewShader([]byte(upscaleSrc)); err != nil {
+		p.upscale = nil // fall back to bilinear
+	}
 	p.ok = true
 	return p
 }
@@ -100,6 +166,10 @@ func (p *Post) Target(w, h int) *ebiten.Image {
 			p.small.Deallocate()
 			p.small2.Deallocate()
 			p.bloomFull.Deallocate()
+			if p.graded != nil {
+				p.graded.Deallocate()
+				p.graded = nil
+			}
 		}
 		p.scene = ebiten.NewImage(w, h)
 		sw, sh := max(1, w/4), max(1, h/4)
@@ -111,8 +181,44 @@ func (p *Post) Target(w, h int) *ebiten.Image {
 	return p.scene
 }
 
-// Apply composites the scene with bloom and grading onto dst.
+// Apply composites the scene with bloom and grading onto dst, upscaling
+// it when the scene was rendered below dst's resolution.
 func (p *Post) Apply(dst *ebiten.Image, g Grade, enabled bool) {
+	w, h := p.scene.Bounds().Dx(), p.scene.Bounds().Dy()
+	dw, dh := dst.Bounds().Dx(), dst.Bounds().Dy()
+	out := dst
+	if w != dw || h != dh {
+		if p.graded == nil {
+			p.graded = ebiten.NewImage(w, h)
+		}
+		out = p.graded
+	}
+	p.applyAt(out, g, enabled)
+	if out != dst {
+		p.upscaleTo(dst, out)
+	}
+}
+
+func (p *Post) upscaleTo(dst, src *ebiten.Image) {
+	sw, sh := float32(src.Bounds().Dx()), float32(src.Bounds().Dy())
+	dw, dh := float32(dst.Bounds().Dx()), float32(dst.Bounds().Dy())
+	if p.upscale == nil {
+		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		op.GeoM.Scale(float64(dw/sw), float64(dh/sh))
+		dst.DrawImage(src, op)
+		return
+	}
+	vs := []ebiten.Vertex{
+		{DstX: 0, DstY: 0, SrcX: 0, SrcY: 0, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1},
+		{DstX: dw, DstY: 0, SrcX: sw, SrcY: 0, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1},
+		{DstX: dw, DstY: dh, SrcX: sw, SrcY: sh, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1},
+		{DstX: 0, DstY: dh, SrcX: 0, SrcY: sh, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1},
+	}
+	op := &ebiten.DrawTrianglesShaderOptions{Images: [4]*ebiten.Image{src}, Uniforms: map[string]any{"Sharp": float32(0.85)}}
+	dst.DrawTrianglesShader(vs, []uint16{0, 1, 2, 0, 2, 3}, p.upscale, op)
+}
+
+func (p *Post) applyAt(dst *ebiten.Image, g Grade, enabled bool) {
 	if !p.ok || !enabled {
 		dst.DrawImage(p.scene, nil)
 		return

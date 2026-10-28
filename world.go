@@ -61,7 +61,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		op.GeoM.Scale(sc, sc)
 		op.GeoM.Translate(0, hy-bh*skyHorizon*sc)
 		screen.DrawImage(g.sky, op)
-		g.drawSkyFX(screen, L.Biome.ID, hy, L.T)
+		if !g.lowFX() {
+			g.drawSkyFX(screen, L.Biome.ID, hy, L.T)
+		}
 	}
 	B := g.batch
 	B.Reset()
@@ -296,12 +298,28 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	}
 	B.Flush(screen)
 
+	if !g.deferOverlay {
+		g.drawWorldOverlay(screen, L, 1)
+	}
+}
+
+// drawWorldOverlay draws the 2D layer over the world (lightning, capsule
+// letters, floating text and flashes). k maps the world camera's pixels to
+// dst's, so the overlay stays sharp when the 3D scene renders below
+// native resolution.
+func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
+	cam := &g.cam
+	sw, sh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
+	proj := func(p V3) (float64, float64) {
+		x, y, _ := cam.Project(p)
+		return x * k, y * k
+	}
 	// lightning arcs (2D, over everything)
 	for _, a := range L.Arcs {
 		al := a.Life / 0.3
 		var prev [2]float64
 		for i, p := range a.Pts {
-			x, y, _ := cam.Project(p)
+			x, y := proj(p)
 			if i > 0 {
 				strokeLine(screen, prev[0], prev[1], x, y, 7*g.ui.S, prem(a.Col, 0.25*al))
 				strokeLine(screen, prev[0], prev[1], x, y, 2.5*g.ui.S, prem(color.RGBA{240, 250, 255, 255}, al))
@@ -311,12 +329,12 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	}
 	// capsule letters
 	for _, d := range L.Drops {
-		x, y, _ := cam.Project(V3{d.X, 0.95 + 0.15*math.Sin(d.T*6), d.Z})
+		x, y := proj(V3{d.X, 0.95 + 0.15*math.Sin(d.T*6), d.Z})
 		g.ui.textAt(screen, powerDefs[d.P].Letter, fBold, 20, x, y-13*g.ui.S, color.RGBA{20, 20, 30, 255}, alignCenter)
 	}
 	// floating texts
 	for _, f := range L.Floats {
-		x, y, _ := cam.Project(f.P)
+		x, y := proj(f.P)
 		size := 22.0
 		if f.Big {
 			size = 34

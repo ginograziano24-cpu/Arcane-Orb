@@ -219,6 +219,31 @@ func (g *Game) drawHallK(dst *ebiten.Image, orbX, orbY, c float64) {
 		sanctumShader = sh
 	}
 	u := g.ui
+	if sc := g.hallScale(); sc < 1 {
+		// render the hall smaller and let linear filtering enlarge it; it
+		// is all soft light and mist, so the saving costs nothing visible
+		w, h := dst.Bounds().Dx(), dst.Bounds().Dy()
+		rw, rh := max(16, int(float64(w)*sc)), max(16, int(float64(h)*sc))
+		if hallSmall == nil || hallSmall.Bounds().Dx() != rw || hallSmall.Bounds().Dy() != rh {
+			if hallSmall != nil {
+				hallSmall.Deallocate()
+			}
+			hallSmall = ebiten.NewImage(rw, rh)
+		}
+		op := &ebiten.DrawRectShaderOptions{}
+		op.Uniforms = map[string]any{
+			"Time":   float32(math.Mod(g.frontT, 2000)),
+			"Origin": []float32{float32(u.X(0) * sc), float32(u.Y(0) * sc)},
+			"Scale":  float32(u.S * sc),
+			"Orb":    []float32{float32(orbX), float32(orbY)},
+			"Circle": float32(c),
+		}
+		hallSmall.DrawRectShader(rw, rh, sanctumShader, op)
+		dop := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		dop.GeoM.Scale(float64(w)/float64(rw), float64(h)/float64(rh))
+		dst.DrawImage(hallSmall, dop)
+		return
+	}
 	op := &ebiten.DrawRectShaderOptions{}
 	op.Uniforms = map[string]any{
 		"Time":   float32(math.Mod(g.frontT, 2000)),
@@ -389,4 +414,17 @@ func vignette(dst *ebiten.Image, sw, sh float64, a uint8) {
 	ev := sh * 0.25
 	fillPath(dst, boxPath(0, 0, sw, ev, 0, false), blk, clr, vgrad(0, ev), false)
 	fillPath(dst, boxPath(0, sh-ev, sw, ev, 0, false), clr, blk, vgrad(sh-ev, sh), false)
+}
+
+var hallSmall *ebiten.Image
+
+// hallScale is the resolution the title hall renders at.
+func (g *Game) hallScale() float64 {
+	switch g.settings.Quality {
+	case 0:
+		return 0.5
+	case 1:
+		return 0.75
+	}
+	return 1
 }

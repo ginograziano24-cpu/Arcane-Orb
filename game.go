@@ -11,7 +11,6 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
-	"orb/levelgen"
 )
 
 type State int
@@ -155,6 +154,11 @@ type Game struct {
 	scrollSel    int // pad: selected scroll slot
 	hero         heroPortrait
 	challengeSel string // challenge picked on the Challenges screen
+	deferOverlay bool   // drawWorld leaves its 2D layer for a later pass
+	dynScale     float64
+	frameAvg     float64
+	dynT         float64
+	setTab       int
 }
 
 func NewGame() *Game {
@@ -718,12 +722,18 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 	case StLevel, StPause:
 		g.ensureSky(g.level.Biome, g.level.propSeed)
-		tgt := g.post.Target(int(sw), int(sh))
+		sc := g.renderScale(ddt)
+		rw, rh := max(64, int(sw*sc+0.5)), max(36, int(sh*sc+0.5))
+		tgt := g.post.Target(rw, rh)
+		g.deferOverlay = true
 		g.drawWorld(tgt, g.level)
+		g.deferOverlay = false
 		g.post.Apply(screen, worldGrades[g.level.Biome.ID], !g.settings.NoBloom)
+		k := sw / float64(rw)
 		if g.run != nil && g.run.is("lightsout") && g.level.introT <= 0 {
-			g.drawDarkness(screen, g.level)
+			g.drawDarkness(screen, g.level, k)
 		}
+		g.drawWorldOverlay(screen, g.level, k)
 		if !hideHUD || g.level.introT > 0 {
 			g.drawHUD(screen, g.level)
 		}
@@ -1717,52 +1727,6 @@ func (g *Game) drawSigil(s *ebiten.Image, cx, cy, R, rot float64, col color.RGBA
 		fillPath(s, circlePath(px, py, 4*S), ca(lighten(col, 0.5), 0.9*a), ca(col, 0.9*a), grad{}, true)
 		drawSprite(s, sprSoft, px-14*S, py-14*S, 28*S, 28*S, ca(col, 0.5*a), true)
 	}
-}
-
-func (g *Game) drawSettings(s *ebiten.Image) {
-	u := g.ui
-	st := g.settings
-	u.panel(s, 460, 80, 1000, 900, 0.92)
-	u.heading(s, "SETTINGS", 64, 100, cGold, 1)
-	y := 220.0
-	st.Master = u.slider(s, "Master volume", 520, y, 880, st.Master, g.mouseHeld)
-	st.Music = u.slider(s, "Music", 520, y+60, 880, st.Music, g.mouseHeld)
-	st.SFX = u.slider(s, "Sound effects", 520, y+120, 880, st.SFX, g.mouseHeld)
-	g.snd.SFX = st.SFX * st.Master
-	g.snd.Music = st.Music * st.Master
-	g.snd.updateVolumes()
-	y += 180
-	toggle := func(id, label string, v bool) bool {
-		u.text(s, label, fBold, 22, 520, y+12, cWhite, alignLeft)
-		if u.switchCtl(s, id, 1260, y+4, v) {
-			v = !v
-		}
-		y += 58
-		return v
-	}
-	st.Shake = toggle("shake", "Screen shake", st.Shake)
-	st.Flashes = toggle("flash", "Flash effects", st.Flashes)
-	p := st.Particles == 1
-	p = toggle("parts", "Full particles", p)
-	if p {
-		st.Particles = 1
-	} else {
-		st.Particles = 0
-	}
-	fs := toggle("fs", "Fullscreen (F11)", st.Fullscreen)
-	vs := toggle("vs", "VSync", st.VSync)
-	st.ShowFPS = toggle("fps", "Show FPS", st.ShowFPS)
-	st.NoBloom = !toggle("bloom", "Bloom & colour grading", !st.NoBloom)
-	st.Classic = toggle("classic", "Classic backdrop (painted picture, no 3D scenery)", st.Classic)
-	if fs != st.Fullscreen || vs != st.VSync {
-		st.Fullscreen, st.VSync = fs, vs
-		g.applySettings()
-	}
-	if u.button(s, "setback", "Back", 760, 900, 400, 60, cGreen, true) {
-		writeSave(&g.save)
-		g.setState(g.prevState)
-	}
-	_ = levelgen.Cols
 }
 
 var nodeIconName = []string{"bolt", "crown", "", "gem", "q", "plus", "rock"}

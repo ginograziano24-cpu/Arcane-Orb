@@ -247,7 +247,7 @@ var darkImg *ebiten.Image
 
 // drawDarkness covers the arena in night, with holes of light around the
 // orbs, the paddle and anything burning or exploding.
-func (g *Game) drawDarkness(screen *ebiten.Image, L *Level) {
+func (g *Game) drawDarkness(screen *ebiten.Image, L *Level, k float64) {
 	sw, sh := screen.Bounds().Dx(), screen.Bounds().Dy()
 	if darkImg == nil || darkImg.Bounds().Dx() != sw || darkImg.Bounds().Dy() != sh {
 		darkImg = ebiten.NewImage(sw, sh)
@@ -260,6 +260,7 @@ func (g *Game) drawDarkness(screen *ebiten.Image, L *Level) {
 		if z <= 0.06 {
 			return
 		}
+		x, y = x*k, y*k
 		r := rad * S
 		spr := sprSoft
 		vs := []ebiten.Vertex{

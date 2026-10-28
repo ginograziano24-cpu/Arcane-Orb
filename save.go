@@ -18,6 +18,9 @@ type Settings struct {
 	ShowFPS    bool    `json:"show_fps"`
 	NoBloom    bool    `json:"no_bloom"`
 	Classic    bool    `json:"classic_backdrop"` // flat painted picture instead of 3D scenery
+	Quality    int     `json:"quality"`          // 0 low, 1 medium, 2 high, 3 custom
+	RenderRes  float64 `json:"render_scale"`     // 3D resolution, 0.5..1 (0 = full)
+	DynRes     bool    `json:"dynamic_res"`      // lower the 3D resolution when frames run long
 }
 
 // EndlessEntry is one line of the local Endless leaderboard.
@@ -81,7 +84,7 @@ type SaveData struct {
 
 func defaultSave() SaveData {
 	return SaveData{Version: 2, Upg: map[string]int{}, Unlocked: map[string]bool{}, Daily: map[string]int{}, Seen: map[string]bool{}, Fusions: map[string]bool{}, Ach: map[string]bool{}, Challenges: map[string]int{},
-		Settings: Settings{Master: 1, Music: 0.6, SFX: 0.8, Shake: true, Flashes: true, Particles: 1, VSync: true, Fullscreen: true}}
+		Settings: Settings{Master: 1, Music: 0.6, SFX: 0.8, Shake: true, Flashes: true, Particles: 1, VSync: true, Fullscreen: true, Quality: 2, RenderRes: 1, DynRes: true}}
 }
 
 func savePath() string {
