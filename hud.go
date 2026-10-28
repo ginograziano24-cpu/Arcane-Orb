@@ -273,14 +273,14 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	}
 
 	// ---- chamber cleared
-	if L.Cleared {
-		k := ease(L.clearT * 2.5)
+	if L.Cleared && L.clearShown() > 0 {
+		k := ease(L.clearShown() * 2.5)
 		w, h := 760.0, 236.0
 		y := 372 + (1-k)*36
 		u.frame(screen, 960-w/2, y, w, h, 0.95*k)
 		u.headingW(screen, "CHAMBER CLEARED", 58, y+28, rgba(255, 222, 128, 255), k, w/2-24)
 		u.iconLabel(screen, icCoin, fmt.Sprintf("+%d gold", L.GoldEarned), fBold, 28, 960, y+116, ca(cGold, k), alignCenter)
-		if L.clearT > 1.2 {
+		if L.clearShown() > 1.2 {
 			u.text(screen, "Click to continue", fReg, 20, 960, y+176, ca(cDim, k*(0.6+0.4*math.Sin(L.T*4))), alignCenter)
 		}
 	}

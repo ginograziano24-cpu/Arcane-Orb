@@ -868,6 +868,22 @@ var recipes = map[string]recipe{
 			b.sparkle(0.4, 1.4, 30, 3000, 9000, 0.25)
 		})
 	}},
+	// the last brick: a deep hit, then a slowed, rising shimmer that hands
+	// over to the clear fanfare
+	"finale": {1, func(p []int, v int, r *rand.Rand) []byte {
+		k := arg(p, 0, 0)
+		root := relMajor(k)
+		return one(2.6, r.Int63(), verbBig.with(0.9), func(b *sb) {
+			b.impact(0, 1.1)
+			b.sub(0, 70, 34, 1.6, 0.6)
+			b.whoosh(0, 1.2, 2400, 300, 0.35)
+			for i, s := range []int{0, 7, 12, 16, 19} {
+				b.glass(0.05+float64(i)*0.13, semis(root*4, s), 0.3)
+			}
+			b.pad(0, 2.2, semis(root, 0), 0.14)
+			b.pad(0, 2.2, semis(root, 7), 0.1)
+		})
+	}},
 	"actstart": {1, func(p []int, v int, r *rand.Rand) []byte {
 		k := arg(p, 0, 0)
 		root := keyRoots[k]
@@ -1212,7 +1228,7 @@ func prewarmNames() []string {
 		}
 	}
 	for _, n := range []string{"crit", "steel", "shieldhit", "pad.0", "wall", "launch", "laser", "boom", "zap",
-		"thump", "coinbig", "hover", "click", "cardhover", "deal", "mapenter", "lose.0", "clear.0", "pick.0.0", "pick.1.0",
+		"thump", "coinbig", "hover", "click", "cardhover", "deal", "mapenter", "lose.0", "clear.0", "finale.0", "pick.0.0", "pick.1.0",
 		"pick.2.0", "pick.3.0", "pick.4.0", "synergy.0", "actstart.0", "heartbeat", "firestorm", "thunder", "abilready", "bossintro", "parry", "achievement", "scroll", "paddleboom"} {
 		out = append(out, n)
 	}

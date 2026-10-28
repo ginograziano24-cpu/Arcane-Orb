@@ -343,7 +343,7 @@ func (g *Game) Update() error {
 				g.heartT = 0.55 + 2*r.HP/r.Stats.MaxHP
 			}
 		}
-		if g.state == StLevel && g.level.Cleared && g.level.clearT > 1.2 && (g.ui.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace) || g.level.clearT > 4) {
+		if g.state == StLevel && g.level.Cleared && g.level.clearShown() > 1.2 && (g.ui.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace) || g.level.clearShown() > 4) {
 			g.afterLevel()
 		}
 	case StMap:

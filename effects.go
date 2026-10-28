@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 
@@ -137,4 +138,60 @@ func (L *Level) barrierSaved(x float64) {
 		L.text(V3{0, 1.5, 6}, "THORNS", color.RGBA{190, 120, 255, 255}, true)
 		L.g.snd.Play("boom")
 	}
+}
+
+// dmgNumber floats a damage number that grows and warms with the combo
+// (Crescendo shows these).
+func (L *Level) dmgNumber(x, z, amt float64, crit bool) {
+	if amt < 0.05 || len(L.Floats) > 40 {
+		return
+	}
+	k := math.Min(1, float64(L.Combo)/30)
+	c := mixc(color.RGBA{235, 235, 245, 255}, color.RGBA{255, 214, 90, 255}, math.Min(1, k*2))
+	if k > 0.5 {
+		c = mixc(c, color.RGBA{255, 110, 190, 255}, (k-0.5)*2)
+	}
+	s := fmt.Sprintf("%.1f", amt)
+	if amt >= 10 {
+		s = fmt.Sprintf("%.0f", amt)
+	}
+	size := 18 + 22*k
+	if crit {
+		s += "!"
+		size += 6
+		c = mixc(c, color.RGBA{255, 90, 90, 255}, 0.6)
+	}
+	j := (L.rng.Float64() - 0.5) * 0.8
+	L.Floats = append(L.Floats, &FloatText{P: V3{x + j, 1.8, z}, S: s, Col: c, Life: 0.95, Scale: size})
+}
+
+const finaleDur = 1.3
+
+// startFinale is the last brick of a chamber: slow motion, the camera
+// leaning in, a shockwave from where it broke and a swell into the
+// clear fanfare.
+func (L *Level) startFinale() {
+	g := L.g
+	x, z := L.lastBrkX, L.lastBrkZ
+	L.finX, L.finZ = x, z
+	g.snd.PlayKeyed("finale")
+	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 9, Life: 0.9, Max: 0.9, Col: lighten(L.Biome.Trim, 0.4)},
+		&Ring{X: x, Z: z, MaxR: 4, Life: 0.5, Max: 0.5, Col: color.RGBA{255, 240, 200, 255}})
+	L.sparks(V3{x, 1, z}, 50, lighten(L.Biome.Trim, 0.5), 13)
+	L.Flash = math.Max(L.Flash, 0.35)
+	L.Shake = math.Max(L.Shake, 0.5)
+	if g.settings.FastAnim {
+		return
+	}
+	L.finaleT = finaleDur
+	L.hadFinale = true
+}
+
+// clearShown is how long the "chamber cleared" card has been up; it waits
+// for the last brick's slow motion to play out.
+func (L *Level) clearShown() float64 {
+	if L.hadFinale {
+		return L.clearT - 0.45
+	}
+	return L.clearT
 }

@@ -40,6 +40,7 @@ type Stats struct {
 	BarrierPerLevel                                                  int
 	LaserInterval                                                    float64
 	ComboDmg                                                         float64
+	Crescendo                                                        float64 // bonus note per combo step
 	BallLossDmg                                                      float64 // extra health lost when the orb is dropped
 	DropBarrier                                                      int     // barrier charges gained when a life is lost
 	LifeHeal                                                         float64 // health restored when a life is lost
@@ -113,6 +114,7 @@ var modList = []*Mod{
 	{ID: "wildfire", Icon: "blaze", Name: "Wildfire", Desc: "Burning bricks spread fire to their neighbours when destroyed.", Rarity: Rare, Tags: []string{"fire"}, Max: 1, Apply: func(s *Stats) { s.Wildfire = true }},
 	{ID: "shatter", Icon: "shatter", Name: "Shatterpoint", Desc: "Frozen bricks shatter, damaging everything around them.", Rarity: Rare, Tags: []string{"frost"}, Max: 1, Apply: func(s *Stats) { s.Shatter = true }},
 	{ID: "comboeng", Icon: "gear", Name: "Combo Engine", Desc: "+2% damage per combo step (up to +100%).", Rarity: Uncommon, Tags: []string{"combo"}, Apply: func(s *Stats) { s.ComboDmg += 0.02 }},
+	{ID: "crescendo", Icon: "note", Name: "Crescendo", Desc: "Orb hits ring a second note: +2% of the hit per combo step, up to +40% (beyond other combo caps). Damage numbers swell with your combo.", Rarity: Uncommon, Tags: []string{"combo"}, Max: 2, Apply: func(s *Stats) { s.Crescendo += 0.02 }},
 	{ID: "luckyc", Icon: "clover", Name: "Lucky Charm", Desc: "+50% power-up drop chance.", Rarity: Uncommon, Tags: []string{"wealth"}, Apply: func(s *Stats) { s.Luck += 0.5 }},
 	{ID: "interest", Icon: "coinstack", Name: "Compound Interest", Desc: "Earn 10% interest on your gold after each level (max 30).", Rarity: Rare, Tags: []string{"wealth"}, Max: 2, Apply: func(s *Stats) { s.Interest += 0.1 }},
 	{ID: "fuse", Icon: "fuse", Name: "Long Fuse", Desc: "Explosions are 50% larger.", Rarity: Uncommon, Tags: []string{"blast"}, Apply: func(s *Stats) { s.ExplodeRadius += 0.5 }},

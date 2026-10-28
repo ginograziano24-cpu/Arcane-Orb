@@ -166,11 +166,12 @@ type Arc struct {
 }
 
 type FloatText struct {
-	P    V3
-	S    string
-	Col  color.RGBA
-	Life float64
-	Big  bool
+	P     V3
+	S     string
+	Col   color.RGBA
+	Life  float64
+	Big   bool
+	Scale float64 // >0: a damage number at this size
 }
 
 type Boss struct {
@@ -190,6 +191,11 @@ type Boss struct {
 type Level struct {
 	introT, introMax      float64 // boss intro cinematic
 	hitStop               float64
+	critStopT             float64 // last crit freeze (they're rationed)
+	finaleT               float64 // >0 while the last brick's slow-motion plays
+	finX, finZ            float64 // where the last brick broke
+	hadFinale             bool
+	lastBrkX, lastBrkZ    float64
 	lostOrbs              int // orbs dropped this chamber (for Untouchable)
 	startLeft             int
 	paddleGone            float64 // >0 while the exploded paddle reforms
@@ -499,6 +505,12 @@ func (L *Level) Update(dt float64, in Input) {
 	if L.hitStop > 0 {
 		L.hitStop -= dt
 		dt *= 0.12
+	}
+	// the last brick: time crawls, then eases back to speed
+	if L.finaleT > 0 {
+		L.finaleT -= dt
+		p := clamp01(1 - L.finaleT/finaleDur)
+		dt *= 0.16 + 0.84*p*p
 	}
 	L.T += dt
 	for i := range L.Timers {
@@ -1100,7 +1112,8 @@ func (L *Level) damage(b *Brick, h Hit) (bool, bool) {
 }
 
 func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
-	r := L.g.run
+	g := L.g
+	r := g.run
 	s := &r.Stats
 	L.impacts++
 	charged := ball.Charged
@@ -1170,6 +1183,19 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 			break
 		}
 		destroyed, solid = L.damage(b, h)
+	}
+	if s.Crescendo > 0 {
+		note := 0.0
+		if L.Combo >= 2 && b.Alive {
+			note = dmg * math.Min(s.Crescendo*float64(L.Combo), s.Crescendo*20)
+			L.damage(b, Hit{Src: "Crescendo", Dmg: note, Silent: true, Void: h.Void, Crit: crit})
+		}
+		L.dmgNumber(bx, bz, dmg*float64(times)+note, crit)
+	}
+	if crit && L.T-L.critStopT > 0.35 && !g.settings.FastAnim {
+		L.critStopT = L.T
+		L.hitStop = math.Max(L.hitStop, 0.045)
+		L.Shake = math.Max(L.Shake, 0.18)
 	}
 	L.passiveOnHit(ball, b, dmg)
 	if L.midasT > 0 && L.rng.Float64() < 0.6 {
@@ -1288,6 +1314,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	if !b.Alive {
 		return
 	}
+	L.lastBrkX, L.lastBrkZ = b.X(), b.Z()
 	g := L.g
 	r := g.run
 	s := &r.Stats
@@ -1751,6 +1778,9 @@ func (L *Level) clear() {
 	if L == g.level && r.SeedCode != "MENU" {
 		g.unlock("ACH_FIRST_CHAMBER")
 		L.omenCleared()
+		if L.Boss == nil {
+			L.startFinale()
+		}
 	}
 	reward := 12 + r.Act*4
 	if L.Node == NElite {

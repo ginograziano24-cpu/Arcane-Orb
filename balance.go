@@ -42,6 +42,7 @@ type balResult struct {
 	Orbs, Hits, Abil float64
 	Left, Start      float64
 	T50, T90, Bounce float64
+	DPS, Combo       float64
 }
 
 // sloppy is the autopilot with human limits: it re-reads the play only
@@ -105,14 +106,20 @@ func (a *sloppy) input(L *Level, dt float64) Input {
 	return in
 }
 
-func runBalance(g *Game, seeds int, maxT, errSD, react float64) []balResult {
+func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScenario, archs []string) []balResult {
+	if len(scens) == 0 {
+		scens = balScenarios
+	}
 	rec := capState.recording
 	capState.recording = false
 	defer func() { capState.recording = rec }()
 	var out []balResult
 	for ai := range archetypes {
 		arch := &archetypes[ai]
-		for _, sc := range balScenarios {
+		if len(archs) > 0 && !contains(archs, arch.ID) {
+			continue
+		}
+		for _, sc := range scens {
 			res := balResult{Arch: arch.ID, Scen: sc.Name, Seeds: seeds}
 			for s := 0; s < seeds; s++ {
 				sv := defaultSave()
@@ -178,6 +185,12 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64) []balResult {
 					}
 				}
 				res.Hits += float64(hits)
+				tot := 0.0
+				for _, v := range r.rc().Dmg {
+					tot += v
+				}
+				res.DPS += tot / t
+				res.Combo += float64(L.peakCombo)
 				res.Time += t
 				res.HPLost += hp0 - r.HP
 				res.Orbs += float64(lost)
@@ -194,6 +207,8 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64) []balResult {
 			res.Bounce /= n
 			res.Start /= n
 			res.Hits /= n
+			res.DPS /= n
+			res.Combo /= n
 			out = append(out, res)
 		}
 	}
@@ -208,11 +223,13 @@ func init() {
 			MaxT  float64
 			Err   float64
 			React float64
-		}{6, 150, 1.4, 180}
+			Scens []balScenario
+			Archs []string
+		}{6, 150, 1.4, 180, nil, nil}
 		if len(args) > 0 {
 			_ = json.Unmarshal([]byte(args[0].String()), &p)
 		}
-		b, _ := json.Marshal(runBalance(theGame, p.Seeds, p.MaxT, p.Err, p.React))
+		b, _ := json.Marshal(runBalance(theGame, p.Seeds, p.MaxT, p.Err, p.React, p.Scens, p.Archs))
 		return string(b)
 	}))
 }
@@ -387,4 +404,13 @@ func init() {
 		g.state = StMenu
 		return strings.Join(log, "\n")
 	}))
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }

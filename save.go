@@ -21,6 +21,7 @@ type Settings struct {
 	Quality    int     `json:"quality"`          // 0 low, 1 medium, 2 high, 3 custom
 	RenderRes  float64 `json:"render_scale"`     // 3D resolution, 0.5..1 (0 = full)
 	DynRes     bool    `json:"dynamic_res"`      // lower the 3D resolution when frames run long
+	FastAnim   bool    `json:"fast_animations"`  // shorter transitions, no slow-motion or hit-stop
 }
 
 // EndlessEntry is one line of the local Endless leaderboard.

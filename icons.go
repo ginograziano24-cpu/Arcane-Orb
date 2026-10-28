@@ -627,6 +627,15 @@ func init() {
 				b.flat(b.poly(0.65, y, 0.15, y+0.06, 0.15, y+0.09, 0.65, y+0.03), ca(toneDark, 0.4))
 			}
 		},
+		"note": func(b *ib) {
+			b.shape(b.poly(-0.42, -0.62, 0.62, -0.86, 0.62, -0.6, -0.42, -0.36), toneGold)
+			b.line(0.1, toneGold, -0.42, 0.5, -0.42, -0.5)
+			b.line(0.1, toneGold, 0.62, 0.26, 0.62, -0.74)
+			b.shape(b.ellipse(-0.62, 0.55, 0.3, 0.22), b.c)
+			b.shape(b.ellipse(0.42, 0.31, 0.3, 0.22), b.c)
+			b.shine(-0.7, 0.48, 0.07)
+			b.shine(0.34, 0.24, 0.07)
+		},
 		"drum": func(b *ib) {
 			b.shape(b.rrect(-0.7, -0.3, 1.4, 0.95, 0.12), b.c)
 			b.line(0.05, toneGold, -0.7, -0.15, -0.3, 0.6, 0.1, -0.15, 0.5, 0.6)

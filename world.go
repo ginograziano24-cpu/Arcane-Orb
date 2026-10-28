@@ -36,6 +36,15 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		cam.Eye = eye0.Add(cam.Eye.Sub(eye0).Mul(e))
 		cam.Target = tgt0.Add(cam.Target.Sub(tgt0).Mul(e))
 	}
+	if L.finaleT > 0 {
+		// push in on the last brick and ease back out
+		p := 1 - L.finaleT/finaleDur
+		e := math.Sin(math.Pi*p) * 0.4
+		eye := V3{L.finX * 0.55, 9, L.finZ - 13}
+		tgt := V3{L.finX, 0.8, L.finZ}
+		cam.Eye = cam.Eye.Add(eye.Sub(cam.Eye).Mul(e))
+		cam.Target = cam.Target.Add(tgt.Sub(cam.Target).Mul(e * 1.3))
+	}
 	if camHook != nil {
 		camHook(cam, L)
 	}
@@ -338,6 +347,11 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 		size := 22.0
 		if f.Big {
 			size = 34
+		}
+		if f.Scale > 0 {
+			// damage numbers pop in large and settle
+			pop := 1 + 0.35*clamp01((f.Life-0.75)/0.2)
+			size = f.Scale * pop
 		}
 		g.ui.textOutlinedAt(screen, f.S, fBold, size, x, y, alpha(f.Col, math.Min(1, f.Life*2)), alignCenter)
 	}

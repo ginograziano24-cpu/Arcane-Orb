@@ -45,7 +45,31 @@ func debugMenuKeys(g *Game) {
 	}
 }
 
+var dbgPending []string
+
 func debugKeys(g *Game) {
+	acts := dbgPending
+	dbgPending = nil
+	want := func(name string) bool {
+		for _, a := range acts {
+			if a == name {
+				return true
+			}
+		}
+		return false
+	}
+	// "crescendo": Crescendo and a running combo; "finale": break every brick
+	if (inpututil.IsKeyJustPressed(ebiten.KeyNumpad1) || want("crescendo")) && g.level != nil {
+		g.take(modByID["crescendo"])
+		g.level.Combo, g.level.comboT = 18, 30
+	}
+	if (inpututil.IsKeyJustPressed(ebiten.KeyNumpad2) || want("finale")) && g.level != nil && !g.level.Cleared {
+		for _, b := range g.level.Bricks {
+			if b.Alive && b.Kind.Required() {
+				g.level.destroy(b, Hit{Dmg: 99})
+			}
+		}
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyF9) && g.level != nil && !g.level.Cleared {
 		if g.level.Boss != nil {
 			g.level.killBoss()
