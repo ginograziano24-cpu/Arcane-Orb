@@ -50,7 +50,7 @@ func (L *Level) zapNearest(x, z, dmg float64) {
 		return
 	}
 	L.Arcs = append(L.Arcs, &Arc{Pts: jag(V3{x, 0.8, z}, V3{best.X(), 0.8, best.Z()}, L.rng), Life: 0.25, Col: color.RGBA{150, 210, 255, 255}})
-	L.damage(best, Hit{Dmg: dmg, Elemental: true, Silent: true})
+	L.damage(best, Hit{Src: "Lightning", Dmg: dmg, Elemental: true, Silent: true})
 	L.g.snd.PlayVol("zap", 0.6)
 }
 
@@ -60,7 +60,7 @@ func (L *Level) skyStrike(x, z, dmg float64, col color.RGBA) {
 	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 2.4, Life: 0.3, Max: 0.3, Col: col})
 	L.Flash = math.Max(L.Flash, 0.15)
 	for _, b := range L.near(x, z, 1.4) {
-		L.damage(b, Hit{Dmg: dmg, Elemental: true, Silent: true})
+		L.damage(b, Hit{Src: "Lightning", Dmg: dmg, Elemental: true, Silent: true})
 	}
 	L.g.snd.Play("zap")
 }
@@ -91,7 +91,7 @@ func (L *Level) blackHole(x, z float64) {
 	L.g.snd.Play("boom")
 	for _, b := range L.near(x, z, rad) {
 		if b.Layer <= 1 {
-			L.damage(b, Hit{Dmg: 5 * s.Damage * s.DmgMult, Void: true, Blast: true, Silent: true})
+			L.damage(b, Hit{Src: "Event Horizon", Dmg: 5 * s.Damage * s.DmgMult, Void: true, Blast: true, Silent: true})
 		}
 	}
 }
@@ -111,7 +111,7 @@ func (L *Level) steamBurst(b *Brick) {
 	L.text(V3{x, 1.8, z}, "STEAM!", color.RGBA{230, 240, 255, 255}, false)
 	L.g.snd.PlayVol("shatter", 0.7)
 	for _, n := range L.near(x, z, 2.8) {
-		L.damage(n, Hit{Dmg: 1.5 * s.Damage * s.DmgMult, Elemental: true, Silent: true})
+		L.damage(n, Hit{Src: "Steam Engine", Dmg: 1.5 * s.Damage * s.DmgMult, Elemental: true, Silent: true})
 	}
 }
 
@@ -129,7 +129,7 @@ func (L *Level) barrierSaved(x float64) {
 			for row := levelgen.MaxRows - 1; row >= 0; row-- {
 				if b := L.Grid[row][c]; b != nil && b.Alive && b.Kind != levelgen.Steel {
 					L.Rings = append(L.Rings, &Ring{X: b.X(), Z: b.Z(), MaxR: 1.6, Life: 0.3, Max: 0.3, Col: color.RGBA{190, 120, 255, 255}})
-					L.damage(b, Hit{Dmg: 2 * r.Stats.Damage * r.Stats.DmgMult, Blast: true, Silent: true})
+					L.damage(b, Hit{Src: "Crown of Thorns", Dmg: 2 * r.Stats.Damage * r.Stats.DmgMult, Blast: true, Silent: true})
 					break
 				}
 			}

@@ -247,6 +247,7 @@ type Run struct {
 	shardsPaid   int
 	statsPaid    [3]int // bricks, bosses, elites already added to the save
 	metaLuck     int
+	recap        *runRecap
 
 	// statistics
 	Bricks, Bosses, Elites, MaxCombo, Score int

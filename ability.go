@@ -105,7 +105,7 @@ func (L *Level) firestorm() bool {
 		if b.Kind != levelgen.Steel {
 			b.Burn = 3.5
 		}
-		L.damage(b, Hit{Dmg: dmg, Fire: true, Elemental: true, Silent: true})
+		L.damage(b, Hit{Src: "Firestorm", Dmg: dmg, Fire: true, Elemental: true, Silent: true})
 	}
 	L.text(V3{0, 2.4, cellZ(maxR)}, "FIRESTORM", color.RGBA{255, 150, 60, 255}, true)
 	L.Shake = math.Max(L.Shake, 0.45)
@@ -140,7 +140,7 @@ func (L *Level) thunderstrike() bool {
 	}
 	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 3.6, Life: 0.4, Max: 0.4, Col: color.RGBA{150, 210, 255, 255}})
 	L.sparks(V3{x, 0.8, z}, 30, color.RGBA{200, 230, 255, 255}, 12)
-	L.damage(best, Hit{Dmg: dmg, Elemental: true})
+	L.damage(best, Hit{Src: "Thunderstrike", Dmg: dmg, Elemental: true})
 	L.lightningRaw(x, z, 3+s.ChainCount/2, dmg*0.35, best, s.StormCaller || s.ChainRecast)
 	L.text(V3{x, 2.6, z}, "THUNDERSTRIKE", color.RGBA{180, 220, 255, 255}, true)
 	L.Shake = math.Max(L.Shake, 0.55)

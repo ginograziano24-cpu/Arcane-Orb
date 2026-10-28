@@ -261,6 +261,70 @@ func init() {
 }
 
 func init() {
+	// __saveTest round-trips a run through the save file format
+	js.Global().Set("__saveTest", js.FuncOf(func(this js.Value, args []js.Value) any {
+		g := theGame
+		var log []string
+		say := func(f string, a ...any) { log = append(log, fmt.Sprintf(f, a...)) }
+		sv := defaultSave()
+		g.save = sv
+		r := NewRun("SAVEME", archByID("ranger"), &g.save, false)
+		g.run = r
+		g.hero = heroPortrait{}
+		rng := rand.New(rand.NewSource(5))
+		for i := 0; i < 6; i++ {
+			for _, m := range r.Offer(1, i%3 == 0, Common, rng) {
+				g.take(m)
+			}
+		}
+		r.Gold, r.Depth, r.Lives, r.LifeFinds = 137, 3, 1, 1
+		r.recordDmg("Lightning", 420)
+		r.recordDmg("", 1200)
+		r.Map.Nodes[0].Visited = true
+		r.Cur = 0
+		before := fmt.Sprintf("arch=%s act=%d depth=%d gold=%d hp=%.1f lives=%d/%d mods=%d dmg=%.2f crit=%.3f speed=%.2f cur=%d nodes=%d visited0=%v recap=%d/%d",
+			r.Arch.ID, r.Act, r.Depth, r.Gold, r.HP, r.Lives, r.LifeFinds, len(r.Order), r.Stats.Damage, r.Stats.CritChance, r.Stats.SpeedMult, r.Cur, len(r.Map.Nodes), r.Map.Nodes[0].Visited, len(r.rc().Timeline), int(r.rc().Dmg["Orb"]))
+		say("before %s", before)
+		// map phase
+		b := g.snapRun("map", -1)
+		say("bytes=%d", len(b))
+		s := parseSavedRun(b)
+		g.continueRun(s)
+		r2 := g.run
+		after := fmt.Sprintf("arch=%s act=%d depth=%d gold=%d hp=%.1f lives=%d/%d mods=%d dmg=%.2f crit=%.3f speed=%.2f cur=%d nodes=%d visited0=%v recap=%d/%d",
+			r2.Arch.ID, r2.Act, r2.Depth, r2.Gold, r2.HP, r2.Lives, r2.LifeFinds, len(r2.Order), r2.Stats.Damage, r2.Stats.CritChance, r2.Stats.SpeedMult, r2.Cur, len(r2.Map.Nodes), r2.Map.Nodes[0].Visited, len(r2.rc().Timeline), int(r2.rc().Dmg["Orb"]))
+		say("after  %s", after)
+		say("match=%v state=%v (map=%v)", before == after, g.state, g.state == StMap)
+		// node phase: same chamber layout on resume
+		var next int
+		for _, n := range r2.Map.Nodes[0].Next {
+			next = n
+		}
+		b = g.snapRun("node", next) // what enterNode writes first
+		g.enterNode(next)
+		bricks1, seed1 := len(g.level.Bricks), g.level.Data.Seed
+		g.state = StMenu
+		g.continueRun(parseSavedRun(b))
+		say("node phase: state=%v level=%v bricks %d→%d seed same=%v", g.state, g.state == StLevel, bricks1, len(g.level.Bricks), seed1 == g.level.Data.Seed)
+		// reward phase
+		g.rewards = []rewardSet{{Title: "Choose an upgrade", Mods: g.run.Offer(3, false, Common, rng), Skip: 15}}
+		ids := ""
+		for _, m := range g.rewards[0].Mods {
+			ids += m.ID + " "
+		}
+		b = g.snapRun("reward", -1)
+		g.rewards = nil
+		g.continueRun(parseSavedRun(b))
+		ids2 := ""
+		for _, m := range g.rewards[0].Mods {
+			ids2 += m.ID + " "
+		}
+		say("reward phase: state=%v reward=%v offers same=%v (%s)", g.state, g.state == StReward, ids == ids2, ids2)
+		say("garbage parse nil=%v", parseSavedRun([]byte("{bad")) == nil)
+		g.run = nil
+		g.state = StMenu
+		return strings.Join(log, "\n")
+	}))
 	// __lifeTest exercises lives end to end without rendering
 	js.Global().Set("__lifeTest", js.FuncOf(func(this js.Value, args []js.Value) any {
 		g := theGame

@@ -128,7 +128,7 @@ var scrollDefs = []scrollDef{
 				if b.Core {
 					d *= 2
 				}
-				L.damage(b, Hit{Dmg: d, Silent: true})
+				L.damage(b, Hit{Src: "Scrolls", Dmg: d, Silent: true})
 			}
 		}
 		L.Shake = math.Max(L.Shake, 0.9)
@@ -143,7 +143,7 @@ var scrollDefs = []scrollDef{
 		}
 		sort.Slice(list, func(i, j int) bool { return list[i].HP > list[j].HP })
 		for i := 0; i < 6 && i < len(list); i++ {
-			L.damage(list[i], Hit{Dmg: list[i].HP + 1000, Void: true, Silent: true})
+			L.damage(list[i], Hit{Src: "Scrolls", Dmg: list[i].HP + 1000, Void: true, Silent: true})
 		}
 		return len(list) > 0
 	}},

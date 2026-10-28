@@ -57,8 +57,10 @@ reached; there are no Steam *stats* to configure.
 
 ## 4. Cloud saves (Steam Auto-Cloud)
 
-The save is a single small JSON file written atomically (write to `.tmp`,
-then rename), so Auto-Cloud is all that's needed. In Steamworks →
+The save is two small JSON files, each written atomically (write to `.tmp`,
+then rename): `save.json` (progression) and `run.json` (the run in
+progress, so Save & quit carries between PC and Deck). Auto-Cloud is all
+that's needed. In Steamworks →
 *Steam Cloud*:
 
 - Byte quota: `1048576` (1 MB), number of files: `10`
@@ -67,6 +69,7 @@ then rename), so Auto-Cloud is all that's needed. In Steamworks →
 | Root | Subdirectory | Pattern | OS |
 |---|---|---|---|
 | `WinAppDataRoaming` | `ArcaneOrb` | `save.json` | Windows |
+| `WinAppDataRoaming` | `ArcaneOrb` | `run.json` | Windows |
 
 Optionally add a root override for Linux/Proton so Deck and PC share the
 same save: Root `WinAppDataRoaming`, OS `Linux`, "Use Instead"

@@ -60,6 +60,8 @@ func (L *Level) gainLife() {
 	}
 	r.Lives++
 	r.LifeFinds++
+	r.rc().Hearts++
+	r.log("heart", "Caught a falling heart", "heart")
 	L.lifeFlash = 1
 	L.text(V3{L.PaddleX, 2.4, PaddleZ + 2}, "LIFE RESTORED", color.RGBA{255, 140, 180, 255}, true)
 	L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: PaddleZ, MaxR: 4, Life: 0.5, Max: 0.5, Col: color.RGBA{255, 130, 170, 255}})
@@ -74,6 +76,8 @@ func (L *Level) loseLife(why string) {
 	g := L.g
 	r := g.run
 	r.Lives--
+	r.rc().LivesLost++
+	r.log("life", "Lost a life ("+why+")", "heart")
 	L.explodePaddle()
 	g.react(reactLifeLost)
 	if r.Lives <= 0 {

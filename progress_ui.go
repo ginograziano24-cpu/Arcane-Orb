@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"image/color"
-	"math"
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -94,7 +93,7 @@ func (g *Game) drawSanctum(s *ebiten.Image) {
 func (g *Game) drawCodex(s *ebiten.Image) {
 	u := g.ui
 	u.heading(s, "THE CODEX", 72, 40, cGold, 1)
-	tabs := []string{"Upgrades", "Relics", "Fusions", "Achievements", "Endless Records"}
+	tabs := []string{"Upgrades", "Relics", "Fusions", "Achievements", "Endless", "Run History"}
 	// Q/E or the shoulder buttons flip tabs
 	if g.navLatch.pageL {
 		g.codexTab = (g.codexTab + len(tabs) - 1) % len(tabs)
@@ -105,24 +104,31 @@ func (g *Game) drawCodex(s *ebiten.Image) {
 		g.snd.Play("hover")
 	}
 	if g.padActive {
-		u.keycap(s, "LB", 960-600-70, 152, 0.9)
-		u.keycap(s, "RB", 960+600+14, 152, 0.9)
+		u.keycap(s, "LB", 960-640-70, 152, 0.9)
+		u.keycap(s, "RB", 960+640+14, 152, 0.9)
 	}
 	for i, t := range tabs {
 		acc := cAcc
 		if g.codexTab == i {
 			acc = cGold
 		}
-		tx := 960 - 590 + float64(i)*240
-		if u.button(s, "ctab"+itoa(i), t, tx, 140, 220, 50, acc, true) {
+		tx := 960 - 635 + float64(i)*214
+		if u.button(s, "ctab"+itoa(i), t, tx, 140, 200, 50, acc, true) {
 			g.codexTab = i
 		}
 		if g.codexTab == i {
-			u.glowLine(s, tx+20, tx+200, 198, 3, cGold, 1)
+			u.glowLine(s, tx+20, tx+180, 198, 3, cGold, 1)
 		}
 	}
 	if g.codexTab == 3 {
 		g.drawAchievementsTab(s, 236)
+		if u.button(s, "cback", "Back", 60, 990, 200, 56, cAcc, true) {
+			g.setState(StMenu)
+		}
+		return
+	}
+	if g.codexTab == 5 {
+		g.drawHistory(s, 236)
 		if u.button(s, "cback", "Back", 60, 990, 200, 56, cAcc, true) {
 			g.setState(StMenu)
 		}
@@ -282,137 +288,6 @@ func (g *Game) drawAscSelector(s *ebiten.Image, y float64) {
 
 // ---------------------------------------------------------------- summary
 
-func (g *Game) drawSummary(s *ebiten.Image) {
-	u := g.ui
-	r := g.run
-	title, col := "RUN OVER", cRed
-	if g.victory {
-		title, col = "VICTORY!", cGold
-	} else if r.Endless {
-		title, col = fmt.Sprintf("ENDLESS  ·  LOOP %d", r.Loop()), rgba(255, 140, 120, 255)
-	}
-	// your origin stands beside the tally: lit in victory, dimmed in defeat
-	if img := portrait(r.Arch.ID); img != nil {
-		ph := 760.0
-		pw := ph * 0.75
-		px, py := 210-pw/2, 1080-ph+10
-		k := ease(clamp01(g.stateT * 1.5))
-		ci := classInfo[r.Arch.ID]
-		gc := ci.Col
-		if !g.victory && !r.Endless {
-			gc = rgba(120, 40, 50, 255)
-		}
-		drawSprite(s, sprSoft, u.X(px-60), u.Y(py+80), (pw+120)*u.S, (ph)*u.S, ca(gc, 0.25*k), true)
-		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
-		op.GeoM.Scale(pw*u.S/float64(img.Bounds().Dx()), ph*u.S/float64(img.Bounds().Dy()))
-		op.GeoM.Translate(u.X(px), u.Y(py+(1-k)*20))
-		if !g.victory && !r.Endless {
-			op.ColorScale.Scale(0.5, 0.4, 0.45, 1)
-		}
-		op.ColorScale.ScaleAlpha(float32(k))
-		s.DrawImage(img, op)
-		// soften the painting's edges into the scene
-		fillPath(s, boxPath(u.X(-10), u.Y(py-10), 520*u.S, 330*u.S, 0, false), rgba(4, 3, 10, 235), rgba(4, 3, 10, 0), vgrad(u.Y(py-10), u.Y(py+320)), false)
-		fillPath(s, boxPath(u.X(-10), u.Y(py), 140*u.S, ph*u.S, 0, false), rgba(4, 3, 10, 200), rgba(4, 3, 10, 0), hgrad(u.X(-10), u.X(130)), false)
-	}
-	u.panel(s, 400, 60, 1120, 960, 0.92)
-	u.heading(s, title, 90, 80, col, 1)
-	lines := []string{
-		fmt.Sprintf("%s   ·   Seed %s   ·   Ascension %d", r.Arch.Name, r.SeedCode, r.Asc),
-		fmt.Sprintf("Reached %s (Act %d), %d chambers deep", biomes[r.AI()].Name, r.Act, r.Depth),
-		fmt.Sprintf("Bricks %d   ·   Elites %d   ·   Bosses %d   ·   Best combo ×%d", r.Bricks, r.Elites, r.Bosses, r.MaxCombo),
-		fmt.Sprintf("Final score  %d", r.FinalScore),
-	}
-	y := 220.0
-	for _, l := range lines {
-		u.text(s, l, fReg, 25, 960, y, cWhite, alignCenter)
-		y += 42
-	}
-	// build strip
-	bx := 960 - float64(min(len(r.Order), 16))*30
-	for i, id := range r.Order {
-		if i >= 16 {
-			break
-		}
-		if m := modByID[id]; m != nil {
-			u.drawEmblem(s, modEmblem(m), bx+float64(i)*60+30, y+34, 54, 1)
-		}
-	}
-	y += 84
-	// XP bar that fills up over a couple of seconds
-	t := clamp01((g.stateT - 0.4) / 2.0)
-	t = ease(t)
-	xp := g.xpBefore + int(float64(g.xpGained)*t)
-	rank := rankOf(xp)
-	lo, hi := xpForRank(rank), xpForRank(rank+1)
-	u.text(s, fmt.Sprintf("+%d XP", int(float64(g.xpGained)*t)), fBold, 26, 960, y, rgba(190, 160, 255, 255), alignCenter)
-	u.medallion(s, 560, y+66, 30, rgba(150, 110, 255, 255))
-	u.textOutlined(s, itoa(rank), fTitle, 30, 560, y+46, cWhite, alignCenter)
-	u.bar(s, 610, y+56, 720, 20, float64(xp-lo)/float64(max(1, hi-lo)), 0, rgba(150, 110, 255, 255), 0, 0)
-	y += 120
-	if rank > g.rankBefore {
-		pulse := 0.8 + 0.2*math.Sin(g.stateT*6)
-		u.textOutlined(s, fmt.Sprintf("Rank Up!  Arcane Rank %d", rank), fRune, 40, 960, y, ca(cGold, pulse), alignCenter)
-		y += 58
-		var news []*Mod
-		for rk := g.rankBefore + 1; rk <= rank; rk++ {
-			news = append(news, unlocksAt(rk)...)
-		}
-		if len(news) > 0 {
-			u.text(s, "New items join the pool:", fReg, 20, 960, y, cDim, alignCenter)
-			y += 34
-			nx := 960 - float64(min(len(news), 8))*60
-			for i, m := range news {
-				if i >= 8 {
-					break
-				}
-				u.drawEmblem(s, modEmblem(m), nx+float64(i)*120+60, y+34, 62, 1)
-				u.text(s, m.Name, fReg, 14, nx+float64(i)*120+60, y+70, cDim, alignCenter)
-			}
-			y += 100
-		}
-	}
-	u.iconLabel(s, icShard, fmt.Sprintf("+%d shards", g.shardsWon), fBold, 28, 960, y+6, rgba(200, 180, 255, 255), alignCenter)
-	if g.ascUnlocked {
-		u.textOutlined(s, fmt.Sprintf("Ascension %d unlocked!", g.save.AscMax), fBold, 26, 960, y+50, rgba(255, 140, 120, 255), alignCenter)
-	}
-	if r.Endless && !g.victory {
-		ty := y + 50
-		if g.ascUnlocked {
-			ty += 40
-		}
-		if g.boardRank == 1 {
-			pulse := 0.75 + 0.25*math.Sin(g.stateT*6)
-			u.textOutlined(s, "New Endless Record!", fRune, 38, 960, ty, ca(cGold, pulse), alignCenter)
-		} else if g.boardRank > 0 {
-			u.textOutlined(s, fmt.Sprintf("Endless leaderboard  ·  #%d", g.boardRank), fBold, 26, 960, ty, rgba(255, 170, 130, 255), alignCenter)
-		}
-	}
-	if g.victory && !r.Endless {
-		pulse := 0.5 + 0.5*math.Sin(g.stateT*4)
-		drawSprite(s, sprSoft, u.X(990-80), u.Y(930-60), 580*u.S, 184*u.S, ca(rgba(255, 120, 90, 255), 0.25+0.2*pulse), true)
-		if u.button(s, "endless", "Continue: Endless Mode", 1000, 930, 420, 64, rgba(255, 120, 90, 255), g.stateT > 0.8) {
-			r.Endless = true
-			r.NextAct(&g.save)
-			r.Recompute(&g.save)
-			g.victory = false
-			g.setState(StActIntro)
-			return
-		}
-		if u.button(s, "summenu", "Main menu", 500, 930, 420, 64, cAcc, g.stateT > 0.8) {
-			g.run = nil
-			g.level = nil
-			g.setState(StMenu)
-		}
-		return
-	}
-	if u.button(s, "summenu", "Main menu", 760, 930, 400, 64, cAcc, g.stateT > 0.8) {
-		g.run = nil
-		g.level = nil
-		g.setState(StMenu)
-	}
-}
-
 // fusionToast announces a newly forged fusion.
 func (g *Game) announceFusions() {
 	r := g.run
@@ -424,6 +299,7 @@ func (g *Game) announceFusions() {
 		g.save.Fusions[id] = true
 		g.banner, g.bannerDesc, g.bannerT = "FUSION: "+strings.ToUpper(f.Name), f.Desc, 4.5
 		g.react(reactFusion)
+		r.log("fusion", "Forged "+f.Name, "burst")
 		g.bannerIcon = fusionEmblem(f)
 		g.bannerCol = f.Col
 		g.snd.PlayKeyed("synergy")

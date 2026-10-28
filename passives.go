@@ -121,7 +121,7 @@ func (L *Level) passiveOnHit(ball *Ball, b *Brick, dmg float64) {
 		case 2:
 			L.lightning(bx, bz, 2, math.Max(1, dmg*0.6), b, false)
 		case 3:
-			L.damage(b, Hit{Dmg: dmg * 0.8, Void: true, Silent: true})
+			L.damage(b, Hit{Src: "Attunement", Dmg: dmg * 0.8, Void: true, Silent: true})
 		}
 		L.sparks(V3{bx, 0.8, bz}, 6, attuneCols[L.cls.attuneEl], 5)
 	}
@@ -177,7 +177,7 @@ func (L *Level) holyWave(x float64) {
 			if b == nil || !b.Alive || math.Abs(b.X()-x) > CellW*1.1 {
 				continue
 			}
-			L.damage(b, Hit{Dmg: dmg, Elemental: true, Silent: true})
+			L.damage(b, Hit{Src: "Parry", Dmg: dmg, Elemental: true, Silent: true})
 			L.sparks(V3{b.X(), 0.8, b.Z()}, 5, color.RGBA{255, 225, 150, 255}, 5)
 			hits++
 		}

@@ -989,6 +989,7 @@ func (L *Level) collideRocks(b *Ball) {
 // ---------------------------------------------------------------- damage
 
 type Hit struct {
+	Src                                string // what dealt it, for the run recap ("" = the orb)
 	Dmg                                float64
 	Crit, Void, Blast, Elemental, Fire bool
 	Silent                             bool
@@ -1027,6 +1028,7 @@ func (L *Level) damage(b *Brick, h Hit) (bool, bool) {
 		if h.Crit {
 			L.text(V3{b.X(), 2, b.Z()}, fmt.Sprintf("%.0f!", dmg), color.RGBA{255, 90, 90, 255}, true)
 		}
+		r.recordDmg(h.Src, math.Min(dmg, math.Max(0, L.Boss.HP)))
 		L.Boss.HP -= dmg
 		L.Boss.Hurt = 1
 		L.Boss.coreHits++
@@ -1081,6 +1083,7 @@ func (L *Level) damage(b *Brick, h Hit) (bool, bool) {
 	if h.Void && r.Stats.VoidDouble {
 		dmg *= 3
 	}
+	r.recordDmg(h.Src, math.Min(dmg, math.Max(0, b.HP)))
 	b.HP -= dmg
 	if b.HP > 0 && r.Stats.ExecuteBelow > 0 && !b.Core && b.HP <= b.MaxHP*r.Stats.ExecuteBelow {
 		b.HP = 0
@@ -1185,7 +1188,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 		}
 		if s.Hawkstrike && b.R > 0 {
 			if n := L.Grid[b.R-1][b.C]; n != nil && n.Alive && n != b {
-				L.damage(n, Hit{Dmg: dmg * 0.75, Crit: true, Silent: true})
+				L.damage(n, Hit{Src: "Hawkstrike", Dmg: dmg * 0.75, Crit: true, Silent: true})
 				L.sparks(V3{n.X(), 1, n.Z()}, 8, color.RGBA{255, 200, 120, 255}, 6)
 			}
 		}
@@ -1246,7 +1249,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 			rr, cc := b.R+d[0], b.C+d[1]
 			if rr >= 0 && rr < levelgen.MaxRows && cc >= 0 && cc < levelgen.Cols {
 				if n := L.Grid[rr][cc]; n != nil && n.Alive {
-					L.damage(n, Hit{Dmg: dmg * 0.5, Silent: true})
+					L.damage(n, Hit{Src: "Eagle Eye", Dmg: dmg * 0.5, Silent: true})
 				}
 			}
 		}
@@ -1258,7 +1261,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	if s.StaticEvery > 0 && L.impacts%s.StaticEvery == 0 {
 		if t := L.top(L.randomBrick()); t != nil {
 			L.Arcs = append(L.Arcs, &Arc{Pts: jag(V3{t.X(), 12, t.Z()}, V3{t.X(), 0.8, t.Z()}, L.rng), Life: 0.35, Col: color.RGBA{150, 210, 255, 255}})
-			L.damage(t, Hit{Dmg: 3, Elemental: true})
+			L.damage(t, Hit{Src: "Static Field", Dmg: 3, Elemental: true})
 			L.g.snd.Play("zap")
 		}
 	}
@@ -1421,7 +1424,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	}
 	if s.KillSplash > 0 {
 		for _, n := range L.neighbours(b.R, b.C) {
-			L.damage(n, Hit{Dmg: math.Max(0.5, s.Damage*s.DmgMult*s.KillSplash), Blast: true, Silent: true})
+			L.damage(n, Hit{Src: "Shrapnel", Dmg: math.Max(0.5, s.Damage*s.DmgMult*s.KillSplash), Blast: true, Silent: true})
 		}
 		L.sparks(V3{x, 0.8, z}, 6, lighten(b.Col, 0.3), 7)
 	}
@@ -1445,7 +1448,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 		L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: shR + 0.4, Life: 0.35, Max: 0.35, Col: color.RGBA{170, 230, 255, 255}})
 		for _, n := range L.near(x, z, shR) {
 			if n != b {
-				L.damage(n, Hit{Dmg: 1.5, Elemental: true, Silent: true})
+				L.damage(n, Hit{Src: "Shatter", Dmg: 1.5, Elemental: true, Silent: true})
 			}
 		}
 		g.snd.Play("shatter")
@@ -1495,7 +1498,7 @@ func (L *Level) explode(x, z, radiusCells, dmg float64, big bool) {
 			if st.Volcano {
 				b.Burn = 3.5
 			}
-			L.damage(b, Hit{Dmg: dmg, Blast: true, Silent: true})
+			L.damage(b, Hit{Src: "Explosions", Dmg: dmg, Blast: true, Silent: true})
 		}
 	}
 }
@@ -1553,7 +1556,7 @@ func (L *Level) lightningRaw(x, z float64, count int, dmg float64, from *Brick, 
 		}
 		L.Arcs = append(L.Arcs, &Arc{Pts: jag(prev, p, L.rng), Life: 0.3, Col: ac})
 		tx, tz := t.X(), t.Z()
-		L.damage(t, Hit{Dmg: dmg, Elemental: true, Silent: true})
+		L.damage(t, Hit{Src: "Lightning", Dmg: dmg, Elemental: true, Silent: true})
 		if recast && L.rng.Float64() < 0.5 {
 			L.lightningRaw(tx, tz, 1, dmg*0.7, t, false)
 		}
@@ -1831,7 +1834,7 @@ func (L *Level) updateBricks(dt float64) {
 			}
 			if b.burnTick >= tick {
 				b.burnTick = 0
-				L.damage(b, Hit{Dmg: (0.5 + 0.25*r.Stats.Damage) * (1 + r.Stats.BurnMult), Elemental: true, Silent: true})
+				L.damage(b, Hit{Src: "Burning", Dmg: (0.5 + 0.25*r.Stats.Damage) * (1 + r.Stats.BurnMult), Elemental: true, Silent: true})
 				if !b.Alive {
 					continue
 				}
@@ -2002,7 +2005,7 @@ func (L *Level) updateDrops(dt float64) {
 				if bm == 0 {
 					bm = 1
 				}
-				L.damage(b, Hit{Dmg: math.Max(0.6, st.Damage*st.DmgMult*0.6) * (1 + st.LaserDmg) * bm, Silent: true, Void: bl.Pierce > 0})
+				L.damage(b, Hit{Src: "Lasers", Dmg: math.Max(0.6, st.Damage*st.DmgMult*0.6) * (1 + st.LaserDmg) * bm, Silent: true, Void: bl.Pierce > 0})
 				L.sparks(V3{bl.X, 0.6, bl.Z}, 5, color.RGBA{255, 100, 100, 255}, 4)
 				if st.TeslaCoil {
 					L.lightning(bl.X, bl.Z, 2, math.Max(1, st.Damage*0.5), b, false)
@@ -2326,6 +2329,7 @@ func (L *Level) killBoss() {
 	b.Dead = true
 	b.HP = 0
 	L.g.run.Bosses++
+	L.g.run.log("boss", b.Name+" defeated", "crown")
 	if L == L.g.level {
 		if L.g.run.Act <= numActs {
 			L.g.unlock("ACH_GUARDIAN_" + itoa(L.g.run.Act))

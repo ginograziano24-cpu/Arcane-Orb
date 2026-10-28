@@ -50,6 +50,7 @@ func (g *Game) addCurse(rng *rand.Rand) *Mod {
 	}
 	c := pool[rng.Intn(len(pool))]
 	r.Add(c.ID, &g.save)
+	r.log("curse", "Cursed: "+c.Name, c.Icon)
 	g.toastImg("Cursed", c.Name+" — "+c.Desc[len("Curse: "):], tagColors["curse"], modEmblem(c))
 	return c
 }

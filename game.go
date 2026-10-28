@@ -158,6 +158,10 @@ type Game struct {
 	frameAvg     float64
 	dynT         float64
 	setTab       int
+	histScroll   float64
+	savedRun     *savedRun
+	savedChecked bool
+	menuQuit     string
 }
 
 func NewGame() *Game {
@@ -219,6 +223,10 @@ func (g *Game) setState(s State) {
 	g.stateT = 0
 	if s == StMenu {
 		g.challengeSel = ""
+		g.savedRun, g.savedChecked = nil, false
+	}
+	if s == StMap {
+		g.saveRun("map", -1)
 	}
 	g.consumeInput() // the press that changed screens must not act on the next one
 	switch s {
@@ -307,7 +315,7 @@ func (g *Game) Update() error {
 		if backPressed() {
 			if g.state == StMenu {
 				// point at Quit rather than closing the game outright
-				g.ui.nav.mode, g.ui.nav.focus = true, "menu9"
+				g.ui.nav.mode, g.ui.nav.focus = true, g.menuQuit
 			} else if g.state == StArch && g.challengeSel != "" {
 				g.setState(StChallenge)
 			} else {
@@ -472,6 +480,7 @@ func (g *Game) startRun(arch *Archetype) {
 
 // startRunWith starts a run, optionally under a challenge.
 func (g *Game) startRunWith(arch *Archetype, ch string) {
+	clearRun()
 	code := g.seedText
 	if g.daily {
 		code = dailyCode()
@@ -507,6 +516,7 @@ func (g *Game) startRunWith(arch *Archetype, ch string) {
 }
 
 func (g *Game) enterNode(i int) {
+	g.saveRun("node", i)
 	r := g.run
 	n := r.Map.Nodes[i]
 	r.Cur = i
@@ -562,6 +572,7 @@ func (g *Game) afterLevel() {
 		}
 		g.rewards = append(g.rewards, rewardSet{Title: "Choose an upgrade", Mods: r.Offer(r.choices(), false, minR, rng), Skip: 15})
 	}
+	g.saveRun("reward", -1)
 	g.setState(StReward)
 }
 
@@ -590,6 +601,11 @@ func (g *Game) take(m *Mod) {
 	r := g.run
 	g.react(reactUpgrade)
 	g.save.Seen[m.ID] = true
+	if m.Relic {
+		r.log("relic", m.Name, m.Icon)
+	} else if !m.Curse {
+		r.log("item", m.Name, m.Icon)
+	}
 	if m.Relic {
 		g.toastImg("Relic acquired", m.Name+" — "+m.Desc, rarityColors[m.Rarity], modEmblem(m))
 	} else {
@@ -679,6 +695,8 @@ func (g *Game) endRun(win bool) {
 	}
 	g.onRunEnd(r, win)
 	g.onChallengeEnd(r, win)
+	g.recordHistory(r, win)
+	clearRun()
 	writeSave(&g.save)
 	g.setState(StSummary)
 }
@@ -899,6 +917,22 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 		label string
 		do    func()
 		on    bool
+	}{}
+	if g.savedRun == nil && !g.savedChecked {
+		g.savedRun, g.savedChecked = loadSavedRun(), true
+	}
+	if sr := g.savedRun; sr != nil {
+		lbl := fmt.Sprintf("Continue  ·  %s, Act %d", archByIDOK(sr.Arch).Name, sr.Act)
+		items = append(items, struct {
+			label string
+			do    func()
+			on    bool
+		}{lbl, func() { g.savedRun, g.savedChecked = nil, false; g.continueRun(sr) }, true})
+	}
+	items = append(items, []struct {
+		label string
+		do    func()
+		on    bool
 	}{
 		{"Story Mode", func() {
 			g.seedText = ""
@@ -938,14 +972,18 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 		{"How to Play", func() { g.helpPage = 0; g.setState(StHelp) }, true},
 		{"Settings", func() { g.setState(StSettings) }, true},
 		{"Quit", func() { g.quit = true }, true},
+	}...)
+	y, step, off := 284.0, 62.0, 0
+	if g.savedRun != nil {
+		y, step, off = 268, 58, 1
 	}
-	y := 284.0
+	g.menuQuit = "menu" + itoa(len(items)-1)
 	for i, it := range items {
 		if g.arcaneItem(s, "menu"+itoa(i), it.label, 120, y, it.on) {
 			it.do()
 		}
-		y += 62
-		if i == 4 || i == 7 {
+		y += step
+		if i == off-1 || i == 4+off || i == 7+off {
 			y += 12 // breathing room between groups
 		}
 	}
@@ -1205,6 +1243,9 @@ func (g *Game) drawMap(s *ebiten.Image) {
 		g.nodeIcon(s, NodeType(i), 68, yy+12, 15)
 		u.text(s, nm, fReg, 21, 94, yy, cWhite, alignLeft)
 	}
+	if u.button(s, "mapsave", "Save & quit", 60, 920, 300, 56, cAcc, true) {
+		g.saveAndQuit()
+	}
 	if u.button(s, "mapmenu", "Abandon run", 60, 990, 300, 56, cRed, true) {
 		g.endRun(false)
 	}
@@ -1222,7 +1263,11 @@ func (g *Game) drawPause(s *ebiten.Image) {
 	if u.button(s, "psettings", "Settings", 760, 460, 400, 64, cAcc, true) {
 		g.setState(StSettings)
 	}
-	if u.button(s, "pabandon", "Abandon run", 760, 540, 400, 64, cRed, true) {
+	if u.button(s, "psave", "Save & quit", 760, 540, 400, 64, cAcc, true) {
+		g.saveAndQuit()
+	}
+	u.text(s, "The chamber restarts from its beginning when you continue.", fReg, 17, 960, 612, cDim, alignCenter)
+	if u.button(s, "pabandon", "Abandon run", 760, 650, 400, 64, cRed, true) {
 		g.endRun(false)
 	}
 	g.runPanel(s)
