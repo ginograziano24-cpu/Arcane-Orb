@@ -474,7 +474,7 @@ func (r *Run) NextAct(meta *SaveData) bool {
 	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(r.SeedN, int64(r.Act)))), r.Act)
 	r.applyChallengeMap()
 	r.Cur = -1
-	r.startKit(meta) // a new world: the build starts over
+	r.startKit(meta)                     // a new world: the build starts over
 	r.Lives = max(r.Lives, r.maxLives()) // every act tops lives back up
 	return true
 }
