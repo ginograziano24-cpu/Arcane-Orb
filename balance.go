@@ -23,6 +23,7 @@ type balScenario struct {
 	Depth int
 	Gold  int
 	Boss  bool
+	Elite bool
 	Mods  []string
 }
 
@@ -43,6 +44,8 @@ type balResult struct {
 	Left, Start      float64
 	T50, T90, Bounce float64
 	DPS, Combo       float64
+	Caches, Waves    float64
+	Taken, Crushes   float64
 }
 
 // sloppy is the autopilot with human limits: it re-reads the play only
@@ -130,10 +133,15 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScena
 				}
 				r.Gold = sc.Gold
 				r.Depth = sc.Depth - 1
+				r.ActDepth = sc.Depth - 1
+				r.Lives = 99 // the harness measures pace, not survival
 				g.run = r
 				node := NCombat
 				if sc.Boss {
 					node = NBoss
+				}
+				if sc.Elite {
+					node = NElite
 				}
 				seed := int64(1000*sc.Act + 37*s + sc.Depth)
 				L := g.newLevel(node, seed)
@@ -164,7 +172,18 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScena
 					if in.Ability {
 						abil++
 					}
+					hpB := r.HP
 					L.Update(dt, in)
+					if r.HP < hpB {
+						res.Taken += hpB - r.HP
+					}
+					for L.pendingPick > 0 { // the autopilot takes a random cache item
+						L.pendingPick--
+						res.Caches++
+						if ms := r.Offer(1, false, Common, ap.rng); len(ms) > 0 {
+							r.Add(ms[0].ID, &sv)
+						}
+					}
 					lost += L.lostOrbs - lb
 					if r.HP < 1e5 { // never die in the harness; count the damage
 						hp0 += 1e6
@@ -191,6 +210,8 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScena
 				}
 				res.DPS += tot / t
 				res.Combo += float64(L.peakCombo)
+				res.Waves += float64(L.waves)
+				res.Crushes += float64(L.crushes)
 				res.Time += t
 				res.HPLost += hp0 - r.HP
 				res.Orbs += float64(lost)
@@ -209,6 +230,10 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScena
 			res.Hits /= n
 			res.DPS /= n
 			res.Combo /= n
+			res.Caches /= n
+			res.Taken /= n
+			res.Crushes /= n
+			res.Waves /= n
 			out = append(out, res)
 		}
 	}
@@ -278,6 +303,69 @@ func init() {
 }
 
 func init() {
+	// __waveTest exercises waves, the advance, crushing and rune caches
+	js.Global().Set("__waveTest", js.FuncOf(func(this js.Value, args []js.Value) any {
+		g := theGame
+		var log []string
+		say := func(f string, a ...any) { log = append(log, fmt.Sprintf(f, a...)) }
+		sv := defaultSave()
+		g.save = sv
+		r := NewRun("WAVES", archByID("storm"), &g.save, false)
+		r.ActDepth = 3
+		g.run = r
+		g.hero = heroPortrait{}
+		L := g.newLevel(NCombat, 4242)
+		g.level, g.state = L, StLevel
+		say("waves=%d wave=%d left=%d heat=%d adv=%.1fs cacheAt=%.2f", L.waves, L.wave, L.Left, L.heat, L.advT, L.cacheAt)
+		step := func(n int) {
+			for i := 0; i < n; i++ {
+				L.Update(1.0/60, Input{UseKeys: true})
+			}
+		}
+		L.release()
+		front := L.frontZ()
+		L.shiftTarget = CellD * 14
+		hp := r.HP
+		step(400)
+		say("advanced: shift=%.2f front %.1f->%.1f left=%d hp %.0f->%.0f", L.shift, front, L.frontZ(), L.Left, hp, r.HP)
+		// break most of wave 1: it should break early and bring wave 2
+		n := 0
+		for _, b := range L.Bricks {
+			if b.Alive && b.Kind.Required() && float64(n) < float64(L.startLeft)*0.9 {
+				L.destroy(b, Hit{Dmg: 99})
+				n++
+			}
+		}
+		step(2)
+		say("after wave 1: wave=%d left=%d startLeft=%d shift=%.1f balls=%d cleared=%v caches=%d drops=%d", L.wave, L.Left, L.startLeft, L.shift, len(L.Balls), L.Cleared, L.caches, len(L.Drops))
+		// a cache at the paddle
+		L.Drops = append(L.Drops, &Drop{X: L.PaddleX, Z: PaddleZ + 1, P: PCache})
+		step(30)
+		say("cache caught: pending=%d", L.pendingPick)
+		mods := len(r.Order)
+		g.openCache()
+		say("cache state=%v offers=%d", g.state == StCache, len(g.cacheOffers))
+		g.take(g.cacheOffers[0])
+		L.pendingPick = 0
+		g.state = StLevel
+		say("items %d->%d heat now %d", mods, len(r.Order), r.heat())
+		for pass := 0; pass < 4; pass++ { // split bricks spawn more as they break
+			for _, b := range append([]*Brick(nil), L.Bricks...) {
+				if b.Alive && b.Kind.Required() {
+					L.destroy(b, Hit{Dmg: 99})
+				}
+			}
+		}
+		step(2)
+		say("final wave cleared=%v finale=%.2f left=%d crystals=%d obj=%v", L.Cleared, L.finaleT, L.Left, L.Crystals, L.Data.Objective)
+		// a new world resets the build
+		r.Gold = 999
+		r.NextAct(&g.save)
+		say("world %d: items=%d gold=%d hp=%.0f/%.0f heat=%d actDepth=%d", r.Act, len(r.Order), r.Gold, r.HP, r.Stats.MaxHP, r.heat(), r.ActDepth)
+		g.run = nil
+		g.state = StMenu
+		return strings.Join(log, "\n")
+	}))
 	// __saveTest round-trips a run through the save file format
 	js.Global().Set("__saveTest", js.FuncOf(func(this js.Value, args []js.Value) any {
 		g := theGame

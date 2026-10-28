@@ -11,6 +11,7 @@ import (
 
 // drawWorld renders the 3D arena for the current level.
 func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
+	gridShift = L.shift
 	sw, sh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
 	// camera with shake and gentle sway that follows the paddle
 	sh2 := L.Shake
@@ -221,6 +222,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		B.Box(rk.X-s, 0, rk.Z-s, rk.X+s, 1.1, rk.Z+s, color.RGBA{110, 100, 92, 255}, sprWhite, 0)
 		B.Decal(rk.TX, PaddleZ, 0.03, 2, 2, sprRing, alpha(color.RGBA{255, 60, 60, 255}, 0.4), true)
 	}
+	g.drawDangerLine(B, L)
 	// drops
 	for _, d := range L.Drops {
 		def := powerDefs[d.P]

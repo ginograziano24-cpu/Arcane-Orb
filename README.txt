@@ -20,7 +20,25 @@ CONTROLS
   LB / RB to turn pages and switch Codex tabs. Keyboard menus work the
   same way with arrows / WASD, Enter or Space, Esc, and Q / E.
 
-NEW IN THIS BUILD  -  polish pass
+NEW IN THIS BUILD  -  longer chambers, three fresh worlds
+  - Every world is a fresh start: items, relics, fusions, scrolls and
+    gold reset when you reach a new world, and you climb again from
+    your Sanctum gifts and starting gold. Lives and health refill
+  - Chambers come in waves (elites in three). When a wave is nearly
+    gone the stragglers crumble and the next formation drops in
+  - The formation advances a row whenever the ADVANCE gauge under the
+    chamber title fills; bricks that reach the red line smash for damage
+  - Heat: one point per item (two per fusion) you hold in this world.
+    Each point adds 7% brick health, more armoured bricks and a quicker
+    advance, and Guardians scale with it too, so late chambers stay
+    real fights
+  - Rune caches: most waves hide one. Catch it and the fight pauses
+    while you choose one of three items (or take 10 gold)
+  - Balance (autopilot, 4 origins): about 95-145 s per chamber from the
+    first to the last of a world, 160 s for elites, 90-105 s per
+    Guardian, where late chambers used to fall in 15-30 s
+
+POLISH PASS
   - Save & quit: from the pause menu or the map. Continue on the main
     menu resumes the exact moment (a chamber restarts from its start,
     same layout). The run file syncs with Steam Cloud

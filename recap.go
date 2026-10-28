@@ -300,7 +300,7 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 		if u.button(s, "endless", "Continue: Endless", 1460, 960, 380, 60, rgba(255, 120, 90, 255), ready) {
 			r.Endless = true
 			r.NextAct(&g.save)
-			r.Recompute(&g.save)
+			g.beginWorld()
 			g.victory = false
 			g.setState(StActIntro)
 			return

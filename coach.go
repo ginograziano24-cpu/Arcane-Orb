@@ -141,6 +141,8 @@ var coachTips = map[string]coachTip{
 	"scroll": {"scroll", "A scroll", "Scrolls are one-use spells. Read one during a chamber with {scrolls}. You can carry a few at once.", "book", false},
 	"life":   {"life", "A life lost", "The paddle reforms in a moment. Your health refills, but lives don't come back until the next act unless a heart falls from a broken brick; catch it with the paddle.", "heart", false},
 	"curse":  {"curse", "Cursed", "Curses weaken you until something lifts them. Look for events and items that cleanse them.", "mask", false},
+	"waves":  {"waves", "Waves and heat", "This chamber comes in waves: when one is nearly gone the rest crumble and the next drops in.\n\nThe formation creeps a row closer when the ADVANCE gauge under the title fills. Bricks that reach the red line near your paddle smash for damage.\n\nHEAT is how strong your build has grown this world. Each point toughens the bricks and hurries the advance.", "burst", false},
+	"cache":  {"cache", "Rune cache", "Bricks sometimes drop a rune cache. Catch it with the paddle and the fight stops while you choose an item, so your build grows during a chamber as well as after it.", "gem", false},
 	"boss":   {"boss", "The Guardian", "Its armour shrugs off the orb. Strike the glowing core to wound it; the core moves after a few hits, so keep chasing it.", "crown", false},
 }
 

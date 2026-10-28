@@ -14,7 +14,7 @@ import (
 // small animated illustration with a short, scannable explanation.
 // Arrows / Q E / LB RB turn pages.
 
-var helpPages = []string{"The Orb & the Paddle", "A Run in Three Acts", "Know Your Bricks", "Power-ups",
+var helpPages = []string{"The Orb & the Paddle", "Three Worlds", "Know Your Bricks", "Power-ups",
 	"Upgrades, Relics & Fusions", "Scrolls, Omens & Curses", "Origins", "Beyond the Run"}
 
 var powerDesc = [numPowers]string{
@@ -29,6 +29,7 @@ var powerDesc = [numPowers]string{
 	PGlue:    "The orb sticks; click to aim and release",
 	PMagnet:  "Pulls coins and capsules to you",
 	PLife:    "Rare: restores a lost life (three a run)",
+	PCache:   "Stops the fight so you can choose an item",
 }
 
 var nodeDesc = []string{
@@ -269,10 +270,10 @@ func (g *Game) helpRun(s *ebiten.Image, a float64) {
 		u.medallion(s, n.x, n.y, rad, nodeColors[n.t])
 		g.nodeIcon(s, n.t, n.x, n.y, rad*1.1)
 	}
-	u.text(s, "ACT I  ·  II  ·  III", fSerif, 22, ix+iw/2, iy+ih-50, ca(cDim, 0.9), alignCenter)
+	u.text(s, "WORLD I  ·  II  ·  III", fSerif, 22, ix+iw/2, iy+ih-50, ca(cDim, 0.9), alignCenter)
 
 	tx, y := 1010.0, 190.0
-	y = g.textBlock(s, "", "Each act is a map of chambers. Pick a route from the bottom to the act's Guardian at the top: risk an elite for a relic, or detour past a shop and a campfire.", tx, y, 800, a)
+	y = g.textBlock(s, "", "Each world is a map of chambers. Pick a route from the bottom to its Guardian at the top: risk an elite for a relic, or detour past a shop and a campfire.", tx, y, 800, a)
 	for i, nm := range nodeNames {
 		u.medallion(s, tx+20, y+16, 16, nodeColors[i])
 		g.nodeIcon(s, NodeType(i), tx+20, y+16, 18)
@@ -280,7 +281,8 @@ func (g *Game) helpRun(s *ebiten.Image, a float64) {
 		u.text(s, nodeDesc[i], fReg, 18, tx+180, y+4, ca(cDim, a), alignLeft)
 		y += 50
 	}
-	g.textBlock(s, "", "Beat the third Guardian to win the story, then try Endless Mode.", tx, y+10, 800, a)
+	y = g.textBlock(s, "", "Chambers come in waves, and the formation creeps toward you when the ADVANCE gauge fills. Heat, the strength of your build, toughens the bricks as you grow. Catch rune caches to choose new items mid-fight.", tx, y+10, 800, a)
+	g.textBlock(s, "", "Every world is a fresh start: your build resets and you climb again from your Sanctum gifts. Beat all three Guardians to win, then try Endless Mode.", tx, y, 800, a)
 }
 
 // ---------------------------------------------------------------- page 3

@@ -63,6 +63,16 @@ func debugKeys(g *Game) {
 		g.take(modByID["crescendo"])
 		g.level.Combo, g.level.comboT = 18, 30
 	}
+	if want("twowaves") && g.level != nil {
+		g.level.waves = 2
+		g.settings.NoTips = true
+	}
+	if want("advance") && g.level != nil {
+		g.level.shiftTarget += CellD * 5
+	}
+	if want("cache") && g.level != nil {
+		g.level.Drops = append(g.level.Drops, &Drop{X: g.level.PaddleX, Z: PaddleZ + 4, P: PCache})
+	}
 	if (inpututil.IsKeyJustPressed(ebiten.KeyNumpad2) || want("finale")) && g.level != nil && !g.level.Cleared {
 		for _, b := range g.level.Bricks {
 			if b.Alive && b.Kind.Required() {

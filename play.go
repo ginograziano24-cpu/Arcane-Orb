@@ -30,7 +30,10 @@ const (
 var forceWorld = -1
 
 func cellX(c int) float64 { return -HalfW + (float64(c)+0.5)*CellW }
-func cellZ(r int) float64 { return GridTopZ - (float64(r)+0.5)*CellD }
+func cellZ(r int) float64 { return GridTopZ - gridShift - (float64(r)+0.5)*CellD }
+
+// rowAt is the grid row under a world z (allowing for advanced rows).
+func rowAt(z float64) int { return int(math.Floor((GridTopZ - gridShift - z) / CellD)) }
 
 // ---------------------------------------------------------------- entities
 
@@ -86,7 +89,8 @@ const (
 	PBarrier
 	PGlue
 	PMagnet
-	PLife // a restored life (never in the normal drop table)
+	PLife  // a restored life (never in the normal drop table)
+	PCache // a rune cache: choose an item on the spot (never in the normal table)
 	numPowers
 )
 
@@ -110,6 +114,7 @@ var powerDefs = [numPowers]powerDef{
 	PGlue:    {"G", "Glue", color.RGBA{120, 220, 70, 255}, true, 7, 14},
 	PMagnet:  {"$", "Magnet", color.RGBA{255, 200, 80, 255}, true, 5, 15},
 	PLife:    {"+", "Extra Life", color.RGBA{255, 110, 160, 255}, true, 0, 0},
+	PCache:   {"?", "Rune Cache", color.RGBA{255, 214, 90, 255}, true, 0, 0},
 }
 
 type Drop struct {
@@ -194,6 +199,15 @@ type Level struct {
 	critStopT             float64 // last crit freeze (they're rationed)
 	finaleT               float64 // >0 while the last brick's slow-motion plays
 	finX, finZ            float64 // where the last brick broke
+	wave, waves           int     // formations in this chamber
+	waveT                 float64 // >0 while the next wave lands
+	shift, shiftTarget    float64 // how far the formation has advanced
+	advT                  float64 // seconds to the next advance
+	advWarned             bool
+	heat                  int
+	cacheAt               float64 // share of this wave's bricks that releases a rune cache (<0: none)
+	caches, pendingPick   int
+	crushes               int
 	hadFinale             bool
 	lastBrkX, lastBrkZ    float64
 	lostOrbs              int // orbs dropped this chamber (for Untouchable)
@@ -262,7 +276,6 @@ type Level struct {
 
 func (g *Game) newLevel(node NodeType, seed int64) *Level {
 	r := g.run
-	act := r.Act
 	wi := r.pickWorld(seed)
 	if forceWorld >= 0 {
 		wi = forceWorld
@@ -279,18 +292,17 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 		b, vis = &bc, Visuals{}
 	}
 	L := &Level{g: g, Biome: b, Node: node, Vis: vis, rng: rand.New(rand.NewSource(seed ^ 0x5eed))}
+	gridShift = 0
 	r.Depth++
+	r.ActDepth++
+	L.setupWaves()
 	if node == NBoss {
 		L.Data = &levelgen.Level{Name: b.BossName, Formation: "boss", Seed: seed}
 	} else {
-		L.Data = pacedLevel(levelgen.Params{Seed: seed, Depth: r.Depth + (act-1)*2, Act: act, Elite: node == NElite})
+		L.Data = pacedLevelScaled(L.waveParams(seed), waveBudget(L.waves))
 		L.Designed = strings.HasPrefix(L.Data.Formation, "design")
 	}
-	hpMul := (1.0 + float64(act-1)*0.35) * (1 + 0.02*float64(r.Depth)) * ascHP(r.Asc, node == NElite, false) * math.Pow(1.25, float64(r.Loop()))
-	if r.Cursed && node != NBoss {
-		hpMul *= 1.5
-	}
-	hpMul *= 1 + r.Stats.BrickHPMult
+	hpMul := L.hpMul()
 	for row := 0; row < levelgen.MaxRows; row++ {
 		for c := 0; c < levelgen.Cols; c++ {
 			cell := L.Data.Cells[row][c]
@@ -310,7 +322,9 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 		g.snd.Play("bossintro")
 		g.snd.Duck(0.8, 4)
 	}
+	L.heatArmour()
 	L.startLeft = L.Left
+	L.planCache()
 	if r.hasAbility() && node != NBoss {
 		// abilities come in partly charged, so they shape a chamber
 		// rather than open it
@@ -436,7 +450,7 @@ func (L *Level) ballR() float64 {
 
 func (L *Level) speed() float64 {
 	r := L.g.run
-	base := math.Min(22, 16+float64(r.Depth)*0.22+float64(r.Act-1)*1.0)
+	base := math.Min(22, 16+float64(r.ActDepth)*0.3+float64(r.Act-1)*1.2)
 	base += math.Min(4, L.T*0.035)
 	base *= r.Stats.SpeedMult
 	if L.Timers[PSlow] > 0 {
@@ -470,6 +484,7 @@ func (L *Level) paddleTarget() float64 {
 func (L *Level) Update(dt float64, in Input) {
 	g := L.g
 	r := g.run
+	gridShift = L.shift
 	if L.updateLives(dt) {
 		return // the last life's explosion plays out
 	}
@@ -681,6 +696,7 @@ func (L *Level) Update(dt float64, in Input) {
 	if L.Boss != nil {
 		L.updateBoss(dt)
 	}
+	L.updateAdvance(dt)
 	L.updateDrops(dt)
 	L.updateEffects(dt)
 
@@ -693,8 +709,16 @@ func (L *Level) Update(dt float64, in Input) {
 			done = L.Crystals <= 0
 		default:
 			done = L.Left <= 0
+			// an early wave breaks once it's nearly gone: no hunting the
+			// last few bricks before the next one lands
+			if L.wave < L.waves && L.Boss == nil && L.Left <= max(1, int(math.Ceil(float64(L.startLeft)*waveBreak))) {
+				done = true
+			}
 		}
-		if done {
+		switch {
+		case done && L.Boss == nil && L.wave < L.waves:
+			L.nextWave()
+		case done:
 			L.clear()
 		}
 	} else {
@@ -852,8 +876,8 @@ func (L *Level) collideWalls(b *Ball) {
 func (L *Level) collideBricks(b *Ball) {
 	c0 := int(math.Floor((b.X - b.R + HalfW) / CellW))
 	c1 := int(math.Floor((b.X + b.R + HalfW) / CellW))
-	r0 := int(math.Floor((GridTopZ - (b.Z + b.R)) / CellD))
-	r1 := int(math.Floor((GridTopZ - (b.Z - b.R)) / CellD))
+	r0 := rowAt(b.Z + b.R)
+	r1 := rowAt(b.Z - b.R)
 	var best *Brick
 	bestPen := -1.0
 	var nx, nz float64
@@ -1323,7 +1347,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	L.removeFromColumn(b)
 	if bo := L.Boss; b.BossPart && !b.Core && bo != nil && !bo.Dead {
 		// every slab of armour torn off wounds the Guardian a little
-		bo.HP -= bo.MaxHP * 0.02
+		bo.HP -= bo.MaxHP * 0.008
 		bo.Hurt = math.Max(bo.Hurt, 0.4)
 		if bo.HP <= 0 {
 			L.killBoss()
@@ -1400,6 +1424,9 @@ func (L *Level) destroy(b *Brick, h Hit) {
 		}
 	}
 	L.maybeDropLife(x, z)
+	if b.Kind.Required() && !b.BossPart {
+		L.maybeDropCache(x, z)
+	}
 	// kind effects
 	switch b.Kind {
 	case levelgen.Explosive:
@@ -1673,6 +1700,10 @@ func (L *Level) applyPower(p Power) {
 	d := powerDefs[p]
 	if p == PLife {
 		L.gainLife()
+		return
+	}
+	if p == PCache {
+		L.cacheCaught()
 		return
 	}
 	if d.Good {
@@ -2027,7 +2058,7 @@ func (L *Level) updateDrops(dt float64) {
 		bl.Z += 40 * dt
 		hit := bl.Z > FarZ
 		c := int(math.Floor((bl.X + HalfW) / CellW))
-		rr := int(math.Floor((GridTopZ - bl.Z) / CellD))
+		rr := rowAt(bl.Z)
 		if !hit && rr >= 0 && rr < levelgen.MaxRows && c >= 0 && c < levelgen.Cols {
 			if b := L.Grid[rr][c]; b != nil && b.Alive && b != bl.last {
 				st := &L.g.run.Stats
@@ -2233,7 +2264,9 @@ func (L *Level) text(p V3, s string, c color.RGBA, big bool) {
 
 func (L *Level) setupBoss() {
 	act := L.g.run.Act
-	b := &Boss{Name: L.Biome.BossName, MaxHP: (40 + 30*float64(act-1) + 10*float64((act-1)*(act-1))) * ascHP(L.g.run.Asc, false, true)}
+	// the Guardian grows with the build you bring to it (heat), so it stays
+	// a real fight however the world went
+	b := &Boss{Name: L.Biome.BossName, MaxHP: (50 + 55*float64(act-1)) * (1 + heatHP*float64(L.heat)) * ascHP(L.g.run.Asc, false, true) * math.Pow(1.25, float64(L.g.run.Loop()))}
 	b.HP = b.MaxHP
 	L.Boss = b
 	shape := []string{
@@ -2416,7 +2449,7 @@ func levelUnits(d *levelgen.Level) float64 {
 // chamberBudget is how much work a chamber at this depth should be, so a
 // fresh run opens with short, readable chambers and they grow from there.
 func chamberBudget(p levelgen.Params) float64 {
-	u := (26 + 4.5*float64(min(p.Depth, 26))) * (1 + 0.25*float64(p.Act-1))
+	u := (26 + 4.5*float64(min(p.Depth, 26))) * (1 + 0.12*float64(p.Act-1))
 	if p.Elite {
 		u *= 1.3
 	}
@@ -2425,8 +2458,12 @@ func chamberBudget(p levelgen.Params) float64 {
 
 // pacedLevel generates a few candidates and keeps the one closest to the
 // budget; anything still far too big is trimmed.
-func pacedLevel(p levelgen.Params) *levelgen.Level {
-	want := chamberBudget(p)
+func pacedLevel(p levelgen.Params) *levelgen.Level { return pacedLevelScaled(p, 1) }
+
+// pacedLevelScaled is pacedLevel with the budget scaled (a wave is a
+// share of a chamber).
+func pacedLevelScaled(p levelgen.Params, scale float64) *levelgen.Level {
+	want := chamberBudget(p) * scale
 	var best *levelgen.Level
 	bestD := math.Inf(1)
 	for k := 0; k < 8; k++ {

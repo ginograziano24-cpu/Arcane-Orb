@@ -33,6 +33,7 @@ const (
 	StCodex
 	StStory
 	StChallenge
+	StCache // a rune cache's choice, mid-chamber
 )
 
 type Input struct {
@@ -119,6 +120,7 @@ type Game struct {
 	quit         bool
 	tooltip      string
 	gloss        *glossReq
+	cacheOffers  []*Mod
 	bindCache    map[string]*bindAction
 	rebinding    string // "action:slot" waiting for a key or button
 	restartHold  float64
@@ -229,7 +231,7 @@ func (g *Game) setState(s State) {
 	if s == StSettings && g.state != StSettings {
 		g.prevState = g.state
 	}
-	pauseToggle := (g.state == StLevel && s == StPause) || (g.state == StPause && s == StLevel)
+	pauseToggle := (g.state == StLevel && (s == StPause || s == StCache)) || ((g.state == StPause || g.state == StCache) && s == StLevel)
 	if !pauseToggle && s != g.state {
 		g.fadeT = 1
 	}
@@ -258,6 +260,9 @@ func (g *Game) setState(s State) {
 			g.coach("level")
 			if g.level != nil && g.level.Boss != nil {
 				g.coach("boss")
+			}
+			if g.level != nil && g.level.waves > 1 {
+				g.coach("waves")
 			}
 		}
 	}
@@ -386,6 +391,9 @@ func (g *Game) Update() error {
 		}
 		g.level.Update(dt*g.gameSpeed(), in)
 		g.updateHero(g.level, dt)
+		if L := g.level; g.state == StLevel && L.pendingPick > 0 && L.gameOverT <= 0 {
+			g.openCache()
+		}
 		if r := g.run; r != nil && r.HP > 0 && r.HP < r.Stats.MaxHP*0.3 && !g.level.Cleared {
 			g.heartT -= dt
 			if g.heartT <= 0 {
@@ -639,6 +647,7 @@ func (g *Game) finishRewards() {
 			}
 			return
 		}
+		g.beginWorld()
 		if r.storyOn() && r.Act <= numActs && r.Act-1 < len(storyCards)-1 {
 			g.startStory(r.Act - 1)
 			return
@@ -647,6 +656,18 @@ func (g *Game) finishRewards() {
 		return
 	}
 	g.setState(StMap)
+}
+
+// beginWorld runs after the build has been reset for a new world: a
+// challenge that hands out a starting kit (curses, a relic choice, a
+// fire item) does so again.
+func (g *Game) beginWorld() {
+	r := g.run
+	g.rewards = nil
+	g.hero = heroPortrait{}
+	if c := challengeByID[r.Challenge]; c != nil && c.Setup != nil {
+		c.Setup(g)
+	}
 }
 
 func (g *Game) take(m *Mod) {
@@ -796,7 +817,7 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 			g.drawHall(screen, 960, 200, false)
 			fillRect(screen, 0, 0, sw, sh, color.RGBA{4, 2, 10, 90})
 		}
-	case StLevel, StPause:
+	case StLevel, StPause, StCache:
 		g.ensureSky(g.level.Biome, g.level.propSeed)
 		sc := g.renderScale(ddt)
 		rw, rh := max(64, int(sw*sc+0.5)), max(36, int(sh*sc+0.5))
@@ -865,6 +886,8 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 		g.drawSettings(screen)
 	case StActIntro:
 		g.drawActIntro(screen)
+	case StCache:
+		g.drawCache(screen)
 	case StStory:
 		g.drawStory(screen)
 	}
@@ -1796,6 +1819,8 @@ func (g *Game) drawActIntro(s *ebiten.Image) {
 	if l := r.Loop(); l > 0 {
 		u.text(s, fmt.Sprintf("Bricks ×%.2f health   ·   orbs +%d%% speed   ·   drops cost %d health", math.Pow(1.25, float64(l)), 6*l, 3*l),
 			fReg, 22, 960, 600, ca(rgba(255, 140, 120, 255), a3), alignCenter)
+	} else if r.Act > 1 {
+		u.text(s, "A new world, a new build: you start again with your Sanctum gifts and starting gold.", fReg, 22, 960, 600, ca(rgba(200, 190, 230, 255), a3), alignCenter)
 	}
 	if (u.Click || g.keyHit(ebiten.KeySpace) || g.keyHit(ebiten.KeyEnter)) && t < 0.8 && t > 0.05 {
 		g.stateT = 0.81 // first press finishes the reveal
@@ -1805,7 +1830,11 @@ func (g *Game) drawActIntro(s *ebiten.Image) {
 	if t > 0.8 {
 		u.text(s, "Click to begin", fSerif, 22, 960, 660, ca(cDim, 0.55+0.35*math.Sin(t*3)), alignCenter)
 		if u.Click || g.keyHit(ebiten.KeySpace) || g.keyHit(ebiten.KeyEnter) {
-			g.setState(StMap)
+			if len(g.rewards) > 0 {
+				g.setState(StReward) // a challenge's starting choice
+			} else {
+				g.setState(StMap)
+			}
 		}
 	}
 }

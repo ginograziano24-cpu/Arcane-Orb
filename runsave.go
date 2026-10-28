@@ -44,6 +44,7 @@ type savedRun struct {
 	Daily                                   bool
 	Arch                                    string
 	Act, Cur, Depth                         int
+	ActDepth                                int
 	MapRows                                 int
 	Map                                     []savedNode
 	HP                                      float64
@@ -91,7 +92,7 @@ func (g *Game) snapRun(phase string, node int) []byte {
 		return nil
 	}
 	s := savedRun{Version: 1, Phase: phase, Node: node, Endless: g.endlessMode, DailyMode: g.daily,
-		SeedCode: r.SeedCode, SeedN: r.SeedN, Daily: r.Daily, Arch: r.Arch.ID, Act: r.Act, Cur: r.Cur, Depth: r.Depth,
+		SeedCode: r.SeedCode, SeedN: r.SeedN, Daily: r.Daily, Arch: r.Arch.ID, Act: r.Act, Cur: r.Cur, Depth: r.Depth, ActDepth: r.ActDepth,
 		MapRows: r.Map.Rows, HP: r.HP, Gold: r.Gold, Mods: r.Mods, Order: r.Order, PhoenixUsed: r.PhoenixUsed,
 		Lives: r.Lives, LifeFinds: r.LifeFinds, Challenge: r.Challenge, Cursed: r.Cursed, LastWorld: r.LastWorld,
 		Element: r.Element, Rerolls: r.Rerolls, Fused: r.Fused, Scrolls: r.Scrolls, Rank: r.Rank, Asc: r.Asc,
@@ -150,7 +151,7 @@ func archByIDOK(id string) *Archetype {
 // left off.
 func (g *Game) continueRun(s *savedRun) {
 	arch := archByIDOK(s.Arch)
-	r := &Run{SeedCode: s.SeedCode, SeedN: s.SeedN, Daily: s.Daily, Arch: arch, Act: s.Act, Cur: s.Cur, Depth: s.Depth,
+	r := &Run{SeedCode: s.SeedCode, SeedN: s.SeedN, Daily: s.Daily, Arch: arch, Act: s.Act, Cur: s.Cur, Depth: s.Depth, ActDepth: s.ActDepth,
 		HP: s.HP, Gold: s.Gold, Mods: s.Mods, Order: s.Order, PhoenixUsed: s.PhoenixUsed, Lives: s.Lives, LifeFinds: s.LifeFinds,
 		Challenge: s.Challenge, Cursed: s.Cursed, LastWorld: s.LastWorld, Element: s.Element, Rerolls: s.Rerolls,
 		Fused: s.Fused, Scrolls: s.Scrolls, Rank: s.Rank, Asc: s.Asc, Endless: s.RunEndless, EndlessStart: s.EndlessStart,

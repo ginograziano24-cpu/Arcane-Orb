@@ -222,6 +222,7 @@ type Run struct {
 	Map          *ActMap
 	Cur          int // current node index (-1 = start of act)
 	Depth        int // levels entered
+	ActDepth     int // chambers entered in the current world
 	HP           float64
 	Gold         int
 	Mods         map[string]int
@@ -266,15 +267,26 @@ func NewRun(code string, arch *Archetype, meta *SaveData, daily bool) *Run {
 	r.Asc = meta.AscSel
 	r.metaLuck = meta.Upg["fortune"]
 	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(n, 1))), 1)
+	r.startKit(meta)
+	return r
+}
+
+// startKit is the build a world starts from: no items but what the
+// Sanctum and the origin grant, starting gold and full health. Every
+// world begins with it, so each one is its own climb from nothing.
+func (r *Run) startKit(meta *SaveData) {
+	r.Mods = map[string]int{}
+	r.Order, r.Fused, r.Scrolls, r.Active = nil, nil, nil, nil
+	r.Element, r.PhoenixUsed, r.Cursed = "", false, false
+	r.ActDepth = 0
 	r.Recompute(meta)
+	rng := rand.New(rand.NewSource(levelgen.Mix(r.SeedN, 9, int64(r.Act))))
 	if r.Stats.StartElement == "random" {
 		els := []string{"inferno", "staticfield", "frozenheart", "voidbounce"}
-		r.Add(els[r.Rng.Intn(len(els))], meta)
+		r.Add(els[rng.Intn(len(els))], meta)
 	}
-	r.HP = r.Stats.MaxHP
 	r.Gold = 20 + 20*meta.Upg["purse"] + int(r.Stats.StartGold)
 	// Sanctum: start with relics / upgrades
-	rng := rand.New(rand.NewSource(levelgen.Mix(n, 9)))
 	for i := 0; i < meta.Upg["collector"]; i++ {
 		if ms := r.Offer(1, true, Common, rng); len(ms) > 0 {
 			r.Add(ms[0].ID, meta)
@@ -287,7 +299,6 @@ func NewRun(code string, arch *Archetype, meta *SaveData, daily bool) *Run {
 	}
 	r.NewFusions = nil
 	r.HP = r.Stats.MaxHP
-	return r
 }
 
 func hashStr(s string) int64 {
@@ -463,7 +474,7 @@ func (r *Run) NextAct(meta *SaveData) bool {
 	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(r.SeedN, int64(r.Act)))), r.Act)
 	r.applyChallengeMap()
 	r.Cur = -1
-	r.HP = math.Min(r.Stats.MaxHP, r.HP+r.Stats.MaxHP*0.3)
+	r.startKit(meta) // a new world: the build starts over
 	r.Lives = max(r.Lives, r.maxLives()) // every act tops lives back up
 	return true
 }

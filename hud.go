@@ -158,15 +158,19 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	strokePath(screen, chip, 1.5*S, ca(nc, 0.9), false)
 	u.text(screen, node, fBold, 14, tx+tW+14+nw/2, 35, lighten(nc, 0.4), alignCenter)
 	u.text(screen, sub, fReg, 16, 960, 66, cDim, alignCenter)
+	ty := 108.0
+	if L.Boss == nil {
+		ty = g.drawWaveStrip(screen, L, ty)
+	}
 	if L.Data.Objective == levelgen.ObjCrystals && L.Boss == nil {
 		s := fmt.Sprintf("Shatter the crystals   ·   %d left", L.Crystals)
 		w := u.measure(s, fBold, 18) + 72
-		u.frame(screen, 960-w/2, 108, w, 42, 0.88)
-		u.icon(screen, icShard, 960-w/2+28, 129, 24, 1)
-		u.text(screen, s, fBold, 18, 960-w/2+48, 117, rgba(176, 222, 255, 255), alignLeft)
-		g.drawOmenTag(screen, L, 156)
+		u.frame(screen, 960-w/2, ty, w, 42, 0.88)
+		u.icon(screen, icShard, 960-w/2+28, ty+21, 24, 1)
+		u.text(screen, s, fBold, 18, 960-w/2+48, ty+9, rgba(176, 222, 255, 255), alignLeft)
+		g.drawOmenTag(screen, L, ty+48)
 	} else {
-		g.drawOmenTag(screen, L, 108)
+		g.drawOmenTag(screen, L, ty)
 	}
 
 	// ---- combo (top-right)
