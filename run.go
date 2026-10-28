@@ -229,8 +229,9 @@ type Run struct {
 	Stats        Stats
 	Active       []string // active synergy names
 	PhoenixUsed  bool
-	Lives        int // lives left (lives.go)
-	LifeFinds    int // hearts caught this run
+	Lives        int    // lives left (lives.go)
+	Challenge    string // challenge run id (challenges.go), "" for none
+	LifeFinds    int    // hearts caught this run
 	Cursed       bool
 	LastWorld    int
 	Element      string
@@ -311,6 +312,9 @@ func (r *Run) Recompute(meta *SaveData) {
 	}
 	s.MaxHP -= 20 * float64(r.Mods["__hp"])
 	r.Arch.Apply(&s)
+	if c := r.challenge(); c != nil && c.Stats != nil {
+		c.Stats(&s)
+	}
 	tags := map[string]int{}
 	for _, id := range r.Order {
 		m := modByID[id]
@@ -410,7 +414,10 @@ func (r *Run) canTake(m *Mod) bool {
 func (r *Run) Offer(n int, relic bool, minRarity int, rng *rand.Rand) []*Mod {
 	var pool []*Mod
 	for _, m := range modList {
-		if m.Relic == relic && m.Rarity >= minRarity && r.canTake(m) && m.Unlock <= r.Rank && (m.Needs == "" || r.Owned(m.Needs)) {
+		if r.Challenge == "unadorned" && relic {
+			relic = false // relic rewards become upgrades
+		}
+		if m.Relic == relic && m.Rarity >= minRarity && r.canTake(m) && m.Unlock <= r.Rank && (m.Needs == "" || r.Owned(m.Needs)) && r.offerAllowed(m) {
 			pool = append(pool, m)
 		}
 	}
@@ -452,9 +459,10 @@ func (r *Run) NextAct(meta *SaveData) bool {
 	}
 	r.Act++
 	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(r.SeedN, int64(r.Act)))), r.Act)
+	r.applyChallengeMap()
 	r.Cur = -1
 	r.HP = math.Min(r.Stats.MaxHP, r.HP+r.Stats.MaxHP*0.3)
-	r.Lives = max(r.Lives, baseLives) // every act starts with at least two lives
+	r.Lives = max(r.Lives, r.maxLives()) // every act tops lives back up
 	return true
 }
 

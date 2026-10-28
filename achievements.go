@@ -72,6 +72,9 @@ var achievements = []achievement{
 	{ID: "ACH_CODEX", Name: "Archivist", Desc: "Discover every upgrade and relic.", Glyph: "lens",
 		Prog: func(g *Game) (int, int) { return len(g.save.Seen), len(modList) }},
 	{ID: "ACH_DAILY", Name: "Daily Devotion", Desc: "Complete a Daily Challenge run.", Glyph: "hourglass"},
+	{ID: "ACH_CHALLENGE", Name: "Tested", Desc: "Finish a challenge run.", Glyph: "target"},
+	{ID: "ACH_CHALLENGE_5", Name: "Proven", Desc: "Finish five different challenge runs.", Glyph: "crown"},
+	{ID: "ACH_CHALLENGE_ALL", Name: "Master of Trials", Desc: "Finish every challenge run.", Glyph: "dragonheart"},
 	{ID: "ACH_RAMPAGE", Name: "Rampage", Desc: "Fill the Berserker's Rage to the brim.", Glyph: "fist", Hidden: true},
 	{ID: "ACH_SUPERCHARGE", Name: "Living Lightning", Desc: "Supercharge the orb as the Stormcaller.", Glyph: "bolt", Hidden: true},
 }

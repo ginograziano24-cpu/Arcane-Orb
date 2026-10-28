@@ -34,6 +34,7 @@ const (
 	StHelp
 	StCodex
 	StStory
+	StChallenge
 )
 
 type Input struct {
@@ -147,12 +148,13 @@ type Game struct {
 	shopFree    int
 
 	// achievements
-	achQueue  []string // popups waiting to show (when Steam's overlay is absent)
-	achT      float64
-	achTick   int
-	achScroll float64
-	scrollSel int // pad: selected scroll slot
-	hero      heroPortrait
+	achQueue     []string // popups waiting to show (when Steam's overlay is absent)
+	achT         float64
+	achTick      int
+	achScroll    float64
+	scrollSel    int // pad: selected scroll slot
+	hero         heroPortrait
+	challengeSel string // challenge picked on the Challenges screen
 }
 
 func NewGame() *Game {
@@ -212,6 +214,9 @@ func (g *Game) setState(s State) {
 	}
 	g.state = s
 	g.stateT = 0
+	if s == StMenu {
+		g.challengeSel = ""
+	}
 	g.consumeInput() // the press that changed screens must not act on the next one
 	switch s {
 	case StActIntro:
@@ -270,7 +275,7 @@ func (g *Game) Update() error {
 
 	// music
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StSettings:
+	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StSettings, StChallenge:
 		if g.run == nil || g.state != StSettings || g.prevState == StMenu {
 			g.snd.SetTrack(3)
 		}
@@ -291,7 +296,7 @@ func (g *Game) Update() error {
 	}
 
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex:
+	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StChallenge:
 		if g.state == StSeed {
 			g.updateSeedInput()
 		}
@@ -299,7 +304,9 @@ func (g *Game) Update() error {
 		if backPressed() {
 			if g.state == StMenu {
 				// point at Quit rather than closing the game outright
-				g.ui.nav.mode, g.ui.nav.focus = true, "menu8"
+				g.ui.nav.mode, g.ui.nav.focus = true, "menu9"
+			} else if g.state == StArch && g.challengeSel != "" {
+				g.setState(StChallenge)
 			} else {
 				g.setState(StMenu)
 			}
@@ -453,6 +460,15 @@ func dailyCode() string { return "DAILY-" + time.Now().Format("2006-01-02") }
 // ---------------------------------------------------------------- run flow
 
 func (g *Game) startRun(arch *Archetype) {
+	if g.challengeSel != "" {
+		g.beginChallenge(arch, g.challengeSel)
+		return
+	}
+	g.startRunWith(arch, "")
+}
+
+// startRunWith starts a run, optionally under a challenge.
+func (g *Game) startRunWith(arch *Archetype, ch string) {
 	code := g.seedText
 	if g.daily {
 		code = dailyCode()
@@ -462,13 +478,27 @@ func (g *Game) startRun(arch *Archetype) {
 	}
 	g.run = NewRun(code, arch, &g.save, g.daily)
 	g.hero = heroPortrait{}
+	if c := challengeByID[ch]; c != nil {
+		r := g.run
+		r.Challenge = ch
+		r.Recompute(&g.save)
+		r.HP = r.Stats.MaxHP
+		r.Lives = r.maxLives()
+		r.applyChallengeMap()
+		if c.Setup != nil {
+			c.Setup(g)
+		}
+	}
 	g.run.Endless = g.endlessMode
 	g.run.EndlessStart = g.endlessMode
 	g.save.Runs++
 	writeSave(&g.save)
-	if g.endlessMode || g.daily {
+	switch {
+	case len(g.rewards) > 0 && g.run.Challenge != "":
+		g.setState(StReward) // a challenge that opens with a choice
+	case g.endlessMode || g.daily:
 		g.setState(StActIntro)
-	} else {
+	default:
 		g.startStory(0)
 	}
 }
@@ -645,6 +675,7 @@ func (g *Game) endRun(win bool) {
 		g.save.Daily[k] = max(g.save.Daily[k], score)
 	}
 	g.onRunEnd(r, win)
+	g.onChallengeEnd(r, win)
 	writeSave(&g.save)
 	g.setState(StSummary)
 }
@@ -674,7 +705,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		act = g.run.Act
 	}
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex:
+	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StChallenge:
 		g.frontT += ddt
 		switch g.state {
 		case StMenu:
@@ -690,6 +721,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		tgt := g.post.Target(int(sw), int(sh))
 		g.drawWorld(tgt, g.level)
 		g.post.Apply(screen, worldGrades[g.level.Biome.ID], !g.settings.NoBloom)
+		if g.run != nil && g.run.is("lightsout") && g.level.introT <= 0 {
+			g.drawDarkness(screen, g.level)
+		}
 		if !hideHUD || g.level.introT > 0 {
 			g.drawHUD(screen, g.level)
 		}
@@ -725,6 +759,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.drawHelp(screen)
 	case StCodex:
 		g.drawCodex(screen)
+	case StChallenge:
+		g.drawChallenges(screen)
 	case StMap:
 		g.drawMap(screen)
 	case StPause:
@@ -846,37 +882,61 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 	if g.save.Wins == 0 {
 		endlessLabel = "Endless Mode  ·  sealed"
 	}
+	challengeLabel := "Challenges"
+	if !g.challengesOpen() {
+		challengeLabel = "Challenges  ·  sealed"
+	}
 	items := []struct {
 		label string
 		do    func()
 		on    bool
 	}{
-		{"Story Mode", func() { g.seedText = ""; g.daily = false; g.endlessMode = false; g.setState(StArch) }, true},
+		{"Story Mode", func() {
+			g.seedText = ""
+			g.daily = false
+			g.endlessMode = false
+			g.challengeSel = ""
+			g.setState(StArch)
+		}, true},
 		{endlessLabel, func() {
 			if g.save.Wins > 0 {
 				g.seedText = ""
 				g.daily = false
 				g.endlessMode = true
+				g.challengeSel = ""
 				g.setState(StArch)
 			} else {
 				g.snd.Play("deny")
 			}
 		}, true},
-		{"Daily Challenge", func() { g.daily = true; g.seedText = ""; g.endlessMode = false; g.setState(StArch) }, true},
-		{"Play a Seed", func() { g.seedText = ""; g.endlessMode = false; g.setState(StSeed) }, true},
+		{"Daily Challenge", func() {
+			g.daily = true
+			g.seedText = ""
+			g.endlessMode = false
+			g.challengeSel = ""
+			g.setState(StArch)
+		}, true},
+		{challengeLabel, func() {
+			if g.challengesOpen() {
+				g.setState(StChallenge)
+			} else {
+				g.snd.Play("deny")
+			}
+		}, true},
+		{"Play a Seed", func() { g.seedText = ""; g.endlessMode = false; g.challengeSel = ""; g.setState(StSeed) }, true},
 		{"Sanctum  ·  " + itoa(g.save.Shards) + " shards", func() { g.setState(StSanctum) }, true},
 		{"Codex", func() { g.codexTab = 0; g.setState(StCodex) }, true},
 		{"How to Play", func() { g.helpPage = 0; g.setState(StHelp) }, true},
 		{"Settings", func() { g.setState(StSettings) }, true},
 		{"Quit", func() { g.quit = true }, true},
 	}
-	y := 300.0
+	y := 284.0
 	for i, it := range items {
 		if g.arcaneItem(s, "menu"+itoa(i), it.label, 120, y, it.on) {
 			it.do()
 		}
-		y += 64
-		if i == 3 || i == 6 {
+		y += 62
+		if i == 4 || i == 7 {
 			y += 12 // breathing room between groups
 		}
 	}
@@ -1557,6 +1617,9 @@ func (g *Game) drawRest(s *ebiten.Image) {
 	lbl := "Cleanse  (lift a curse, +10 health)"
 	if nc == 0 {
 		lbl = "Cleanse  (no curses)"
+	}
+	if r.is("hexed") {
+		lbl, nc = "Cleanse  (sealed by the Hexed challenge)", 0
 	}
 	if u.button(s, "cleanse", lbl, 980, 476, 560, 76, tagColors["curse"], nc > 0) {
 		if c := g.cleanse(); c != nil {

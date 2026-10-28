@@ -1752,6 +1752,9 @@ func (L *Level) clear() {
 	reward := 12 + r.Act*4
 	if L.Node == NElite {
 		reward += 25
+		if r.is("gauntlet") {
+			reward *= 2
+		}
 	}
 	if L.Node == NBoss {
 		reward += 60

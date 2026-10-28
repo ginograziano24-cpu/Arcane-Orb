@@ -152,6 +152,9 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	} else if g.seedText != "" {
 		sub = "Seeded run  ·  " + g.seedText
 	}
+	if c := challengeByID[g.challengeSel]; c != nil {
+		sub = "Challenge  ·  " + c.Name
+	}
 	u.textOutlined(s, "Choose your Origin", fRune, 46, 70, 40, rgba(232, 214, 170, 255), alignLeft)
 	u.text(s, strings.ToUpper(sub), fBold, 17, 72, 104, ca(lighten(u.theme().Accent, 0.3), 0.9), alignLeft)
 	u.glowLine(s, 70, 520, 136, 1.5, cGold, 0.7)
@@ -279,10 +282,18 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		}
 	}
 
-	// ascension (compact, under the panel)
-	g.drawAscCompact(s, rx, 900, rw)
+	// ascension (compact, under the panel); challenges set their own rules
+	if g.challengeSel == "" {
+		g.drawAscCompact(s, rx, 900, rw)
+	} else {
+		g.challengeBanner(s)
+	}
 	if u.button(s, "back", "Back", 60, 990, 200, 56, cAcc, true) {
-		g.setState(StMenu)
+		if g.challengeSel != "" {
+			g.setState(StChallenge)
+		} else {
+			g.setState(StMenu)
+		}
 	}
 }
 

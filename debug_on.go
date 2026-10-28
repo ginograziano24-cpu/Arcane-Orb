@@ -31,6 +31,7 @@ func debugMenuKeys(g *Game) {
 		g.save.XP += 3000
 		g.save.Shards += 900
 		g.save.AscMax = 3
+		g.save.Bosses = max(1, g.save.Bosses)
 		for i, m := range modList {
 			if i%3 != 2 {
 				g.save.Seen[m.ID] = true

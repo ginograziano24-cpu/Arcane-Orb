@@ -57,6 +57,9 @@ func (g *Game) addCurse(rng *rand.Rand) *Mod {
 // cleanse lifts one curse (the oldest); it reports which.
 func (g *Game) cleanse() *Mod {
 	r := g.run
+	if r.is("hexed") {
+		return nil // the challenge's curses never lift
+	}
 	cs := r.curses()
 	if len(cs) == 0 {
 		return nil

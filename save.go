@@ -52,34 +52,35 @@ func (s *SaveData) addToBoard(e EndlessEntry) int {
 }
 
 type SaveData struct {
-	Version   int             `json:"version"`
-	Shards    int             `json:"shards"`
-	Upg       map[string]int  `json:"meta_upgrades"`
-	Unlocked  map[string]bool `json:"unlocked"`
-	Runs      int             `json:"runs"`
-	Wins      int             `json:"wins"`
-	BestAct   int             `json:"best_act"`
-	BestScore int             `json:"best_score"`
-	Bosses    int             `json:"bosses"`
-	Bricks    int             `json:"bricks"`
-	MaxCombo  int             `json:"max_combo"`
-	Daily     map[string]int  `json:"daily_best"`
-	Seen      map[string]bool `json:"seen_mods"`
-	XP        int             `json:"xp"`
-	AscMax    int             `json:"asc_max"` // highest ascension unlocked
-	AscSel    int             `json:"asc"`     // ascension chosen for new runs
-	Fusions   map[string]bool `json:"fusions"` // fusions ever formed
-	TotalGold int             `json:"total_gold"`
-	BestLoop  int             `json:"best_endless_loop"`
-	Board     []EndlessEntry  `json:"endless_board"` // local top-10
-	StorySeen bool            `json:"story_seen"`
-	Ach       map[string]bool `json:"achievements"` // unlocked achievement API names
-	Elites    int             `json:"elites"`       // elite bricks broken, all runs
-	Settings  Settings        `json:"settings"`
+	Version    int             `json:"version"`
+	Shards     int             `json:"shards"`
+	Upg        map[string]int  `json:"meta_upgrades"`
+	Unlocked   map[string]bool `json:"unlocked"`
+	Runs       int             `json:"runs"`
+	Wins       int             `json:"wins"`
+	BestAct    int             `json:"best_act"`
+	BestScore  int             `json:"best_score"`
+	Bosses     int             `json:"bosses"`
+	Bricks     int             `json:"bricks"`
+	MaxCombo   int             `json:"max_combo"`
+	Daily      map[string]int  `json:"daily_best"`
+	Seen       map[string]bool `json:"seen_mods"`
+	XP         int             `json:"xp"`
+	AscMax     int             `json:"asc_max"` // highest ascension unlocked
+	AscSel     int             `json:"asc"`     // ascension chosen for new runs
+	Fusions    map[string]bool `json:"fusions"` // fusions ever formed
+	TotalGold  int             `json:"total_gold"`
+	BestLoop   int             `json:"best_endless_loop"`
+	Board      []EndlessEntry  `json:"endless_board"` // local top-10
+	StorySeen  bool            `json:"story_seen"`
+	Ach        map[string]bool `json:"achievements"` // unlocked achievement API names
+	Elites     int             `json:"elites"`       // elite bricks broken, all runs
+	Challenges map[string]int  `json:"challenges"`   // best act reached per challenge (4 = sealed)
+	Settings   Settings        `json:"settings"`
 }
 
 func defaultSave() SaveData {
-	return SaveData{Version: 2, Upg: map[string]int{}, Unlocked: map[string]bool{}, Daily: map[string]int{}, Seen: map[string]bool{}, Fusions: map[string]bool{}, Ach: map[string]bool{},
+	return SaveData{Version: 2, Upg: map[string]int{}, Unlocked: map[string]bool{}, Daily: map[string]int{}, Seen: map[string]bool{}, Fusions: map[string]bool{}, Ach: map[string]bool{}, Challenges: map[string]int{},
 		Settings: Settings{Master: 1, Music: 0.6, SFX: 0.8, Shake: true, Flashes: true, Particles: 1, VSync: true, Fullscreen: true}}
 }
 
@@ -117,6 +118,9 @@ func loadSave() SaveData {
 	}
 	if s.Fusions == nil {
 		s.Fusions = map[string]bool{}
+	}
+	if s.Challenges == nil {
+		s.Challenges = map[string]int{}
 	}
 	if s.Ach == nil {
 		s.Ach = map[string]bool{}

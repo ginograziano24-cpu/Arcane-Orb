@@ -21,7 +21,12 @@ const (
 	gameOverDelay = 1.9
 )
 
-func (r *Run) maxLives() int { return baseLives }
+func (r *Run) maxLives() int {
+	if r.Challenge == "onelife" {
+		return 1
+	}
+	return baseLives
+}
 
 // lifeDropFalling reports whether a heart is already on its way down.
 func (L *Level) lifeDropFalling() bool {
