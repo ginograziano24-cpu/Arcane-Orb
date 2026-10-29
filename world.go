@@ -276,6 +276,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	for _, b := range L.Balls {
 		glow := color.RGBA{160, 130, 255, 255}
 		core := color.RGBA{240, 235, 255, 255}
+		if tc, ok := g.run.orbTrail(); ok {
+			glow = tc
+		}
 		if fire {
 			glow, core = color.RGBA{255, 130, 40, 255}, color.RGBA{255, 230, 170, 255}
 		} else if g.run.Stats.MeteorHeart {
@@ -551,6 +554,10 @@ func (g *Game) drawPaddle(B *Batch, L *Level) {
 	z0, z1 := PaddleZ-PaddleD/2, PaddleZ+PaddleD/2
 	body := L.Biome.PaddleBody
 	trim := L.Biome.Trim
+	lb, lc, livery := g.run.paddleLivery()
+	if livery {
+		body = lb
+	}
 	if L.Timers[PGlue] > 0 {
 		body = color.RGBA{60, 120, 60, 255}
 	}
@@ -561,6 +568,9 @@ func (g *Game) drawPaddle(B *Batch, L *Level) {
 	B.DecalBelow(L.PaddleX+0.3, PaddleZ-0.25, 0.02, w+1.6, 1.8, sprShadow, color.RGBA{0, 0, 0, 200})
 	B.Box(x0+0.5, lift, z0, x1-0.5, PaddleH+lift, z1, body, sprWhite, 0.05)
 	cap := L.Biome.PaddleCap
+	if livery {
+		cap = lc
+	}
 	B.Box(x0, lift, z0-0.05, x0+0.6, PaddleH+0.12+lift, z1+0.05, cap, sprWhite, 0.05)
 	B.Box(x1-0.6, lift, z0-0.05, x1, PaddleH+0.12+lift, z1+0.05, cap, sprWhite, 0.05)
 	B.Decal(L.PaddleX, z1-0.02, PaddleH+lift+0.01, w-1.3, 0.16, sprWhite, alpha(lighten(trim, 0.4), 0.9), true)

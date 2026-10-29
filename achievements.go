@@ -70,7 +70,19 @@ var achievements = []achievement{
 		}},
 	{ID: "ACH_GOLD_500", Name: "Dragon's Hoard", Desc: "Carry 500 gold at once.", Glyph: "coinstack"},
 	{ID: "ACH_CODEX", Name: "Archivist", Desc: "Discover every upgrade and relic.", Glyph: "lens",
-		Prog: func(g *Game) (int, int) { return len(g.save.Seen), len(modList) }},
+		Prog: func(g *Game) (int, int) {
+			// signature items are mastery rewards, not part of the hunt
+			n, seen := 0, 0
+			for _, m := range modList {
+				if m.Origin == "" {
+					n++
+					if g.save.Seen[m.ID] {
+						seen++
+					}
+				}
+			}
+			return seen, n
+		}},
 	{ID: "ACH_DAILY", Name: "Daily Devotion", Desc: "Complete a Daily Challenge run.", Glyph: "hourglass"},
 	{ID: "ACH_CHALLENGE", Name: "Tested", Desc: "Finish a challenge run.", Glyph: "target"},
 	{ID: "ACH_CHALLENGE_5", Name: "Proven", Desc: "Finish five different challenge runs.", Glyph: "crown"},

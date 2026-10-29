@@ -793,7 +793,14 @@ func (L *Level) fireLaser() {
 		L.cls.overclock = false
 		L.cls.stillT = 0
 		pierce, mult = 3, 2
+		if L.g.run.Stats.SigCoolant {
+			pierce += 2
+		}
 		L.g.snd.PlayVol("zap", 0.6)
+	}
+	if L.g.run.Stats.Aspect == "Railgun" {
+		pierce++
+		mult *= 1.4
 	}
 	L.Bolts = append(L.Bolts, &Bolt{X: L.PaddleX - half + 0.4, Z: PaddleZ + 0.5, Pierce: pierce, Mult: mult}, &Bolt{X: L.PaddleX + half - 0.4, Z: PaddleZ + 0.5, Pierce: pierce, Mult: mult})
 	L.g.snd.Play("laser")
@@ -1357,6 +1364,15 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	s := &r.Stats
 	b.Alive = false
 	L.passiveOnBreak()
+	if s.SigEmber && b.Burn > 0 {
+		// Ember Heart: the fire leaps to every neighbour
+		for _, n := range L.neighbours(b.R, b.C) {
+			if n.Alive && n.Burn <= 0 {
+				n.Burn = 3.5
+				L.sparks(V3{n.X(), 0.9, n.Z()}, 4, color.RGBA{255, 140, 40, 255}, 4)
+			}
+		}
+	}
 	L.removeFromColumn(b)
 	if bo := L.Boss; b.BossPart && !b.Core && bo != nil && !bo.Dead {
 		// every slab of armour torn off wounds the Guardian a little

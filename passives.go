@@ -42,7 +42,7 @@ func (L *Level) updatePassives(dt float64) {
 	}
 	if s.ClassAttune {
 		c.attuneT += dt
-		if c.attuneT >= 8 {
+		if c.attuneT >= s.attunePeriod() {
 			c.attuneT = 0
 			c.attuneEl = (c.attuneEl + 1) % 4
 			L.text(V3{L.PaddleX, 1.6, PaddleZ + 2.5}, "ATTUNED: "+attuneNames[c.attuneEl], attuneCols[c.attuneEl], false)
@@ -55,7 +55,7 @@ func (L *Level) updatePassives(dt float64) {
 			c.stillT = 0
 		} else if !c.overclock {
 			c.stillT += dt
-			if c.stillT >= 1.5 {
+			if c.stillT >= s.overclockTime() {
 				c.overclock = true
 				L.g.snd.PlayVol("abilready", 0.5)
 				L.text(V3{L.PaddleX, 1.4, PaddleZ + 1.2}, "OVERCLOCKED", color.RGBA{255, 170, 70, 255}, false)
@@ -63,7 +63,7 @@ func (L *Level) updatePassives(dt float64) {
 		}
 	}
 	if s.ClassStatic && c.static < 100 {
-		c.static = math.Min(100, c.static+math.Abs(L.PaddleX-L.lastPadX)*100/(10*HalfW))
+		c.static = math.Min(100, c.static+math.Abs(L.PaddleX-L.lastPadX)*100/(10*HalfW)*s.staticRate())
 		if c.static >= 100 {
 			L.g.snd.PlayVol("abilready", 0.5)
 		}
@@ -90,38 +90,44 @@ func (L *Level) passiveDamage(b *Brick, dmg float64) float64 {
 		dmg *= 1 + s.CurseDmg*float64(s.CurseCount)
 	}
 	if s.ClassRage {
-		dmg *= 1 + 0.05*float64(L.cls.rage)
+		dmg *= 1 + s.ragePer()*float64(L.cls.rage)
 	}
 	if s.ClassHighRoller {
-		dmg *= 1 + highRollerBonus(L.g.run.Gold)
+		dmg *= 1 + s.highRoller(L.g.run.Gold)
 	}
 	if s.ClassStoke && b.Burn > 0 {
-		dmg *= 1.5
+		dmg *= s.stokeMult()
 		b.Burn = 3.5
 		L.sparks(V3{b.X(), 0.8, b.Z()}, 4, color.RGBA{255, 150, 50, 255}, 4)
 	}
 	return dmg
 }
 
-func highRollerBonus(gold int) float64 { return math.Min(0.6, float64(gold)/6/100) }
-
 // passiveOnHit fires after a ball hits a brick.
 func (L *Level) passiveOnHit(ball *Ball, b *Brick, dmg float64) {
 	s := &L.g.run.Stats
 	bx, bz := b.X(), b.Z()
 	if ball.Storm > 0 {
-		L.lightning(bx, bz, 2, math.Max(0.5, dmg*0.4), b, false)
+		n := 2
+		if s.SigConduit {
+			n = 3
+		}
+		L.lightning(bx, bz, n, math.Max(0.5, dmg*0.4), b, false)
 	}
-	if s.ClassAttune && L.rng.Float64() < 0.5 && b.Alive {
+	if s.ClassAttune && L.rng.Float64() < s.attuneChance() && b.Alive {
+		pw := 1.0
+		if s.SigLens {
+			pw = 1.5
+		}
 		switch L.cls.attuneEl {
 		case 0:
-			b.Burn = 3.5
+			b.Burn = 3.5 * pw
 		case 1:
-			b.Frozen = 3 + s.FreezeDur
+			b.Frozen = (3 + s.FreezeDur) * pw
 		case 2:
-			L.lightning(bx, bz, 2, math.Max(1, dmg*0.6), b, false)
+			L.lightning(bx, bz, 2, math.Max(1, dmg*0.6*pw), b, false)
 		case 3:
-			L.damage(b, Hit{Src: "Attunement", Dmg: dmg * 0.8, Void: true, Silent: true})
+			L.damage(b, Hit{Src: "Attunement", Dmg: dmg * 0.8 * pw, Void: true, Silent: true})
 		}
 		L.sparks(V3{bx, 0.8, bz}, 6, attuneCols[L.cls.attuneEl], 5)
 	}
@@ -129,11 +135,11 @@ func (L *Level) passiveOnHit(ball *Ball, b *Brick, dmg float64) {
 
 // passiveOnBreak fires when any brick is destroyed.
 func (L *Level) passiveOnBreak() {
-	if L.g.run.Stats.ClassRage {
+	if s := &L.g.run.Stats; s.ClassRage {
 		c := &L.cls
-		if c.rage < 20 {
+		if c.rage < s.rageMax() {
 			c.rage++
-			if c.rage == 20 {
+			if c.rage == s.rageMax() {
 				L.text(V3{L.PaddleX, 1.6, PaddleZ + 2.5}, "RAMPAGE!", color.RGBA{255, 70, 50, 255}, true)
 				L.g.snd.PlayVol("crit", 0.8)
 				if L == L.g.level {
@@ -141,7 +147,7 @@ func (L *Level) passiveOnBreak() {
 				}
 			}
 		}
-		c.rageT = 5
+		c.rageT = s.rageTime()
 	}
 }
 
@@ -150,13 +156,17 @@ func (L *Level) passiveOnBreak() {
 func (L *Level) passiveOnPaddle(b *Ball, t float64) {
 	s := &L.g.run.Stats
 	c := &L.cls
-	if s.ClassParry && math.Abs(t) < 0.22 && c.parryCD <= 0 {
-		c.parryCD = 0.8
+	if s.ClassParry && math.Abs(t) < s.parryWindow() && c.parryCD <= 0 {
+		c.parryCD = s.parryCooldown()
 		L.holyWave(b.X)
+		if s.SigHalo {
+			r := L.g.run
+			r.HP = math.Min(s.MaxHP, r.HP+1)
+		}
 	}
 	if s.ClassStatic && c.static >= 100 && b.Phantom <= 0 {
 		c.static = 0
-		b.Storm = 3
+		b.Storm = s.stormTime()
 		L.text(V3{b.X, 1.4, b.Z + 1}, "SUPERCHARGED", color.RGBA{150, 210, 255, 255}, true)
 		L.g.snd.PlayVol("thunder", 0.55)
 		if L == L.g.level {
@@ -171,7 +181,7 @@ func (L *Level) holyWave(x float64) {
 	s := &L.g.run.Stats
 	dmg := math.Max(1, s.Damage*s.DmgMult)
 	hits := 0
-	for r := levelgen.MaxRows - 1; r >= 0 && hits < 4; r-- {
+	for r := levelgen.MaxRows - 1; r >= 0 && hits < s.parryHits(); r-- {
 		for c := 0; c < levelgen.Cols; c++ {
 			b := L.Grid[r][c]
 			if b == nil || !b.Alive || math.Abs(b.X()-x) > CellW*1.1 {
@@ -189,7 +199,9 @@ func (L *Level) holyWave(x float64) {
 
 // passiveOnLoss resets streak-based passives.
 func (L *Level) passiveOnLoss() {
-	L.cls.rage = 0
+	if !L.g.run.Stats.SigBloodPrice {
+		L.cls.rage = 0
+	}
 	L.cls.static = 0
 }
 

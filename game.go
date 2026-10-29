@@ -143,6 +143,8 @@ type Game struct {
 	comboShown int
 	comboPop   float64 // 1 on each new combo step, decays
 	comboPrev  int
+	mastBefore int // origin mastery level before and after the last run
+	mastAfter  int
 	toasts     []toastMsg
 	fadeT      float64
 	heartT     float64
@@ -755,6 +757,7 @@ func (g *Game) endRun(win bool) {
 	g.xpGained = runXP(r, won) - r.xpPaid
 	r.xpPaid += g.xpGained
 	g.save.XP += g.xpGained
+	g.masteryAward(r, g.xpGained)
 	if r.Endless {
 		g.save.BestLoop = max(g.save.BestLoop, r.Loop())
 	}

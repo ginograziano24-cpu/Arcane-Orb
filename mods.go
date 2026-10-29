@@ -74,6 +74,9 @@ type Stats struct {
 	PlasmaStorm, SteamEngine, CryoCharge, GoldRush, Thunderclap    bool
 	Berserker, TeslaCoil, VoidPrism, Sanctuary, Cataclysm, Volcano bool
 	Hawkstrike, AbsoluteZero, Haymaker                             bool
+	// origin mastery
+	Aspect                                                                     string
+	SigHalo, SigBloodPrice, SigLens, SigCoolant, SigDice, SigEmber, SigConduit bool
 }
 
 type Mod struct {
@@ -89,6 +92,7 @@ type Mod struct {
 	Unlock int    // player rank required before it can appear
 	Needs  string // only offered once this mod is owned
 	Curse  bool   // a curse: never offered, removed by cleansing
+	Origin string // signature item: only this origin, from Mastery 3
 }
 
 var modList = []*Mod{

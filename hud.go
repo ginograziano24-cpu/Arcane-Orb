@@ -400,22 +400,22 @@ func (g *Game) drawPassive(screen *ebiten.Image, L *Level) {
 	switch {
 	case st.ClassParry:
 		label, gl, col = "PARRY", "shield", rgba(255, 215, 130, 255)
-		frac = 1 - clamp01(c.parryCD/0.8)
+		frac = 1 - clamp01(c.parryCD/st.parryCooldown())
 		ready = c.parryCD <= 0
 		val = "centre hit"
 	case st.ClassRage:
 		label, gl, col = "RAGE", "sword", rgba(255, 70, 50, 255)
-		frac = float64(c.rage) / 20
-		val = fmt.Sprintf("+%d%%", c.rage*4)
-		ready = c.rage == 20
+		frac = float64(c.rage) / float64(st.rageMax())
+		val = fmt.Sprintf("+%.0f%%", float64(c.rage)*st.ragePer()*100)
+		ready = c.rage == st.rageMax()
 	case st.ClassAttune:
 		col = attuneCols[c.attuneEl]
 		label, gl = attuneNames[c.attuneEl], []string{"flame", "snow", "bolt", "orb"}[c.attuneEl]
-		frac = 1 - c.attuneT/8
-		val = fmt.Sprintf("%.0fs", 8-c.attuneT)
+		frac = 1 - c.attuneT/st.attunePeriod()
+		val = fmt.Sprintf("%.0fs", st.attunePeriod()-c.attuneT)
 	case st.ClassOverclock:
 		label, gl, col = "OVERCLOCK", "gear", rgba(255, 160, 64, 255)
-		frac = clamp01(c.stillT / 1.5)
+		frac = clamp01(c.stillT / st.overclockTime())
 		ready = c.overclock
 		val = "hold still"
 		if ready {
@@ -423,8 +423,8 @@ func (g *Game) drawPassive(screen *ebiten.Image, L *Level) {
 		}
 	case st.ClassHighRoller:
 		label, gl, col = "HIGH ROLLER", "coin", rgba(255, 210, 90, 255)
-		b := highRollerBonus(r.Gold)
-		frac = b / 0.6
+		b := st.highRoller(r.Gold)
+		frac = b / st.highRollerCap()
 		val = fmt.Sprintf("+%.0f%%", b*100)
 		ready = frac >= 1
 	case st.ClassIgnite > 0:

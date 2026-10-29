@@ -241,8 +241,11 @@ type Run struct {
 	Scrolls      []string // carried scrolls (scrolls.go)
 	NewFusions   []string // formed since last announced
 	Rank, Asc    int      // player rank and ascension level at run start
-	Endless      bool     // continued past the final boss
-	EndlessStart bool     // started from the Endless menu (no story)
+	Mastery      int      // the origin's mastery level at run start
+	Livery       bool     // mastery cosmetics switched on
+	TrailCol     bool
+	Endless      bool // continued past the final boss
+	EndlessStart bool // started from the Endless menu (no story)
 	FinalScore   int
 	Assisted     bool // played with the speed assist (kept off the global boards)
 	Duel         bool // a duel round: no Sanctum, no lives lost, no saving
@@ -265,6 +268,11 @@ func NewRun(code string, arch *Archetype, meta *SaveData, daily bool) *Run {
 	r.Act = 1
 	r.Lives = baseLives
 	r.Rank = rankOf(meta.XP)
+	if arch != nil {
+		r.Mastery, _ = meta.masteryOf(arch.ID)
+		r.Livery = r.Mastery >= 2 && meta.masteryOpt(arch.ID, mOptLivery)
+		r.TrailCol = r.Mastery >= 4 && meta.masteryOpt(arch.ID, mOptTrail)
+	}
 	r.Asc = meta.AscSel
 	r.metaLuck = meta.Upg["fortune"]
 	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(n, 1))), 1)
@@ -287,6 +295,12 @@ func (r *Run) startKit(meta *SaveData) {
 		r.Add(els[rng.Intn(len(els))], meta)
 	}
 	r.Gold = 20 + 20*meta.Upg["purse"] + int(r.Stats.StartGold)
+	// mastery: the origin's signature item as a starting gift
+	if r.Arch != nil && !r.Duel && r.Mastery >= 6 && meta.masteryOpt(r.Arch.ID, mOptGift) {
+		if o, ok := originMastery[r.Arch.ID]; ok && modByID[o.Sig] != nil {
+			r.Add(o.Sig, meta)
+		}
+	}
 	// Sanctum: start with relics / upgrades
 	for i := 0; i < meta.Upg["collector"]; i++ {
 		if ms := r.Offer(1, true, Common, rng); len(ms) > 0 {
@@ -329,6 +343,7 @@ func (r *Run) Recompute(meta *SaveData) {
 	}
 	s.MaxHP -= 20 * float64(r.Mods["__hp"])
 	r.Arch.Apply(&s)
+	applyMastery(&s, meta, r.Arch.ID)
 	if c := r.challenge(); c != nil && c.Stats != nil {
 		c.Stats(&s)
 	}
@@ -434,7 +449,7 @@ func (r *Run) Offer(n int, relic bool, minRarity int, rng *rand.Rand) []*Mod {
 		if r.Challenge == "unadorned" && relic {
 			relic = false // relic rewards become upgrades
 		}
-		if m.Relic == relic && m.Rarity >= minRarity && r.canTake(m) && m.Unlock <= r.Rank && (m.Needs == "" || r.Owned(m.Needs)) && r.offerAllowed(m) {
+		if m.Relic == relic && m.Rarity >= minRarity && r.canTake(m) && m.Unlock <= r.Rank && (m.Origin == "" || m.Origin == r.Arch.ID && r.Mastery >= 3) && (m.Needs == "" || r.Owned(m.Needs)) && r.offerAllowed(m) {
 			pool = append(pool, m)
 		}
 	}

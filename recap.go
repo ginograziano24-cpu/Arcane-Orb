@@ -226,7 +226,30 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 	u.medallion(s, lx-320, y+62, 28, rgba(150, 110, 255, 255))
 	u.textOutlined(s, itoa(rank), fTitle, 28, lx-320, y+44, cWhite, alignCenter)
 	u.bar(s, lx-270, y+52, 620, 20, float64(xp-lo)/float64(max(1, hi-lo)), 0, rgba(150, 110, 255, 255), 0, 0)
-	y += 108
+	y += 96
+	// origin mastery
+	if g.mastAfter > 0 && r.Arch != nil {
+		mc := classInfo[r.Arch.ID].Col
+		if g.mastAfter > g.mastBefore && g.stateT > 2.4 {
+			pulse := 0.8 + 0.2*math.Sin(g.stateT*6)
+			msg := fmt.Sprintf("%s Mastery %d!", r.Arch.Name, g.mastAfter)
+			for _, st := range masterySteps(r.Arch.ID) {
+				if st.Lv == g.mastAfter {
+					msg += "  ·  " + st.Name
+				}
+			}
+			u.textOutlined(s, msg, fBold, 24, lx, y, ca(lighten(mc, 0.3), pulse), alignCenter)
+		} else {
+			lv := g.mastAfter
+			if g.mastAfter > g.mastBefore {
+				lv = g.mastBefore
+			}
+			u.text(s, fmt.Sprintf("%s Mastery %d", r.Arch.Name, lv), fBold, 20, lx, y+2, ca(lighten(mc, 0.3), 0.9), alignCenter)
+		}
+		y += 40
+	} else {
+		y += 12
+	}
 	// unlocks are revealed one at a time
 	var news []*Mod
 	if rank > g.rankBefore {

@@ -55,6 +55,15 @@ func debugPre(g *Game) {
 	dbgGame = g
 	keep := dbgPending[:0]
 	for _, a := range dbgPending {
+		if a == "mastery" {
+			g.save.Mastery, g.save.MOpts = map[string]int{}, map[string]int{}
+			for i, ar := range archetypes {
+				g.save.Mastery[ar.ID] = []int{0, 900, 2500, 5000, 8100, 10000, 400}[i%7]
+				g.save.MOpts[ar.ID] = 15
+				g.save.Unlocked[ar.ID] = true
+			}
+			continue
+		}
 		if a == "notips" {
 			g.settings.NoTips = true
 			g.coachQ = nil

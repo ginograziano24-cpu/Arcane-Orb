@@ -84,11 +84,13 @@ type SaveData struct {
 	BestLoop   int             `json:"best_endless_loop"`
 	Board      []EndlessEntry  `json:"endless_board"` // local top-10
 	StorySeen  bool            `json:"story_seen"`
-	Ach        map[string]bool `json:"achievements"`      // unlocked achievement API names
-	Elites     int             `json:"elites"`            // elite bricks broken, all runs
-	History    []runHistory    `json:"history,omitempty"` // finished runs, newest first
-	Challenges map[string]int  `json:"challenges"`        // best act reached per challenge (4 = sealed)
-	Hints      map[string]bool `json:"hints"`             // coach tips already shown
+	Ach        map[string]bool `json:"achievements"`           // unlocked achievement API names
+	Elites     int             `json:"elites"`                 // elite bricks broken, all runs
+	History    []runHistory    `json:"history,omitempty"`      // finished runs, newest first
+	Challenges map[string]int  `json:"challenges"`             // best act reached per challenge (4 = sealed)
+	Hints      map[string]bool `json:"hints"`                  // coach tips already shown
+	Mastery    map[string]int  `json:"mastery,omitempty"`      // XP earned per origin
+	MOpts      map[string]int  `json:"mastery_opts,omitempty"` // mastery options switched on, per origin
 	Settings   Settings        `json:"settings"`
 }
 

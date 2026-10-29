@@ -207,7 +207,18 @@ func (g *Game) drawArch(s *ebiten.Image) {
 			tc = ca(rgba(200, 180, 255, 255), 0.8)
 		}
 		u.text(s, tag, fReg, 16, 148+10*k, y+48, tc, alignLeft)
+		if lv, _ := g.save.masteryOf(c.ID); lv > 1 {
+			mc := ci.Col
+			if fc, ok := frameCol(lv); ok {
+				mc = fc
+			}
+			chip := boxPath(u.X(470), u.Y(y+22), 50*S, 30*S, 15*S, false)
+			fillPath(s, chip, ca(darken(mc, 0.5), 0.5*ea+0.2), ca(darken(mc, 0.75), 0.5*ea+0.2), grad{}, false)
+			strokePath(s, chip, 1.4*S, ca(mc, ea), false)
+			u.text(s, itoa(lv), fBold, 18, 495, y+26, ca(lighten(mc, 0.4), ea+0.2), alignCenter)
+		}
 	}
+	g.drawMasteryPanel(s, a, 60, 776, 470)
 
 	// ---- detail panel (right)
 	rx, rw := 1340.0, 520.0
@@ -245,7 +256,13 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	y += 20
 	u.text(s, "PASSIVE  ·  "+strings.ToUpper(a.Passive), fBold, 15, cx, y, ca(cGold, 0.9), alignLeft)
 	y += 28
-	y = u.paragraph(s, a.Desc, fReg, 18, cx, y, rw-72, cWhite, alignLeft) + 12
+	y = u.paragraph(s, a.Desc, fReg, 18, cx, y, rw-72, cWhite, alignLeft) + 8
+	if lv, _ := g.save.masteryOf(a.ID); lv >= 5 && g.save.masteryOpt(a.ID, mOptAspect) {
+		o := originMastery[a.ID]
+		u.text(s, "ASPECT OF "+strings.ToUpper(o.Aspect), fBold, 15, cx, y, lighten(col, 0.4), alignLeft)
+		y = u.paragraph(s, o.AspectDesc, fReg, 17, cx, y+24, rw-72, rgba(226, 220, 236, 255), alignLeft) + 8
+	}
+	y += 4
 	if a.Ability != "" {
 		bx, bw, bh := cx, rw-72, 104.0
 		fillPath(s, boxPath(u.X(bx), u.Y(y), bw*S, bh*S, 10*S, false), ca(darken(col, 0.3), 0.6), ca(darken(col, 0.12), 0.6), vgrad(u.Y(y), u.Y(y+bh)), false)

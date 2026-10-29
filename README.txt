@@ -32,6 +32,30 @@ DUELS  -  1v1 with a friend
     directly over the internet with a room code (host forwards TCP 7777)
   - See PLAYTEST.txt for the friends build
 
+ORIGIN MASTERY  -  levels 1 to 10 for every origin
+  - Each origin earns its own mastery XP from your runs (the same XP
+    that raises your Arcane Rank). See it under the origin list
+  - Rewards are options, not raw power: 2 Livery (paddle colours),
+    3 a signature item joins that origin's pool, 4 Orb Trail colour,
+    5 an Aspect (an alternate passive, e.g. Bloodlust: faster Rage with
+    a lower cap), 6 Starting Gift (begin each world holding the
+    signature item), 7 a free shop reroll, 8 silver frame, 9 +5% damage,
+    10 gold frame and the title of Master
+  - Livery, Orb Trail, Aspect and Gift are toggles on the origin screen
+  - Duels ignore mastery so both players stay even
+
+LOOKS AND FEEL
+  - Every world has new set dressing that reacts to play: scarecrows
+    spin and crows scatter when the orb hits their wall, braziers and
+    lanterns light as the chamber is won, the Ruins gate opens and the
+    Clouds rainbow appears on the final wave, equalizers pulse with
+    combos, steam vents puff, gauges climb
+  - Screen shake now builds with the size of the hit and rolls the
+    camera slightly; bricks squash when struck; the combo counter pops
+  - The orb is always the brightest thing on the board and keeps an
+    outline on bright floors and behind tall stacks
+  - Larger HUD labels; the advance gauge counts down its last seconds
+
 NEW IN THIS BUILD  -  longer chambers, three fresh worlds
   - Every world is a fresh start: items, relics, fusions, scrolls and
     gold reset when you reach a new world, and you climb again from

@@ -258,6 +258,12 @@ func (g *Game) drawHero(dst *ebiten.Image, L *Level, x, y, w, h float64) {
 		strokePath(dst, boxPath(u.X(ix), u.Y(iy), iw*S, ih*S, 8*S, false), 3*S, ca(rgba(255, 50, 70, 255), a), false)
 	}
 	strokePath(dst, boxPath(u.X(ix), u.Y(iy), iw*S, ih*S, 8*S, false), 1.5*S, ca(lighten(col, 0.2), 0.7), false)
+	// mastery frame: silver from Mastery 8, gold at 10
+	if fc, ok := frameCol(r.Mastery); ok && !r.Duel {
+		shine := 0.75 + 0.25*math.Sin(t*1.3)
+		strokePath(dst, boxPath(u.X(x+2), u.Y(y+2), (w-4)*S, (h-4)*S, 10*S, false), 3*S, ca(fc, 0.9*shine), false)
+		strokePath(dst, boxPath(u.X(ix-2), u.Y(iy-2), (iw+4)*S, (ih+4)*S, 9*S, false), 1.2*S, ca(lighten(fc, 0.4), 0.6), false)
+	}
 	// name plate
 	u.textOutlined(dst, strings.ToUpper(r.Arch.Name), fSerif, 16, x+w/2, y+h-30, ca(lighten(col, 0.35), 0.95), alignCenter)
 }
