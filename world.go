@@ -271,6 +271,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		B.Billboard(V3{bl.X, 0.55, bl.Z}, 1.2, sprSoft, alpha(color.RGBA{255, 60, 60, 255}, 0.6), true)
 	}
 	g.drawPaddle(B, L)
+	g.drawCritters(B, L)
 	// balls
 	fire := L.Timers[PFire] > 0
 	for _, b := range L.Balls {

@@ -273,6 +273,9 @@ type Level struct {
 	rushBonus       float64 // Gold Rush damage bonus
 	bhCount         int     // bricks towards the next black hole
 	eruptDepth      int     // guards chained eruptions
+	Critters        []*Critter
+	critT           float64 // seconds to the next critter
+	critters        int     // critters popped this chamber
 }
 
 func (g *Game) newLevel(node NodeType, seed int64) *Level {
@@ -490,6 +493,7 @@ func (L *Level) Update(dt float64, in Input) {
 	r := g.run
 	gridShift = L.shift
 	L.updateEnv(dt)
+	L.updateCritters(dt)
 	if L.updateLives(dt) {
 		return // the last life's explosion plays out
 	}
@@ -661,6 +665,7 @@ func (L *Level) Update(dt float64, in Input) {
 			L.collideBricks(b)
 			L.collidePaddle(b)
 			L.collideRocks(b)
+			L.collideCritters(b)
 			if L.Barrier > 0 && b.VZ < 0 && b.Z-b.R <= BarrierZ && b.Z > BarrierZ-1 {
 				b.Z = BarrierZ + b.R
 				b.VZ = math.Abs(b.VZ)

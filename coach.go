@@ -134,16 +134,17 @@ type coachTip struct {
 }
 
 var coachTips = map[string]coachTip{
-	"level":  {"level", "Break every brick", "Move the paddle with {move} and launch the orb with {launch}. Clear every brick to finish the chamber.\n\nIf every orb falls past your paddle you lose a life, and you have two. They refill each act, and a rare falling heart can restore one.\n\nWhen your class ability is charged, use it with {ability}.", "orb", true},
-	"map":    {"map", "Choose your path", "Each row is one step up the act; the lines show where you can go next.\n\nChambers give upgrades, Elites give better ones, Shops sell items and healing, Events are gambles and Rest sites heal. The act's Guardian waits at the top.", "eye", true},
-	"reward": {"reward", "Take one", "Pick one card, or skip it for a little gold. Hover a card to see what its keywords mean.\n\nSome items fuse: own both halves and they forge into something stronger. Cards that complete a fusion say so.", "star", true},
-	"shop":   {"shop", "The shop", "Spend gold on items, relics, healing and scrolls. Anything you don't buy is gone when you leave.", "coin", true},
-	"scroll": {"scroll", "A scroll", "Scrolls are one-use spells. Read one during a chamber with {scrolls}. You can carry a few at once.", "book", false},
-	"life":   {"life", "A life lost", "The paddle reforms in a moment. Your health refills, but lives don't come back until the next act unless a heart falls from a broken brick; catch it with the paddle.", "heart", false},
-	"curse":  {"curse", "Cursed", "Curses weaken you until something lifts them. Look for events and items that cleanse them.", "mask", false},
-	"waves":  {"waves", "Waves and heat", "This chamber comes in waves: when one is nearly gone the rest crumble and the next drops in.\n\nThe formation creeps a row closer when the ADVANCE gauge under the title fills. Bricks that reach the red line near your paddle smash for damage.\n\nHEAT is how strong your build has grown this world. Each point toughens the bricks and hurries the advance.", "burst", false},
-	"cache":  {"cache", "Rune cache", "Bricks sometimes drop a rune cache. Catch it with the paddle and the fight stops while you choose an item, so your build grows during a chamber as well as after it.", "gem", false},
-	"boss":   {"boss", "The Guardian", "Its armour shrugs off the orb. Strike the glowing core to wound it; the core moves after a few hits, so keep chasing it.", "crown", false},
+	"level":   {"level", "Break every brick", "Move the paddle with {move} and launch the orb with {launch}. Clear every brick to finish the chamber.\n\nIf every orb falls past your paddle you lose a life, and you have two. They refill each act, and a rare falling heart can restore one.\n\nWhen your class ability is charged, use it with {ability}.", "orb", true},
+	"map":     {"map", "Choose your path", "Each row is one step up the act; the lines show where you can go next.\n\nChambers give upgrades, Elites give better ones, Shops sell items and healing, Events are gambles and Rest sites heal. The act's Guardian waits at the top.", "eye", true},
+	"reward":  {"reward", "Take one", "Pick one card, or skip it for a little gold. Hover a card to see what its keywords mean.\n\nSome items fuse: own both halves and they forge into something stronger. Cards that complete a fusion say so.", "star", true},
+	"shop":    {"shop", "The shop", "Spend gold on items, relics, healing and scrolls. Anything you don't buy is gone when you leave.", "coin", true},
+	"scroll":  {"scroll", "A scroll", "Scrolls are one-use spells. Read one during a chamber with {scrolls}. You can carry a few at once.", "book", false},
+	"life":    {"life", "A life lost", "The paddle reforms in a moment. Your health refills, but lives don't come back until the next act unless a heart falls from a broken brick; catch it with the paddle.", "heart", false},
+	"curse":   {"curse", "Cursed", "Curses weaken you until something lifts them. Look for events and items that cleanse them.", "mask", false},
+	"waves":   {"waves", "Waves and heat", "This chamber comes in waves: when one is nearly gone the rest crumble and the next drops in.\n\nThe formation creeps a row closer when the ADVANCE gauge under the title fills. Bricks that reach the red line near your paddle smash for damage.\n\nHEAT is how strong your build has grown this world. Each point toughens the bricks and hurries the advance.", "burst", false},
+	"critter": {"critter", "Critters", "Little creatures wander the open floor. Hit one with the orb and it bursts into coins, sometimes a power-up. The golden ones are rare, quick and worth far more.", "coin", false},
+	"cache":   {"cache", "Rune cache", "Bricks sometimes drop a rune cache. Catch it with the paddle and the fight stops while you choose an item, so your build grows during a chamber as well as after it.", "gem", false},
+	"boss":    {"boss", "The Guardian", "Its armour shrugs off the orb. Strike the glowing core to wound it; the core moves after a few hits, so keep chasing it.", "crown", false},
 }
 
 func (g *Game) coach(id string) {

@@ -90,6 +90,17 @@ func debugKeys(g *Game) {
 		g.take(modByID["crescendo"])
 		g.level.Combo, g.level.comboT = 18, 30
 	}
+	if want("critters") && g.level != nil {
+		L := g.level
+		L.spawnCritter()
+		L.spawnCritter()
+		if len(L.Critters) > 0 {
+			L.Critters[len(L.Critters)-1].Golden = true
+		}
+		for _, c := range L.Critters {
+			c.Life = 60
+		}
+	}
 	if want("nextworld") && g.level != nil {
 		forceWorld = (forceWorld + 1) % NumWorlds
 		g.level = g.newLevel(NCombat, g.rng.Int63())
