@@ -331,6 +331,7 @@ func (g *Game) Update() error {
 	g.ui.Click = inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
 	g.latchInput()
 	g.mouseHeld = ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+	debugPre(g)
 	if g.updateCoach(dt) {
 		return nil // a first-time tip is up; everything waits
 	}

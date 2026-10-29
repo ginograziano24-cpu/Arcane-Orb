@@ -15,7 +15,10 @@ import (
 // iconSheet > 0 shows a page of Steam achievement icons for capture.
 var iconSheet int
 
+var dbgGame *Game
+
 func debugMenuKeys(g *Game) {
+	dbgGame = g
 	if inpututil.IsKeyJustPressed(ebiten.KeyF6) {
 		iconSheet = (iconSheet + 1) % 3
 	}
@@ -47,6 +50,21 @@ func debugMenuKeys(g *Game) {
 
 var dbgPending []string
 
+// debugPre runs every frame, even while a coach tip is up.
+func debugPre(g *Game) {
+	dbgGame = g
+	keep := dbgPending[:0]
+	for _, a := range dbgPending {
+		if a == "notips" {
+			g.settings.NoTips = true
+			g.coachQ = nil
+			continue
+		}
+		keep = append(keep, a)
+	}
+	dbgPending = keep
+}
+
 func debugKeys(g *Game) {
 	acts := dbgPending
 	dbgPending = nil
@@ -62,6 +80,23 @@ func debugKeys(g *Game) {
 	if (inpututil.IsKeyJustPressed(ebiten.KeyNumpad1) || want("crescendo")) && g.level != nil {
 		g.take(modByID["crescendo"])
 		g.level.Combo, g.level.comboT = 18, 30
+	}
+	if want("nextworld") && g.level != nil {
+		forceWorld = (forceWorld + 1) % NumWorlds
+		g.level = g.newLevel(NCombat, g.rng.Int63())
+		g.settings.NoTips = true
+	}
+	if want("bumps") && g.level != nil {
+		e := &g.level.env
+		e.bump = [3]float64{0.3, 0.3, 0.3}
+	}
+	if want("finalstate") && g.level != nil {
+		e := &g.level.env
+		e.prog, e.door, e.thump = 1, 1, 1
+		for k := range e.lit {
+			e.lit[k] = 1
+		}
+		g.level.wave, g.level.waves = 2, 2
 	}
 	if want("twowaves") && g.level != nil {
 		g.level.waves = 2

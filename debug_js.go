@@ -8,7 +8,8 @@ import "syscall/js"
 func init() {
 	js.Global().Set("__dbg", js.FuncOf(func(this js.Value, args []js.Value) any {
 		if len(args) > 0 {
-			dbgPending = append(dbgPending, args[0].String())
+			a := args[0].String()
+			dbgPending = append(dbgPending, a)
 		}
 		return nil
 	}))

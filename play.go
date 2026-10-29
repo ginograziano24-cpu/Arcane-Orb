@@ -207,6 +207,7 @@ type Level struct {
 	heat                  int
 	cacheAt               float64 // share of this wave's bricks that releases a rune cache (<0: none)
 	caches, pendingPick   int
+	env                   envState
 	crushes               int
 	hadFinale             bool
 	lastBrkX, lastBrkZ    float64
@@ -488,6 +489,7 @@ func (L *Level) Update(dt float64, in Input) {
 	g := L.g
 	r := g.run
 	gridShift = L.shift
+	L.updateEnv(dt)
 	if L.updateLives(dt) {
 		return // the last life's explosion plays out
 	}
@@ -869,6 +871,14 @@ func (L *Level) collideWalls(b *Ball) {
 		hit = true
 	}
 	if hit {
+		side := 0
+		switch {
+		case b.Z+b.R >= FarZ-0.05:
+			side = 2
+		case b.X > 0:
+			side = 1
+		}
+		L.env.onBump(side, b.Z)
 		fixAngle(b)
 		b.Rico++
 		b.PierceLeft = max(b.PierceLeft, L.g.run.Stats.Pierce)

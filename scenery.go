@@ -74,7 +74,7 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 		}
 	case WMeadow:
 		ground(bio.Outer)
-		windmill(B, side*32, 50, t, bio)
+		windmill(B, side*32, 50, L.env.mill/0.8, bio)
 		for i, p := range [][3]float64{{-side * 24, 30, 1.2}, {-side * 27, 22, 0.9}, {side * 22, 16, 1}} {
 			oakTree(B, p[0], p[1], p[2], int64(i))
 		}
@@ -201,8 +201,8 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 		}
 	case WMachine:
 		ground(bio.Outer)
-		gear(B, side*8, 9, 52, 9, t*0.25*side, color.RGBA{110, 100, 92, 255}, bio)
-		gear(B, side*8-side*14, 6, 50, 5, -t*0.45*side, color.RGBA{150, 100, 60, 255}, bio)
+		gear(B, side*8, 9, 52, 9, L.env.gearA*side, color.RGBA{110, 100, 92, 255}, bio)
+		gear(B, side*8-side*14, 6, 50, 5, -L.env.gearA*1.8*side, color.RGBA{150, 100, 60, 255}, bio)
 		B.Draw(cached("axle", func() *Mesh {
 			return Lathe([][2]float64{{0, 0}, {1.6, 0}, {1.6, 1.2}, {1, 1.4}, {0, 1.4}}, 10, []color.RGBA{{60, 62, 70, 255}, {80, 82, 92, 255}, {100, 102, 112, 255}}, false)
 		}), V3{side * 8, 9, 53}, v3(1), rotXYZ(-math.Pi/2, 0, 0), color.RGBA{}, 0)
@@ -228,6 +228,7 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 			boiler(B, p[0], p[1], t+float64(i))
 		}
 	}
+	g.drawDressing(B, L, t, side)
 }
 
 func colKey(c color.RGBA) string { return itoa(int(c.R)) + "-" + itoa(int(c.G)) + "-" + itoa(int(c.B)) }

@@ -6,6 +6,8 @@ import "github.com/hajimehoshi/ebiten/v2"
 
 func debugKeys(g *Game) {}
 
+func debugPre(g *Game) {}
+
 func debugMenuKeys(g *Game) {}
 func debugMapKeys(g *Game)  {}
 
