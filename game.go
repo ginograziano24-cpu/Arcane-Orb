@@ -191,6 +191,10 @@ func NewGame() *Game {
 	}
 	g.snd = NewSounds()
 	g.ui = newUI(g.snd)
+	if g.settings.Lang == "" {
+		g.settings.Lang = detectLanguage()
+	}
+	g.setLang(g.settings.Lang)
 	g.batch = newBatch(&g.cam)
 	g.post = newPost()
 	g.applySettings()

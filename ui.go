@@ -14,21 +14,26 @@ import (
 // UI maps a virtual 1920×1080 canvas onto the real screen at native
 // resolution, so text and panels stay razor-sharp at 1440p and 4K.
 type UI struct {
-	S, OX, OY float64
-	SW, SH    float64
-	MX, MY    float64 // mouse in virtual coords
-	Click     bool
-	faces     map[faceKey]text.Face
-	fonts     [5]*opentype.Font
-	hoverID   string
-	lastHover string
-	snd       *Sounds
-	Th        *Theme             // framing for the current screen
-	DT        float64            // frame delta for widget animation
-	Held      bool               // left mouse button down
-	anims     map[string]float64 // per-widget eased hover/press values
-	nav       navState           // keyboard / gamepad focus
-	time      float64            // seconds since start, for widget pulses
+	S, OX, OY   float64
+	SW, SH      float64
+	MX, MY      float64 // mouse in virtual coords
+	Click       bool
+	faces       map[faceKey]text.Face
+	fonts       [5]*opentype.Font
+	hoverID     string
+	lastHover   string
+	snd         *Sounds
+	Th          *Theme             // framing for the current screen
+	DT          float64            // frame delta for widget animation
+	Held        bool               // left mouse button down
+	anims       map[string]float64 // per-widget eased hover/press values
+	nav         navState           // keyboard / gamepad focus
+	time        float64            // seconds since start, for widget pulses
+	rawText     bool               // text is already translated (wrapped lines)
+	cyrFallback bool
+	cjkFonts    [2]*opentype.Font // bold, regular
+	nameFont    *opentype.Font    // for language names in their own scripts
+	wrapCache   map[wrapKey][]string
 }
 
 type fontID int
@@ -55,7 +60,7 @@ const (
 )
 
 func newUI(snd *Sounds) *UI {
-	u := &UI{faces: map[faceKey]text.Face{}, snd: snd, anims: map[string]float64{}}
+	u := &UI{faces: map[faceKey]text.Face{}, snd: snd, anims: map[string]float64{}, wrapCache: map[wrapKey][]string{}}
 	for i, data := range [][]byte{fontRegular, fontBold, fontDisplay, fontRune, fontSerif} {
 		f, err := opentype.Parse(data)
 		if err != nil {
@@ -90,16 +95,92 @@ func (u *UI) face(f fontID, size float64) text.Face {
 	if fc, ok := u.faces[k]; ok {
 		return fc
 	}
-	fc, err := opentype.NewFace(u.fonts[f], &opentype.FaceOptions{Size: float64(px), DPI: 72, Hinting: font.HintingNone})
-	if err != nil {
-		panic(err)
+	mk := func(of *opentype.Font) text.Face {
+		fc, err := opentype.NewFace(of, &opentype.FaceOptions{Size: float64(px), DPI: 72, Hinting: font.HintingNone})
+		if err != nil {
+			panic(err)
+		}
+		return text.NewGoXFace(fc)
 	}
-	tf := text.NewGoXFace(fc)
+	var tf text.Face = mk(u.fonts[f])
+	// other scripts fall back glyph by glyph: Fira for Cyrillic in the
+	// display fonts, then the CJK face
+	var chain []text.Face
+	if u.cyrFallback && f != fReg && f != fBold {
+		chain = append(chain, mk(u.fonts[fBold]))
+	}
+	if fb := u.cjkFonts[0]; fb != nil {
+		if (f == fReg) && u.cjkFonts[1] != nil {
+			fb = u.cjkFonts[1]
+		}
+		chain = append(chain, mk(fb))
+	}
+	if len(chain) > 0 {
+		if mf, err := text.NewMultiFace(append([]text.Face{tf}, chain...)...); err == nil {
+			tf = mf
+		}
+	}
 	u.faces[k] = tf
 	return tf
 }
 
+// langName draws a language's own name; it always has the glyphs it needs.
+func (u *UI) langName(dst *ebiten.Image, s string, x, y float64, c color.RGBA) {
+	raw := u.rawText
+	u.rawText = true
+	defer func() { u.rawText = raw }()
+	if u.nameFont == nil {
+		u.text(dst, s, fBold, 22, x, y, c, alignCenter)
+		return
+	}
+	px := math.Round(22 * u.S)
+	k := faceKey{fontID(100), int(px)}
+	fc, ok := u.faces[k]
+	if !ok {
+		f1, _ := opentype.NewFace(u.fonts[fBold], &opentype.FaceOptions{Size: px, DPI: 72, Hinting: font.HintingNone})
+		f2, _ := opentype.NewFace(u.nameFont, &opentype.FaceOptions{Size: px, DPI: 72, Hinting: font.HintingNone})
+		mf, err := text.NewMultiFace(text.NewGoXFace(f1), text.NewGoXFace(f2))
+		if err != nil {
+			u.text(dst, s, fBold, 22, x, y, c, alignCenter)
+			return
+		}
+		fc = mf
+		u.faces[k] = fc
+	}
+	op := &text.DrawOptions{}
+	op.PrimaryAlign = text.AlignCenter
+	op.GeoM.Translate(u.X(x), u.Y(y)-2*u.S)
+	op.ColorScale.ScaleWithColor(prem(c, 1))
+	text.Draw(dst, s, fc, op)
+}
+
+// setScripts picks the fallback fonts a language needs and drops the
+// cached faces so text is rebuilt with them.
+func (u *UI) setScripts(code string) {
+	u.cyrFallback = code == "ru"
+	u.cjkFonts = [2]*opentype.Font{}
+	if code == "zh" || code == "ja" {
+		for i, w := range []string{"bold", "regular"} {
+			if data, err := cjkFS.ReadFile("assets/fonts/cjk/" + code + "-" + w + ".ttf"); err == nil {
+				if f, err := opentype.Parse(data); err == nil {
+					u.cjkFonts[i] = f
+				}
+			}
+		}
+	}
+	if u.nameFont == nil {
+		if data, err := cjkFS.ReadFile("assets/fonts/cjk/zh-bold.ttf"); err == nil {
+			u.nameFont, _ = opentype.Parse(data)
+		}
+	}
+	u.faces = map[faceKey]text.Face{}
+	u.wrapCache = map[wrapKey][]string{}
+}
+
 func (u *UI) drawText(dst *ebiten.Image, s string, f fontID, size, sx, sy float64, c color.RGBA, al align) {
+	if !u.rawText {
+		s = tr(s)
+	}
 	op := &text.DrawOptions{}
 	switch al {
 	case alignCenter:
@@ -142,38 +223,67 @@ func (u *UI) textOutlinedAt(dst *ebiten.Image, s string, f fontID, size, sx, sy 
 }
 
 func (u *UI) measure(s string, f fontID, size float64) float64 {
+	if !u.rawText {
+		s = tr(s)
+	}
 	w, _ := text.Measure(s, u.face(f, size), 0)
 	return w / u.S
 }
 
+// wrap breaks text (translated first) into lines no wider than width.
+// The lines it returns are already translated.
 func (u *UI) wrap(s string, f fontID, size, width float64) []string {
+	if !u.rawText {
+		s = tr(s)
+	}
+	raw := u.rawText
+	u.rawText = true
+	defer func() { u.rawText = raw }()
+	key := wrapKey{s, f, size, width}
+	if l, ok := u.wrapCache[key]; ok {
+		return l
+	}
 	var lines []string
 	for _, para := range strings.Split(s, "\n") {
-		words := strings.Fields(para)
+		toks := breakTokens(para)
 		cur := ""
-		for _, w := range words {
-			try := w
-			if cur != "" {
-				try = cur + " " + w
+		for _, w := range toks {
+			if w == " " && cur == "" {
+				continue
 			}
-			if u.measure(try, f, size) > width && cur != "" {
-				lines = append(lines, cur)
-				cur = w
+			try := cur + w
+			if u.measure(strings.TrimRight(try, " "), f, size) > width && strings.TrimSpace(cur) != "" {
+				lines = append(lines, strings.TrimRight(cur, " "))
+				cur = strings.TrimLeft(w, " ")
 			} else {
 				cur = try
 			}
 		}
-		lines = append(lines, cur)
+		lines = append(lines, strings.TrimRight(cur, " "))
 	}
+	if len(u.wrapCache) > 2000 {
+		u.wrapCache = map[wrapKey][]string{}
+	}
+	u.wrapCache[key] = lines
 	return lines
+}
+
+type wrapKey struct {
+	s           string
+	f           fontID
+	size, width float64
 }
 
 func (u *UI) paragraph(dst *ebiten.Image, s string, f fontID, size, x, y, width float64, c color.RGBA, al align) float64 {
 	lh := size * 1.35
-	for _, l := range u.wrap(s, f, size, width) {
+	lines := u.wrap(s, f, size, width)
+	raw := u.rawText
+	u.rawText = true
+	for _, l := range lines {
 		u.text(dst, l, f, size, x, y, c, al)
 		y += lh
 	}
+	u.rawText = raw
 	return y
 }
 

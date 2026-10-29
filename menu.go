@@ -113,6 +113,7 @@ func (g *Game) drawMenuScene(screen *ebiten.Image, dt float64) {
 // chromeTitle draws text with a retro chrome gradient and neon glow.
 func (g *Game) chromeTitle(dst *ebiten.Image, s string, size, x, y float64, glow color.RGBA) {
 	u := g.ui
+	s = tr(s)
 	face := u.face(fTitle, size)
 	w, h := text.Measure(s, face, 0)
 	key := s + itoa(int(size*u.S))

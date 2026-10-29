@@ -319,6 +319,7 @@ func (g *Game) drawRunes(dst *ebiten.Image, count int, cx, spread float64) {
 // arcaneTitle draws engraved Cinzel lettering with a violet aura.
 func (g *Game) arcaneTitle(dst *ebiten.Image, s string, size, x, y float64) {
 	u := g.ui
+	s = tr(s)
 	face := u.face(fRune, size)
 	w, h := text.Measure(s, face, 0)
 	key := "rune" + s + itoa(int(size*u.S))

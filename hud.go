@@ -446,7 +446,8 @@ func (g *Game) drawPassive(screen *ebiten.Image, L *Level) {
 	if r.hasAbility() {
 		y = 828
 	}
-	w := 250.0
+	// longer labels (other languages) widen the plate instead of overlapping
+	w := math.Max(250, u.measure(label, fBold, 16)+u.measure(val, fBold, 16)+80)
 	u.frame(screen, 22, y-26, w, 52, 0.88)
 	if ready {
 		p := 0.5 + 0.5*math.Sin(L.T*6)

@@ -198,6 +198,18 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 			st.GameSpeed = 0.5 + 0.5*math.Round(ng*10)/10
 		}
 		y += 70
+		// language: ‹ name ›, each name written in its own script
+		li := langIndex(st.Lang)
+		u.text(s, "Language", fBold, 22, 520, y+12, cWhite, alignLeft)
+		if u.button(s, "langL", "‹", 940, y, 56, 48, cAcc, true) {
+			g.setLang(languages[(li+len(languages)-1)%len(languages)].Code)
+		}
+		if u.button(s, "langR", "›", 1344, y, 56, 48, cAcc, true) {
+			g.setLang(languages[(li+1)%len(languages)].Code)
+		}
+		u.frame(s, 1006, y, 328, 48, 0.8)
+		u.langName(s, languages[langIndex(st.Lang)].Name, 1170, y+11, cGold)
+		y += 70
 		st.ColorBlind = choice("cb", "Colour filter", colorBlindNames, st.ColorBlind, 170)
 		st.NoTips = !toggle("tips", "First-time tips", !st.NoTips)
 		if u.button(s, "tipsreset", "Show all tips again", 520, y, 300, 48, cAcc, len(g.save.Hints) > 0) {

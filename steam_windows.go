@@ -231,3 +231,42 @@ func steamKeyboardClose() {
 	defer func() { _ = recover() }()
 	p.Call(steam.utils)
 }
+
+// steamLanguage is the language the player chose for this game in Steam
+// ("" without Steam). Codes are Steam's API names ("russian", "schinese").
+func steamLanguage() string {
+	if !steam.ok {
+		return ""
+	}
+	apps := iface(steam.dll, "SteamAPI_SteamApps_v008", "SteamAPI_SteamApps")
+	p := steam.dll.NewProc("SteamAPI_ISteamApps_GetCurrentGameLanguage")
+	if apps == 0 || p.Find() != nil {
+		return ""
+	}
+	r, _, _ := p.Call(apps)
+	if r == 0 {
+		return ""
+	}
+	bp := *(**[32]byte)(unsafe.Pointer(&r)) // a C string owned by Steam
+	var b []byte
+	for _, c := range bp {
+		if c == 0 {
+			break
+		}
+		b = append(b, c)
+	}
+	return string(b)
+}
+
+// osLanguage is the Windows display locale, e.g. "ru-RU".
+func osLanguage() string {
+	p := syscall.NewLazyDLL("kernel32.dll").NewProc("GetUserDefaultLocaleName")
+	if p.Find() != nil {
+		return ""
+	}
+	buf := make([]uint16, 85)
+	if r, _, _ := p.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf))); r == 0 {
+		return ""
+	}
+	return syscall.UTF16ToString(buf)
+}

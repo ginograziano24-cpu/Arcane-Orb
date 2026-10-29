@@ -23,3 +23,7 @@ func steamLBPoll(onFound func(), onEntries func(tag string, rows []lbRow), onUpl
 func steamPresence(token string, params ...string) {}
 func steamKeyboard(x, y, w, h int) bool            { return false }
 func steamKeyboardClose()                          {}
+
+func steamLanguage() string { return "" }
+
+func osLanguage() string { return "" }

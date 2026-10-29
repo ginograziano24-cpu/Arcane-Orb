@@ -55,6 +55,10 @@ func debugPre(g *Game) {
 	dbgGame = g
 	keep := dbgPending[:0]
 	for _, a := range dbgPending {
+		if len(a) > 5 && a[:5] == "lang:" {
+			g.setLang(a[5:])
+			continue
+		}
 		if a == "mastery" {
 			g.save.Mastery, g.save.MOpts = map[string]int{}, map[string]int{}
 			for i, ar := range archetypes {

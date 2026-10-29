@@ -29,6 +29,7 @@ type Settings struct {
 	ColorBlind int                  `json:"color_blind"`      // 0 off, 1 protanopia, 2 deuteranopia, 3 tritanopia
 	Borderless bool                 `json:"borderless"`       // windowed without a frame, filling the monitor
 	Binds      map[string]savedBind `json:"binds,omitempty"`
+	Lang       string               `json:"lang,omitempty"` // language code; "" = pick from Steam or the system
 }
 
 // EndlessEntry is one line of the local Endless leaderboard.

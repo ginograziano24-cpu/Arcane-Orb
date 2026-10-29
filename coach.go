@@ -192,10 +192,10 @@ func (g *Game) updateCoach(dt float64) bool {
 // coachText fills in the player's current bindings.
 func (g *Game) coachText(s string) string {
 	return strings.NewReplacer(
-		"{move}", g.bindText("move"),
-		"{launch}", g.bindText("launch"),
-		"{ability}", g.bindText("ability"),
-		"{scrolls}", g.bindText("scrolls"),
+		"{move}", tr(g.bindText("move")),
+		"{launch}", tr(g.bindText("launch")),
+		"{ability}", tr(g.bindText("ability")),
+		"{scrolls}", tr(g.bindText("scrolls")),
 	).Replace(s)
 }
 
@@ -210,7 +210,7 @@ func (g *Game) drawCoach(s *ebiten.Image) {
 	ts := 22 * g.textScale()
 	const w = 860.0
 	var lines []string
-	body := t.Body
+	body := tr(t.Body) // whole, before it's split or filled in
 	if r := g.run; r == nil || r.Arch.Ability == "" {
 		// no active ability for this class: drop the paragraph about it
 		var keep []string
@@ -221,6 +221,8 @@ func (g *Game) drawCoach(s *ebiten.Image) {
 		}
 		body = strings.Join(keep, "\n\n")
 	}
+	raw := u.rawText
+	u.rawText = true
 	for _, para := range strings.Split(g.coachText(body), "\n") {
 		if para == "" {
 			lines = append(lines, "")
@@ -228,6 +230,7 @@ func (g *Game) drawCoach(s *ebiten.Image) {
 		}
 		lines = append(lines, u.wrap(para, fReg, ts, w-120)...)
 	}
+	u.rawText = raw
 	h := 190 + float64(len(lines))*ts*1.4
 	x, y := 960-w/2, 540-h/2+(1-k)*30
 	u.frame(s, x, y, w, h, 0.97*k)
@@ -235,10 +238,12 @@ func (g *Game) drawCoach(s *ebiten.Image) {
 	u.text(s, "TIP", fBold, 16, x+122, y+30, ca(cDim, k), alignLeft)
 	u.text(s, t.Title, fRune, 38, x+122, y+48, ca(cGold, k), alignLeft)
 	yy := y + 122
+	u.rawText = true // lines are translated already
 	for _, l := range lines {
 		u.text(s, l, fReg, ts, x+60, yy, ca(rgba(232, 228, 245, 255), k), alignLeft)
 		yy += ts * 1.4
 	}
+	u.rawText = raw
 	if g.coachT > 0.45 {
 		hint := "Click or press Space to continue"
 		if g.padActive {
