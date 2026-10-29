@@ -29,6 +29,7 @@ func lerp(a, b, t float64) float64 { return a + (b-a)*t }
 type Camera struct {
 	Eye, Target V3
 	FOV         float64 // vertical, radians
+	Roll        float64 // radians about the view axis (screen shake)
 	W, H        float64
 	right, up   V3
 	fwd         V3
@@ -40,6 +41,10 @@ func (c *Camera) Setup(w, h float64) {
 	c.fwd = c.Target.Sub(c.Eye).Norm()
 	c.right = V3{0, 1, 0}.Cross(c.fwd).Norm()
 	c.up = c.fwd.Cross(c.right)
+	if c.Roll != 0 {
+		cr, sr := math.Cos(c.Roll), math.Sin(c.Roll)
+		c.right, c.up = c.right.Mul(cr).Add(c.up.Mul(sr)), c.up.Mul(cr).Sub(c.right.Mul(sr))
+	}
 	c.f = (h / 2) / math.Tan(c.FOV/2)
 }
 

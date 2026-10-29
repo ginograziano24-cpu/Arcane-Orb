@@ -254,6 +254,7 @@ func (g *Game) drawDarkness(screen *ebiten.Image, L *Level, k float64) {
 	}
 	darkImg.Fill(color.RGBA{2, 1, 8, 238})
 	cam := &g.cam
+	cam.Roll = 0
 	S := g.ui.S
 	hole := func(p V3, rad, a float64) {
 		x, y, z := cam.Project(p)

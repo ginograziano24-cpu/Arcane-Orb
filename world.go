@@ -49,8 +49,19 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	if camHook != nil {
 		camHook(cam, L)
 	}
+	// trauma-style shake: strength grows with the square of the trauma so
+	// small knocks stay subtle and big ones land; smooth noise rather than
+	// per-frame jitter, with a little roll that sells it without blurring play
+	cam.Roll = 0
 	if sh2 > 0 {
-		cam.Eye = cam.Eye.Add(V3{(g.rng.Float64() - 0.5) * sh2, (g.rng.Float64() - 0.5) * sh2, 0})
+		tr := math.Min(1.2, sh2)
+		amt := tr*tr*0.8 + tr*0.2
+		n := func(k float64) float64 {
+			return 0.55*math.Sin(L.T*37+k) + 0.3*math.Sin(L.T*61+k*2.3) + 0.15*math.Sin(L.T*97+k*4.1)
+		}
+		cam.Eye = cam.Eye.Add(V3{n(0) * amt * 0.55, n(7) * amt * 0.4, 0})
+		cam.Target = cam.Target.Add(V3{n(3) * amt * 0.25, n(11) * amt * 0.2, 0})
+		cam.Roll = n(19) * amt * 0.028
 	}
 	cam.FOV = 60 * math.Pi / 180
 	aspect := sw / sh
@@ -70,6 +81,15 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		op.GeoM.Scale(sc, sc)
 		op.GeoM.Translate(0, hy-bh*skyHorizon*sc)
+		if cam.Roll != 0 {
+			// tilt the sky with the world so the horizon stays joined
+			lx, ly, _ := cam.Project(V3{cam.Eye.X - 2000, 0, cam.Eye.Z + 4000})
+			rx, ry, _ := cam.Project(V3{cam.Eye.X + 2000, 0, cam.Eye.Z + 4000})
+			op.GeoM.Translate(-sw/2, -hy)
+			op.GeoM.Scale(1.06, 1.06)
+			op.GeoM.Rotate(math.Atan2(ry-ly, rx-lx))
+			op.GeoM.Translate(sw/2, hy)
+		}
 		screen.DrawImage(g.sky, op)
 		if !g.lowFX() {
 			g.drawSkyFX(screen, L.Biome.ID, hy, L.T)
@@ -276,8 +296,11 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 			f := float64(i+1) / float64(len(b.Trail)+1)
 			B.Billboard(V3{p[0], b.R, p[1]}, b.R*2*f, sprSoft, alpha(glow, 0.35*f*a), true)
 		}
-		B.Billboard(V3{b.X, b.R, b.Z}, b.R*6, sprSoft, alpha(glow, 0.35*a), true)
-		B.Billboard(V3{b.X, b.R, b.Z}, b.R*2.05, sprSphere, alpha(core, a), false)
+		// the orb is the hero object: a wide halo, a solid core and a hot
+		// centre so it is always the brightest thing on the board
+		B.Billboard(V3{b.X, b.R, b.Z}, b.R*8, sprSoft, alpha(glow, 0.42*a), true)
+		B.Billboard(V3{b.X, b.R, b.Z}, b.R*2.25, sprSphere, alpha(core, a), false)
+		B.Billboard(V3{b.X, b.R * 1.05, b.Z}, b.R*2.6, sprSoft, alpha(color.RGBA{255, 255, 255, 255}, 0.55*a), true)
 		if b.Charged {
 			B.Billboard(V3{b.X, b.R, b.Z}, b.R*3.4, sprRing, alpha(color.RGBA{255, 90, 90, 255}, 0.8), true)
 		}
@@ -324,6 +347,20 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 	proj := func(p V3) (float64, float64) {
 		x, y, _ := cam.Project(p)
 		return x * k, y * k
+	}
+	// orb rim: a thin outline drawn over the world so the orb reads on bright
+	// floors and stays visible behind tall stacks
+	fg := L.Biome.Fog
+	bright := (0.3*float64(fg.R) + 0.59*float64(fg.G) + 0.11*float64(fg.B)) / 255
+	for _, b := range L.Balls {
+		x, y := proj(V3{b.X, b.R, b.Z})
+		x1, _ := proj(V3{b.X + b.R, b.R, b.Z})
+		r := math.Max(4, (x1-x)*1.45)
+		if bright > 0.55 {
+			drawSprite(screen, sprRing, x-r, y-r, 2*r, 2*r, color.RGBA{30, 18, 60, 150}, false)
+		} else {
+			drawSprite(screen, sprRing, x-r, y-r, 2*r, 2*r, color.RGBA{255, 250, 255, 70}, true)
+		}
 	}
 	// lightning arcs (2D, over everything)
 	for _, a := range L.Arcs {
@@ -381,6 +418,13 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	}
 	if b.Kind != levelgen.Steel && b.Layer == 0 && b.Up == nil {
 		h *= 0.8 + 0.2*frac
+	}
+	if b.Flash > 0 && !b.BossPart && b.Up == nil {
+		// hit squash: the brick flattens and spreads for a few frames
+		k := b.Flash * b.Flash
+		hw *= 1 + 0.07*k
+		hd *= 1 + 0.07*k
+		h *= 1 - 0.14*k
 	}
 	if b.BossPart {
 		// the Guardian is sculpted: a domed head and heavy shoulders

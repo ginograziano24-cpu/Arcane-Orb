@@ -417,7 +417,7 @@ func (g *Game) drawGhostBoard(s *ebiten.Image, x, y, w, h float64) {
 	o := &d.opp
 	u.frame(s, x, y, w, h, 0.9)
 	u.text(s, trimTo(fallback(d.oppName, "Rival"), 14), fSerif, 24, x+w/2, y+14, rgba(255, 170, 200, 255), alignCenter)
-	u.text(s, fmt.Sprintf("WAVE %d / %d  ·  COMBO %d", max(1, o.wave), max(1, o.waves), o.combo), fBold, 14, x+w/2, y+46, cDim, alignCenter)
+	u.text(s, fmt.Sprintf("WAVE %d / %d  ·  COMBO %d", max(1, o.wave), max(1, o.waves), o.combo), fBold, 16, x+w/2, y+46, cDim, alignCenter)
 	ax, ay, aw, ah := x+16, y+74, w-32, h-90
 	fillPath(s, boxPath(u.X(ax), u.Y(ay), aw*S, ah*S, 6*S, false), rgba(10, 8, 22, 230), rgba(20, 14, 38, 230), vgrad(u.Y(ay), u.Y(ay+ah)), false)
 	if o.pulse > 0 {
@@ -470,5 +470,5 @@ func (g *Game) drawDuelVitals(s *ebiten.Image, x, y float64) {
 	u.frame(s, x, y, 440, 112, 0.92)
 	u.text(s, fmt.Sprintf("DUEL  ·  ROUND %d OF %d", d.round, duelRounds), fBold, 18, x+30, y+18, cGold, alignLeft)
 	u.text(s, "Clear both waves first to take the round.", fReg, 16, x+30, y+50, cDim, alignLeft)
-	u.text(s, "Esc: forfeit menu (the race keeps going)", fReg, 14, x+30, y+78, ca(cDim, 0.7), alignLeft)
+	u.text(s, "Esc: forfeit menu (the race keeps going)", fReg, 16, x+30, y+78, ca(cDim, 0.7), alignLeft)
 }

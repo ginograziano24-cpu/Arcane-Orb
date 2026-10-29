@@ -141,6 +141,8 @@ type Game struct {
 	goldPop    float64
 	lastGold   int
 	comboShown int
+	comboPop   float64 // 1 on each new combo step, decays
+	comboPrev  int
 	toasts     []toastMsg
 	fadeT      float64
 	heartT     float64

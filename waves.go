@@ -411,25 +411,28 @@ func (g *Game) drawCache(s *ebiten.Image) {
 func (g *Game) drawWaveStrip(s *ebiten.Image, L *Level, y float64) float64 {
 	u := g.ui
 	S := u.S
-	const w, h = 440.0, 38.0
+	const w, h = 460.0, 44.0
 	x := 960 - w/2
 	u.frame(s, x, y, w, h, 0.85)
 	gold := rgba(255, 222, 128, 255)
-	u.text(s, fmt.Sprintf("WAVE %d / %d", L.wave, L.waves), fBold, 17, x+22, y+9, gold, alignLeft)
+	u.text(s, fmt.Sprintf("WAVE %d / %d", L.wave, L.waves), fBold, 20, x+20, y+10, gold, alignLeft)
 	hc := mixc(rgba(255, 190, 120, 255), rgba(255, 80, 60, 255), math.Min(1, float64(L.heat)/20))
-	u.text(s, fmt.Sprintf("HEAT %d", L.heat), fBold, 17, x+168, y+9, hc, alignLeft)
+	u.text(s, fmt.Sprintf("HEAT %d", L.heat), fBold, 20, x+160, y+10, hc, alignLeft)
 	// advance gauge: fills as the formation gets ready to move
-	bx, bw := x+262, 156.0
+	bx, bw := x+272, 168.0
 	k := 1 - clamp01(L.advT/L.advInterval())
-	fillPath(s, boxPath(u.X(bx), u.Y(y+15), bw*S, 9*S, 4.5*S, false), rgba(0, 0, 0, 160), rgba(20, 14, 30, 160), grad{}, false)
+	fillPath(s, boxPath(u.X(bx), u.Y(y+24), bw*S, 10*S, 5*S, false), rgba(0, 0, 0, 160), rgba(20, 14, 30, 160), grad{}, false)
 	c := mixc(rgba(255, 200, 140, 255), rgba(255, 70, 60, 255), k)
 	if L.advT < 2 {
 		c = mixc(c, cWhite, 0.4+0.4*math.Sin(L.T*14))
 	}
 	if k*bw > 2 {
-		fillPath(s, boxPath(u.X(bx), u.Y(y+15), k*bw*S, 9*S, 4.5*S, false), lighten(c, 0.2), darken(c, 0.3), grad{}, false)
+		fillPath(s, boxPath(u.X(bx), u.Y(y+24), k*bw*S, 10*S, 5*S, false), lighten(c, 0.2), darken(c, 0.3), grad{}, false)
 	}
-	u.text(s, "ADVANCE", fBold, 11, bx+bw/2, y+26, ca(cDim, 0.9), alignCenter)
+	u.text(s, "ADVANCE", fBold, 13, bx, y+6, ca(cDim, 0.95), alignLeft)
+	if L.advT < 5 {
+		u.text(s, fmt.Sprintf("%.0fs", math.Ceil(L.advT)), fBold, 13, bx+bw, y+6, c, alignRight)
+	}
 	if u.hover(x, y, w, h) {
 		g.tooltip = fmt.Sprintf("Heat %d: your build's strength this world. Each point adds %.0f%% brick health, more armoured bricks and a quicker advance. The formation creeps one row closer when the gauge fills; bricks that reach the red line smash for damage.", L.heat, heatHP*100)
 	}

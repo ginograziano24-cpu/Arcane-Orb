@@ -289,7 +289,7 @@ func (g *Game) drawAchievementsTab(s *ebiten.Image, y0 float64) {
 			cur, goal := a.Prog(g)
 			fr := clamp01(float64(cur) / float64(max(1, goal)))
 			u.meter(s, x+w-170, y+20, 140, fr, rgba(170, 130, 255, 255))
-			u.text(s, itoa(min(cur, goal))+" / "+itoa(goal), fBold, 13, x+w-30, y+36, cDim, alignRight)
+			u.text(s, itoa(min(cur, goal))+" / "+itoa(goal), fBold, 15, x+w-30, y+36, cDim, alignRight)
 		}
 	}
 	// scrollbar

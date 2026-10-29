@@ -56,6 +56,7 @@ func (g *Game) drawMenuScene(screen *ebiten.Image, dt float64) {
 	sw, sh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
 	b := m.biome
 	cam := &g.cam
+	cam.Roll = 0
 	cam.Eye = V3{math.Sin(m.t*0.15) * 1.5, 4.2, -8}
 	cam.Target = V3{0, 3.4, 30}
 	cam.FOV = 62 * math.Pi / 180

@@ -381,7 +381,7 @@ func (g *Game) helpItems(s *ebiten.Image, a float64) {
 		strokePath(s, boxPath(u.X(x), u.Y(y), 180*S, 240*S, 14*S, false), 2.5*S, rc, false)
 		u.drawEmblem(s, modEmblem(m), x+90, y+90, 96, 1)
 		u.text(s, m.Name, fSerif, 20, x+90, y+160, cWhite, alignCenter)
-		u.text(s, strings.ToUpper(rarityNames[m.Rarity]), fBold, 13, x+90, y+196, rc, alignCenter)
+		u.text(s, strings.ToUpper(rarityNames[m.Rarity]), fBold, 14, x+90, y+196, rc, alignCenter)
 	}
 	// fusion equation
 	cy := iy + 470.0

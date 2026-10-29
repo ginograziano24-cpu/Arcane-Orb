@@ -386,16 +386,16 @@ func (g *Game) dressRuins(B *Batch, L *Level, e *envState, t, side float64, r *r
 
 func (g *Game) dressClouds(B *Batch, L *Level, e *envState, t, side float64, r *rand.Rand, low bool) {
 	// a rainbow that strengthens as the chamber is won
-	ra := 0.22 + 0.5*e.prog
+	ra := 0.04 + 0.6*e.prog*e.prog
 	cols := []color.RGBA{{255, 90, 90, 255}, {255, 170, 60, 255}, {255, 240, 90, 255}, {110, 230, 120, 255}, {90, 170, 255, 255}, {170, 110, 255, 255}}
 	for bi, c := range cols {
-		R := 44.0 - float64(bi)*1.7
+		R := 38.0 - float64(bi)*1.5
 		for k := 0; k < 24; k++ {
 			a0, a1 := math.Pi*float64(k)/24, math.Pi*float64(k+1)/24
-			p0 := V3{side*20 + math.Cos(a0)*R, math.Sin(a0)*R - 8, 88}
-			p1 := V3{side*20 + math.Cos(a1)*R, math.Sin(a1)*R - 8, 88}
-			q0 := V3{side*20 + math.Cos(a0)*(R-1.7), math.Sin(a0)*(R-1.7) - 8, 88}
-			q1 := V3{side*20 + math.Cos(a1)*(R-1.7), math.Sin(a1)*(R-1.7) - 8, 88}
+			p0 := V3{side*20 + math.Cos(a0)*R, math.Sin(a0)*R - 7, 72}
+			p1 := V3{side*20 + math.Cos(a1)*R, math.Sin(a1)*R - 7, 72}
+			q0 := V3{side*20 + math.Cos(a0)*(R-1.5), math.Sin(a0)*(R-1.5) - 7, 72}
+			q1 := V3{side*20 + math.Cos(a1)*(R-1.5), math.Sin(a1)*(R-1.5) - 7, 72}
 			B.Quad([4]V3{p0, p1, q1, q0}, sprWhite, alpha(c, ra), [4]float32{1, 1, 1, 1}, false) // alpha, not additive: the sky is too bright to add onto
 		}
 	}

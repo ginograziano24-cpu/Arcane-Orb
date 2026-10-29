@@ -145,7 +145,7 @@ func (g *Game) drawLeaderboard(s *ebiten.Image, x, y, w float64) {
 	u.glowLine(s, x+30, x+w-30, y+44, 1, rgba(196, 160, 92, 255), 0.6)
 	cy := y + 56
 	for _, sc := range secs {
-		u.text(s, sc.title, fBold, 13, x+18, cy+6, rgba(190, 160, 255, 255), alignLeft)
+		u.text(s, sc.title, fBold, 15, x+18, cy+6, rgba(190, 160, 255, 255), alignLeft)
 		cy += 30
 		if len(sc.rows) == 0 {
 			u.text(s, sc.empty, fReg, 15, x+18, cy+4, cDim, alignLeft)
@@ -180,11 +180,11 @@ func (g *Game) drawLeaderboard(s *ebiten.Image, x, y, w float64) {
 		cy += 6
 	}
 	if !steamOn {
-		u.text(s, "World and friend ranks appear on Steam", fReg, 13, x+w/2, cy, cDim, alignCenter)
+		u.text(s, "World and friend ranks appear on Steam", fReg, 15, x+w/2, cy, cDim, alignCenter)
 		cy += 26
 	}
 	if sealed {
-		u.text(s, "Finish the story to unlock Endless", fReg, 13, x+w/2, cy, ca(gold, 0.75), alignCenter)
+		u.text(s, "Finish the story to unlock Endless", fReg, 15, x+w/2, cy, ca(gold, 0.75), alignCenter)
 	}
 	if clk {
 		g.codexTab = 4

@@ -139,7 +139,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 				u.icon(screen, icShield, x, 101, 26, 1)
 				x -= 30
 			}
-			u.text(screen, "BARRIER", fBold, 14, x+8, 93, ca(rgba(190, 172, 255, 255), 0.9), alignRight)
+			u.text(screen, "BARRIER", fBold, 15, x+8, 93, ca(rgba(190, 172, 255, 255), 0.9), alignRight)
 		}
 	}
 
@@ -152,7 +152,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		sub += "   ·   seed " + itoa(int(L.Data.Seed%100000000))
 	}
 	tW := u.measure(title, fSerif, 30)
-	nw := u.measure(node, fBold, 14) + 26
+	nw := u.measure(node, fBold, 15) + 26
 	rowW := tW + 14 + nw
 	pw := math.Max(440, math.Max(rowW, u.measure(sub, fReg, 16))+110)
 	u.frame(screen, 960-pw/2, 16, pw, 82, 0.9)
@@ -162,7 +162,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	chip := boxPath(u.X(tx+tW+14), u.Y(32), nw*S, 24*S, 12*S, false)
 	fillPath(screen, chip, ca(nc, 0.32), ca(darken(nc, 0.5), 0.32), vgrad(u.Y(32), u.Y(56)), false)
 	strokePath(screen, chip, 1.5*S, ca(nc, 0.9), false)
-	u.text(screen, node, fBold, 14, tx+tW+14+nw/2, 35, lighten(nc, 0.4), alignCenter)
+	u.text(screen, node, fBold, 15, tx+tW+14+nw/2, 35, lighten(nc, 0.4), alignCenter)
 	u.text(screen, sub, fReg, 16, 960, 66, cDim, alignCenter)
 	ty := 108.0
 	if L.Boss == nil {
@@ -182,8 +182,13 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	// ---- combo (top-right)
 	edge(1)
 	if L.Combo >= 3 {
+		if L.Combo > g.comboPrev {
+			g.comboPop = 1
+		}
 		g.comboShown = L.Combo
 	}
+	g.comboPrev = L.Combo
+	g.comboPop = math.Max(0, g.comboPop-dt*7)
 	ck := u.anim("hudcombo", L.Combo >= 3, 10)
 	if ck > 0.01 {
 		heat := math.Min(1, float64(g.comboShown)/40)
@@ -193,7 +198,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		u.frame(screen, x, 18, w, 104, 0.92*ck)
 		u.text(screen, "COMBO", fBold, 17, x+28, 34, ca(lighten(th.Accent, 0.2), ck), alignLeft)
 		pulse := 1 + 0.07*math.Sin(L.T*14)*heat
-		size := 56 * pulse
+		size := 56 * (pulse + 0.22*g.comboPop*g.comboPop)
 		num := itoa(g.comboShown)
 		nW := u.measure(num, fTitle, size)
 		u.textOutlined(screen, num, fTitle, size, x+w-26, 24-(size-56)*0.6, ca(c, ck), alignRight)
@@ -448,8 +453,8 @@ func (g *Game) drawPassive(screen *ebiten.Image, L *Level) {
 		drawSprite(screen, sprSoft, u.X(22-20), u.Y(y-40), (w+40)*u.S, 80*u.S, ca(col, 0.15+0.15*p), true)
 	}
 	u.drawEmblem(screen, glyphImage(gl, col), 50, y, 34, 1)
-	u.text(screen, label, fBold, 15, 74, y-19, lighten(col, 0.35), alignLeft)
-	u.text(screen, val, fBold, 14, 22+w-16, y-19, cWhite, alignRight)
+	u.text(screen, label, fBold, 16, 74, y-20, lighten(col, 0.35), alignLeft)
+	u.text(screen, val, fBold, 16, 22+w-16, y-20, cWhite, alignRight)
 	u.meter(screen, 74, y+4, w-92, frac, col)
 }
 
