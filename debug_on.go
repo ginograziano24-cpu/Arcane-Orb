@@ -105,6 +105,21 @@ func debugKeys(g *Game) {
 			c.Life = 60
 		}
 	}
+	if L := g.level; L != nil {
+		if want("thief") {
+			L.dropPower(0, 18, true)
+			L.spawnThief(L.Drops[len(L.Drops)-1])
+		}
+		if want("mason") {
+			L.spawnMason()
+		}
+		if want("bomber") {
+			L.spawnBomber()
+		}
+		if want("wander") {
+			L.spawnWanderer()
+		}
+	}
 	if want("nextworld") && g.level != nil {
 		forceWorld = (forceWorld + 1) % NumWorlds
 		g.level = g.newLevel(NCombat, g.rng.Int63())

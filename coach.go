@@ -143,6 +143,9 @@ var coachTips = map[string]coachTip{
 	"curse":   {"curse", "Cursed", "Curses weaken you until something lifts them. Look for events and items that cleanse them.", "mask", false},
 	"waves":   {"waves", "Waves and heat", "This chamber comes in waves: when one is nearly gone the rest crumble and the next drops in.\n\nThe formation creeps a row closer when the ADVANCE gauge under the title fills. Bricks that reach the red line near your paddle smash for damage.\n\nHEAT is how strong your build has grown this world. Each point toughens the bricks and hurries the advance.", "burst", false},
 	"critter": {"critter", "Critters", "Little creatures wander the open floor. Hit one with the orb and it bursts into coins, sometimes a power-up. The golden ones are rare, quick and worth far more.", "coin", false},
+	"thief":   {"thief", "Stop, thief!", "A Pilferer is after that power-up. If it grabs one it runs for the wall: hit it with the orb and it drops everything it stole.", "coin", false},
+	"mason":   {"mason", "The Mason", "This little builder lays fresh bricks in front of the formation. Hit it with the orb to send it packing, with a few coins for your trouble.", "anvil", false},
+	"bomber":  {"bomber", "Bombs away", "A bird is flying over the bricks with a bomb. Hit it with the orb while it is over a crowd of bricks and the bomb drops right there.", "bomb", false},
 	"cache":   {"cache", "Rune cache", "Bricks sometimes drop a rune cache. Catch it with the paddle and the fight stops while you choose an item, so your build grows during a chamber as well as after it.", "gem", false},
 	"boss":    {"boss", "The Guardian", "Its armour shrugs off the orb. Strike the glowing core to wound it; the core moves after a few hits, so keep chasing it.", "crown", false},
 }

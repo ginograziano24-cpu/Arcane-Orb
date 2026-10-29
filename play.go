@@ -275,6 +275,7 @@ type Level struct {
 	eruptDepth      int     // guards chained eruptions
 	Critters        []*Critter
 	critT           float64 // seconds to the next critter
+	dropsSeen       int     // capsules on the board last frame (thieves watch for new ones)
 	critters        int     // critters popped this chamber
 }
 

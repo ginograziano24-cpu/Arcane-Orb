@@ -15,6 +15,7 @@ import (
 // Guardian fights have none.
 
 type Critter struct {
+	Kind    int     // critWander, critThief, critMason, critBomber (critters2.go)
 	X, Z, H float64 // position and heading (radians, 0 = +Z)
 	Speed   float64
 	T, Life float64
@@ -25,6 +26,14 @@ type Critter struct {
 	popped  bool
 	enter   float64 // 0..1 fade/scale in
 	scareT  float64 // brief dash after a near miss
+
+	carry   []Power // thief: what it has stolen
+	fleeing bool    // thief/mason: heading for the edge
+	tr, tc  int     // mason: the cell it is building on
+	buildT  float64 // mason: progress on the current brick
+	built   int
+	vx      float64 // bomber: flight speed along x
+	z0      float64 // bomber: flight line
 }
 
 const critterR = 0.95
@@ -73,6 +82,11 @@ func (L *Level) updateCritters(dt float64) {
 			L.spawnCritter()
 		}
 	}
+	// a fresh capsule sometimes brings a Pilferer running
+	if n := len(L.Drops); n > L.dropsSeen && !L.Cleared && !L.hasCritter(critThief) && L.rng.Float64() < 0.2 {
+		L.spawnThief(L.Drops[n-1])
+	}
+	L.dropsSeen = len(L.Drops)
 	z0, z1, bandOK := L.critterBand()
 	for i := 0; i < len(L.Critters); i++ {
 		c := L.Critters[i]
@@ -84,6 +98,9 @@ func (L *Level) updateCritters(dt float64) {
 				L.Critters = append(L.Critters[:i], L.Critters[i+1:]...)
 				i--
 			}
+			continue
+		}
+		if c.Kind != critWander && L.updateSpecial(c, dt, z0, z1, bandOK) {
 			continue
 		}
 		sp := c.Speed
@@ -120,6 +137,13 @@ func (L *Level) updateCritters(dt float64) {
 }
 
 func (L *Level) spawnCritter() {
+	if L.spawnMischief() {
+		return
+	}
+	L.spawnWanderer()
+}
+
+func (L *Level) spawnWanderer() {
 	z0, z1, ok := L.critterBand()
 	if !ok {
 		return
@@ -162,7 +186,7 @@ func (L *Level) collideCritters(b *Ball) {
 			L.popCritter(c)
 			return
 		}
-		if d < b.R+critterR+1.2 && c.scareT <= 0 {
+		if d < b.R+critterR+1.2 && c.scareT <= 0 && (c.Kind == critWander || c.Kind == critThief && len(c.carry) == 0) {
 			// a near miss startles it into a dash away from the orb
 			c.scareT = 0.6
 			c.H = math.Atan2(-dx, -dz)
@@ -173,6 +197,11 @@ func (L *Level) collideCritters(b *Ball) {
 func (L *Level) popCritter(c *Critter) {
 	g := L.g
 	c.gone, c.popped = 0.35, true
+	if c.Kind != critWander {
+		L.critters++
+		L.popMischief(c)
+		return
+	}
 	col := critterCol(L.Biome.ID, c.Golden)
 	L.sparks(V3{c.X, 0.7, c.Z}, 18, col, 6)
 	L.Rings = append(L.Rings, &Ring{X: c.X, Z: c.Z, MaxR: 1.8, Life: 0.3, Max: 0.3, Col: col})
@@ -233,9 +262,15 @@ func (g *Game) drawCritters(B *Batch, L *Level) {
 			continue
 		}
 		s *= critterSize
-		B.DecalBelow(c.X+0.15, c.Z-0.15, 0.02, 1.4*s, 1.1*s, sprShadow, color.RGBA{0, 0, 0, 150})
+		if c.Kind != critBomber {
+			B.DecalBelow(c.X+0.15, c.Z-0.15, 0.02, 1.4*s, 1.1*s, sprShadow, color.RGBA{0, 0, 0, 150})
+		}
 		rot := rotXYZ(0, c.H, 0)
 		at := func(x, y, z float64) V3 { return V3{c.X, 0, c.Z}.Add(rot.Mul(V3{x * s, y * s, z * s})) }
+		if c.Kind != critWander {
+			g.drawMischief(B, L, c, s, rot, at)
+			continue
+		}
 		col := critterCol(L.Biome.ID, c.Golden)
 		emis := float32(0)
 		if c.Golden {
