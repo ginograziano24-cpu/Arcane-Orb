@@ -32,6 +32,20 @@ DUELS  -  1v1 with a friend
     directly over the internet with a room code (host forwards TCP 7777)
   - See PLAYTEST.txt for the friends build
 
+CRITTERS
+  - Wanderers burst into coins (golden ones pay far more)
+  - Pilferers run down falling power-ups and make off with them: hit
+    one and it drops everything it stole
+  - Masons (from world 2) lay up to three new bricks in front of the
+    formation until the orb sends them packing
+  - Bombers fly over the bricks with a bomb: hit one over a crowd of
+    bricks and the bomb drops right there
+
+LANGUAGES
+  - English, Simplified Chinese, Japanese, Russian, Spanish (Spain),
+    Brazilian Portuguese and German. Settings > Access > Language; the
+    first run follows Steam's game language or your system's
+
 ORIGIN MASTERY  -  levels 1 to 10 for every origin
   - Each origin earns its own mastery XP from your runs (the same XP
     that raises your Arcane Rank). See it under the origin list

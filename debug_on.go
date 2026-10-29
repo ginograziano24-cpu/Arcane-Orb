@@ -4,6 +4,7 @@ package main
 
 import (
 	"math/rand"
+	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -66,6 +67,15 @@ func debugPre(g *Game) {
 				g.save.MOpts[ar.ID] = 15
 				g.save.Unlocked[ar.ID] = true
 			}
+			continue
+		}
+		if strings.HasPrefix(a, "lang:") {
+			g.setLang(a[5:])
+			continue
+		}
+		if a == "tips" {
+			g.settings.NoTips = false
+			g.save.Hints = map[string]bool{"level": true, "waves": true, "critter": true, "map": true, "reward": true, "cache": true}
 			continue
 		}
 		if a == "notips" {
