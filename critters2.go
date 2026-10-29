@@ -390,8 +390,23 @@ func (g *Game) drawMischief(B *Batch, L *Level, c *Critter, s float64, rot Mat3,
 	case critBomber: // a bird with a fizzing bomb in its claws
 		k := s / critterSize
 		p := V3{c.X, 2.0 + math.Sin(c.T*5)*0.12, c.Z}
-		B.Billboard(p, 3.2*k, sprSoft, alpha(lighten(col, 0.3), 0.3), true)
-		flapBird(B, p, math.Atan2(0, c.vx), c.T, col, 4.2*k)
+		B.Billboard(p, 3.6*k, sprSoft, alpha(lighten(col, 0.3), 0.35), true)
+		// the bird: a body and two beating wings, lit so it reads over any floor
+		dir := V3{math.Copysign(1, c.vx), 0, 0}
+		perp := V3{0, 0, 1}
+		bs := 3.4 * k
+		em := float32(0.35)
+		if L.Biome.Neon || L.Biome.ID == WCaverns {
+			em = 0.85 // dark worlds: let it glow like everything else there
+		}
+		flap := math.Sin(c.T*9) * 0.8
+		B.OBox(p, dir.Mul(0.32*bs), V3{0, 0.11 * bs, 0}, perp.Mul(0.12*bs), col, em)
+		B.OBox(p.Add(dir.Mul(0.36*bs)).Add(V3{0, 0.05 * bs, 0}), dir.Mul(0.1*bs), V3{0, 0.09 * bs, 0}, perp.Mul(0.09*bs), lighten(col, 0.15), em)
+		B.OBox(p.Add(dir.Mul(0.5*bs)), dir.Mul(0.08*bs), V3{0, 0.025 * bs, 0}, perp.Mul(0.03*bs), color.RGBA{255, 190, 60, 255}, 0.4)
+		for _, sg := range []float64{-1, 1} {
+			w := perp.Mul(sg * 0.42 * bs).Add(V3{0, flap * 0.3 * bs, 0})
+			B.OBox(p.Add(w), w, V3{0, 0.025 * bs, 0}, dir.Mul(0.18*bs), darken(col, 0.85), em)
+		}
 		bp := p.Add(V3{0, -0.75, 0})
 		B.Billboard(bp, 1.1*k, sprSphere, color.RGBA{40, 36, 44, 255}, false)
 		if math.Mod(c.T*6, 1) < 0.5 {
@@ -400,6 +415,6 @@ func (g *Game) drawMischief(B *Batch, L *Level, c *Critter, s float64, rot Mat3,
 		B.DecalBelow(c.X, c.Z, 0.02, 1.6, 1.0, sprShadow, color.RGBA{0, 0, 0, 110})
 		// a target ring hints where the bomb would land
 		rr := 1.8 * CellW * 1.9
-		B.Decal(c.X, c.Z, 0.04, rr, rr, sprRing, alpha(color.RGBA{255, 170, 80, 255}, 0.18+0.1*math.Sin(c.T*6)), true)
+		B.Decal(c.X, c.Z, 0.04, rr, rr, sprRing, alpha(color.RGBA{255, 170, 80, 255}, 0.35+0.15*math.Sin(c.T*6)), true)
 	}
 }

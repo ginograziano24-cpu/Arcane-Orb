@@ -113,8 +113,8 @@ func debugKeys(g *Game) {
 		if want("mason") {
 			L.spawnMason()
 		}
-		if want("bomber") {
-			L.spawnBomber()
+		if want("bomber") && L.spawnBomber() {
+			L.Critters[len(L.Critters)-1].X = 3 // straight into view for captures
 		}
 		if want("wander") {
 			L.spawnWanderer()
