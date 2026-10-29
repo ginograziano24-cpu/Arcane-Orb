@@ -111,6 +111,18 @@ game sets `steam_display` to one of these tokens and fills `%class%`,
 | `#Status_Daily` | Daily Challenge · Berserker · Act 1 |
 | `#Status_Challenge` | Glass Paddle · Berserker · Act 2 |
 
+## 5d. Duels (Steam lobbies)
+
+Duels use ISteamMatchmaking public lobbies (data keys `aorb=1`,
+`aorbv=<protocol>`, `code=<6 letters>`, `name`) found with string
+filters and a worldwide distance filter, and ISteamNetworkingMessages on
+channel 0 for traffic (Steam Datagram Relay, so no port forwarding). All
+requests are async API calls polled through ISteamUtils; no callbacks
+are registered. Until the real App ID exists, ship `steam_appid.txt`
+containing `480` (Steam's shared test app): the game detects it and
+leaves achievements and leaderboards alone. Remove the file for the
+real release and set `steamAppID` in steam_windows.go.
+
 ## 5c. Crash reports
 
 If the game ever crashes it writes `crash.log` next to the save

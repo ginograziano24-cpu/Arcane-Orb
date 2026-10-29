@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -26,6 +27,7 @@ type steamBridge struct {
 	shutdown                 *syscall.LazyProc
 	friends                  uintptr
 	dll                      *syscall.LazyDLL
+	testApp                  bool // running as Steam's shared test app (480)
 }
 
 // iface returns the first Steam interface accessor that exists (newest
@@ -81,11 +83,17 @@ func steamInit() (relaunch bool) {
 	} else {
 		return false
 	}
+	// a playtest build runs as Steam's shared test app; keep our
+	// achievements and leaderboards off it
+	test := false
+	if b, err := os.ReadFile(filepath.Join(filepath.Dir(exe), "steam_appid.txt")); err == nil && strings.TrimSpace(string(b)) == "480" {
+		test = true
+	}
 	us := iface(dll, "SteamAPI_SteamUserStats_v013", "SteamAPI_SteamUserStats_v012")
 	ut := iface(dll, "SteamAPI_SteamUtils_v011", "SteamAPI_SteamUtils_v010")
 	fr := iface(dll, "SteamAPI_SteamFriends_v018", "SteamAPI_SteamFriends_v017")
 	steam = steamBridge{
-		ok: us != 0, stats: us, utils: ut, friends: fr, dll: dll,
+		ok: us != 0, stats: us, utils: ut, friends: fr, dll: dll, testApp: test,
 		runCallbacks: dll.NewProc("SteamAPI_RunCallbacks"),
 		setAch:       dll.NewProc("SteamAPI_ISteamUserStats_SetAchievement"),
 		storeStats:   dll.NewProc("SteamAPI_ISteamUserStats_StoreStats"),
@@ -131,7 +139,7 @@ func steamTick() {
 
 // steamUnlock reports an achievement to Steam (no-op without Steam).
 func steamUnlock(id string) {
-	if !steam.ok {
+	if !steam.ok || steam.testApp {
 		return
 	}
 	b := cstr(id)

@@ -1,0 +1,39 @@
+ARCANE ORB  -  friends playtest build
+=====================================
+
+WHAT'S IN THE FOLDER
+  ArcaneOrb.exe ...... the game (no install; just run it)
+  steam_api64.dll .... Valve's Steamworks library (redistributable)
+  steam_appid.txt .... "480": until Arcane Orb has its own Steam page,
+                       the game runs as Steam's free test app, so Steam
+                       may show you as playing "Spacewar". That's normal.
+                       Achievements and leaderboards are switched off in
+                       this mode.
+
+Windows may warn that the app is from an unknown publisher (it isn't
+code-signed yet): choose "More info" then "Run anyway".
+
+DUELS (1v1)
+  Main menu > Duel a Friend.
+  Best of three races. Both players get the same chambers, the same
+  origin (the host picks) and the same items. First to clear both waves
+  takes the round. You can see your rival's board on the right and a
+  race bar under the chamber title. Esc opens a forfeit menu (the race
+  keeps running).
+
+  With Steam running (easiest, works anywhere, no port forwarding):
+    Host: "Host a room" and read your 6-letter code to your friend.
+    Join: type the code and press Join, or pick the room from
+          "Open rooms".
+
+  Without Steam:
+    Same network: one player clicks "Host directly"; the other sees
+      the room under "On your network" and clicks Join (or types the
+      LAN code). Allow the game through Windows Firewall when asked.
+    Over the internet: the host forwards TCP port 7777 on their router
+      and shares the "Internet code"; the guest types it and joins.
+
+REPORTING BUGS
+  If the game crashes it writes crash.log to
+  %APPDATA%\ArcaneOrb\crash.log  -  please send that file along with
+  what you were doing. Saves live in the same folder.

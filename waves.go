@@ -85,6 +85,8 @@ func (L *Level) setupWaves() {
 		L.waves = 1
 	case L.Node == NElite:
 		L.waves = 3
+	case r.Duel:
+		L.waves = 2 // every duel round is two waves
 	case r.ActDepth <= 1:
 		L.waves = 1 // a world opens with a short chamber
 	}
@@ -311,8 +313,8 @@ func (L *Level) crumbleColumn(r, c int) {
 // into the wave it breaks loose.
 func (L *Level) planCache() {
 	L.cacheAt = -1
-	if L.Node == NBoss || L.g.run.SeedCode == "MENU" {
-		return
+	if L.Node == NBoss || L.g.run.SeedCode == "MENU" || L.g.run.Duel {
+		return // duels stay equal: no rune caches
 	}
 	p := 0.72
 	if L.Node == NElite {

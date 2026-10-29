@@ -245,6 +245,7 @@ type Run struct {
 	EndlessStart bool     // started from the Endless menu (no story)
 	FinalScore   int
 	Assisted     bool // played with the speed assist (kept off the global boards)
+	Duel         bool // a duel round: no Sanctum, no lives lost, no saving
 	xpPaid       int  // XP already awarded (victory before endless)
 	shardsPaid   int
 	statsPaid    [3]int // bricks, bosses, elites already added to the save
@@ -316,6 +317,9 @@ func baseStats() Stats {
 }
 
 func (r *Run) Recompute(meta *SaveData) {
+	if r.Duel {
+		meta = &neutralMeta // duels are equal: no Sanctum blessings
+	}
 	s := baseStats()
 	applyMeta(&s, meta, r.Asc)
 	if l := r.Loop(); l > 0 {

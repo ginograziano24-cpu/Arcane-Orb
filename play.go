@@ -283,6 +283,9 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 	if node == NBoss {
 		wi = acts[r.AI()].Signature
 	}
+	if r.Duel {
+		wi = int(uint64(seed)>>5) % NumWorlds // each duel round visits a different world
+	}
 	r.LastWorld = wi
 	g.snd.World = wi
 	b, vis := levelLook(&worlds[wi], seed)
@@ -1775,6 +1778,14 @@ func (L *Level) loseBall() {
 func (L *Level) hurt(dmg float64, label string) {
 	g := L.g
 	r := g.run
+	if r.Duel {
+		// no health in a duel: a hit stuns the paddle instead
+		if L.paddleGone <= 0 {
+			L.explodePaddle()
+		}
+		L.text(V3{L.PaddleX, 1.5, PaddleZ + 2}, label, color.RGBA{255, 100, 100, 255}, true)
+		return
+	}
 	r.HP -= dmg
 	L.hurtFlash = 1
 	L.Shake = math.Max(L.Shake, 0.6)

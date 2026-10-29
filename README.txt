@@ -20,6 +20,18 @@ CONTROLS
   LB / RB to turn pages and switch Codex tabs. Keyboard menus work the
   same way with arrows / WASD, Enter or Space, Esc, and Q / E.
 
+DUELS  -  1v1 with a friend
+  - Main menu > Duel a Friend. Best of three races through the same
+    seeded chambers with the same origin (the host picks) and an
+    identical item kit that grows each round. No lives or health: a
+    dropped orb or a crushing costs you time while the paddle reforms
+  - Watch your rival's board live on the right, and both progress bars
+    under the chamber title
+  - Connect through Steam (6-letter room code or the open-room list, no
+    port forwarding), on your LAN (rooms appear automatically), or
+    directly over the internet with a room code (host forwards TCP 7777)
+  - See PLAYTEST.txt for the friends build
+
 NEW IN THIS BUILD  -  longer chambers, three fresh worlds
   - Every world is a fresh start: items, relics, fusions, scrolls and
     gold reset when you reach a new world, and you climb again from

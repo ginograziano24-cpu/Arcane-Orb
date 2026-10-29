@@ -12,6 +12,10 @@ func (g *Game) updatePresence() {
 	}
 	class := r.Arch.Name
 	act := itoa(r.Act)
+	if d := g.duel; d != nil && r.Duel {
+		steamPresence("#Status_Duel", "round", itoa(d.round), "opponent", fallback(d.oppName, "a friend"))
+		return
+	}
 	switch {
 	case g.state == StLevel && g.level != nil && g.level.Boss != nil:
 		steamPresence("#Status_Boss", "class", class, "boss", g.level.Biome.BossName)

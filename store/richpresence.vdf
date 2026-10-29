@@ -9,5 +9,6 @@
 		"#Status_Endless"	"%class% · Endless, loop %loop%"
 		"#Status_Daily"		"Daily Challenge · %class% · Act %act%"
 		"#Status_Challenge"	"%challenge% · %class% · Act %act%"
+		"#Status_Duel"		"Dueling %opponent% · Round %round%"
 	}
 }

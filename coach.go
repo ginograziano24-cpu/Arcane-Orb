@@ -151,7 +151,7 @@ func (g *Game) coach(id string) {
 	if !ok || g.settings.NoTips || g.save.Hints[id] || inputHook != nil {
 		return
 	}
-	if r := g.run; r == nil || r.SeedCode == "MENU" || r.SeedCode == "SIM" || r.SeedCode == "TRAILER" || r.SeedCode == "LIFE" || r.SeedCode == "SAVEME" {
+	if r := g.run; r == nil || r.Duel || r.SeedCode == "MENU" || r.SeedCode == "SIM" || r.SeedCode == "TRAILER" || r.SeedCode == "LIFE" || r.SeedCode == "SAVEME" {
 		return
 	}
 	if t.Basic && g.save.Runs > 1 { // Runs counts the run in progress

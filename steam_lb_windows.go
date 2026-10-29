@@ -71,7 +71,7 @@ func lbCall(name string, args ...uintptr) uintptr {
 	return r
 }
 
-func steamLBAvailable() bool { return steam.ok && steam.utils != 0 }
+func steamLBAvailable() bool { return steam.ok && steam.utils != 0 && !steam.testApp }
 
 // steamLBFind asks for the board by name (created on first use).
 func steamLBFind(name string) {

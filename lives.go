@@ -75,6 +75,14 @@ func (L *Level) gainLife() {
 func (L *Level) loseLife(why string) {
 	g := L.g
 	r := g.run
+	if r.Duel {
+		// in a duel a drop costs time, not the match: the paddle shatters
+		// and reforms
+		L.explodePaddle()
+		L.text(V3{L.PaddleX, 2.2, PaddleZ + 2.5}, why, color.RGBA{255, 110, 120, 255}, true)
+		g.snd.Play("lose")
+		return
+	}
 	r.Lives--
 	r.rc().LivesLost++
 	r.log("life", "Lost a life ("+why+")", "heart")

@@ -19,6 +19,9 @@ func (g *Game) textScale() float64 {
 
 // gameSpeed is the chamber speed assist (1 = normal).
 func (g *Game) gameSpeed() float64 {
+	if g.duel != nil {
+		return 1 // both racers play at full speed
+	}
 	s := g.settings.GameSpeed
 	if s <= 0 || s > 1 {
 		return 1

@@ -88,7 +88,7 @@ func (g *Game) saveRun(phase string, node int) {
 // snapRun serialises the run (nil when there's nothing worth keeping).
 func (g *Game) snapRun(phase string, node int) []byte {
 	r := g.run
-	if r == nil || r.SeedCode == "MENU" || r.SeedCode == "SIM" || r.SeedCode == "TRAILER" || r.SeedCode == "LIFE" || r.FinalScore != 0 && !r.Endless {
+	if r == nil || r.Duel || r.SeedCode == "MENU" || r.SeedCode == "SIM" || r.SeedCode == "TRAILER" || r.SeedCode == "LIFE" || r.FinalScore != 0 && !r.Endless {
 		return nil
 	}
 	s := savedRun{Version: 1, Phase: phase, Node: node, Endless: g.endlessMode, DailyMode: g.daily,

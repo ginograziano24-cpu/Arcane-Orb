@@ -34,6 +34,7 @@ const (
 	StStory
 	StChallenge
 	StCache // a rune cache's choice, mid-chamber
+	StDuel  // duel rooms, lobby and results
 )
 
 type Input struct {
@@ -121,6 +122,7 @@ type Game struct {
 	tooltip      string
 	gloss        *glossReq
 	cacheOffers  []*Mod
+	duel         *duel
 	bindCache    map[string]*bindAction
 	rebinding    string // "action:slot" waiting for a key or button
 	restartHold  float64
@@ -332,10 +334,11 @@ func (g *Game) Update() error {
 	if g.updateCoach(dt) {
 		return nil // a first-time tip is up; everything waits
 	}
+	g.updateDuel(dt)
 
 	// music
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StSettings, StChallenge:
+	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StSettings, StChallenge, StDuel:
 		if g.run == nil || g.state != StSettings || g.prevState == StMenu {
 			g.snd.SetTrack(3)
 		}
@@ -373,7 +376,16 @@ func (g *Game) Update() error {
 		}
 	case StLevel:
 		if g.pausePressed() {
-			g.setState(StPause)
+			if g.duel != nil {
+				g.duel.menuOpen = !g.duel.menuOpen // a duel never pauses
+			} else {
+				g.setState(StPause)
+				return nil
+			}
+		}
+		if g.duel != nil && g.duel.menuOpen {
+			// the overlay takes the clicks; the race runs on
+			g.level.Update(dt, Input{UseKeys: true})
 			return nil
 		}
 		in := g.readInput()
@@ -383,13 +395,15 @@ func (g *Game) Update() error {
 			g.scrollInput(g.level)
 		}
 		debugKeys(g)
-		if g.updateRestartHold(dt) {
+		if g.duel == nil && g.updateRestartHold(dt) {
 			return nil
 		}
 		if g.gameSpeed() < 1 {
 			g.run.Assisted = true
 		}
-		g.level.Update(dt*g.gameSpeed(), in)
+		if !g.duelFrozen() {
+			g.level.Update(dt*g.gameSpeed(), in)
+		}
 		g.updateHero(g.level, dt)
 		if L := g.level; g.state == StLevel && L.pendingPick > 0 && L.gameOverT <= 0 {
 			g.openCache()
@@ -401,7 +415,7 @@ func (g *Game) Update() error {
 				g.heartT = 0.55 + 2*r.HP/r.Stats.MaxHP
 			}
 		}
-		if g.state == StLevel && g.level.Cleared && g.level.clearShown() > 1.2 && (g.ui.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace) || g.level.clearShown() > 4) {
+		if g.duel == nil && g.state == StLevel && g.level.Cleared && g.level.clearShown() > 1.2 && (g.ui.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace) || g.level.clearShown() > 4) {
 			g.afterLevel()
 		}
 	case StMap:
@@ -410,6 +424,8 @@ func (g *Game) Update() error {
 		if g.pausePressed() || padJust(ebiten.StandardGamepadButtonRightRight) {
 			g.setState(StLevel)
 		}
+	case StDuel:
+		g.updateDuelScreen()
 	case StSettings:
 		if g.rebinding != "" {
 			g.captureBind()
@@ -806,7 +822,7 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 		act = g.run.Act
 	}
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StChallenge:
+	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StChallenge, StDuel:
 		g.frontT += ddt
 		switch g.state {
 		case StMenu:
@@ -833,6 +849,9 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 		g.drawWorldOverlay(screen, g.level, k)
 		if !hideHUD || g.level.introT > 0 {
 			g.drawHUD(screen, g.level)
+		}
+		if g.duel != nil && g.state == StLevel {
+			g.drawDuelHUD(screen, g.level)
 		}
 	case StSettings:
 		if g.prevState == StPause && g.level != nil {
@@ -886,6 +905,8 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 		g.drawSettings(screen)
 	case StActIntro:
 		g.drawActIntro(screen)
+	case StDuel:
+		g.drawDuelScreen(screen)
 	case StCache:
 		g.drawCache(screen)
 	case StStory:
@@ -1045,6 +1066,7 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 			g.challengeSel = ""
 			g.setState(StArch)
 		}, true},
+		{"Duel a Friend", func() { g.openDuel() }, true},
 		{challengeLabel, func() {
 			if g.challengesOpen() {
 				g.setState(StChallenge)
@@ -1059,9 +1081,9 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 		{"Settings", func() { g.setState(StSettings) }, true},
 		{"Quit", func() { g.quit = true }, true},
 	}...)
-	y, step, off := 284.0, 62.0, 0
+	y, step, off := 274.0, 58.0, 0
 	if g.savedRun != nil {
-		y, step, off = 268, 58, 1
+		y, step, off = 258, 54, 1
 	}
 	g.menuQuit = "menu" + itoa(len(items)-1)
 	for i, it := range items {
@@ -1069,7 +1091,7 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 			it.do()
 		}
 		y += step
-		if i == off-1 || i == 4+off || i == 7+off {
+		if i == off-1 || i == 5+off || i == 8+off {
 			y += 12 // breathing room between groups
 		}
 	}
