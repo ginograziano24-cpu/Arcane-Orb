@@ -480,6 +480,7 @@
 "Dig (lose 12 health): take what they carried": "掘る（HP -12）：持ち物をいただく",
 "Dimmed Fortune": "陰った運",
 "Direct connections need the desktop build.": "ダイレクト接続にはデスクトップ版が必要です。",
+"DirectX 12 renderer (takes effect next launch)": "DirectX 12 レンダラー（次回起動時に反映）",
 "Discover every upgrade and relic.": "すべての強化とレリックを発見する。",
 "Discovered %d / %d": "発見 %d / %d",
 "Display": "画面",

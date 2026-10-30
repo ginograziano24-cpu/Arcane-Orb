@@ -479,6 +479,7 @@
 "Dig (lose 12 health): take what they carried"
 "Dimmed Fortune"
 "Direct connections need the desktop build."
+"DirectX 12 renderer (takes effect next launch)"
 "Discover every upgrade and relic."
 "Discovered %d / %d"
 "Display"

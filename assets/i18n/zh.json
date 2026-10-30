@@ -480,6 +480,7 @@
 "Dig (lose 12 health): take what they carried": "挖掘（损失 12 生命）：拿走他们的遗物",
 "Dimmed Fortune": "黯淡的运气",
 "Direct connections need the desktop build.": "直接连接需要桌面版。",
+"DirectX 12 renderer (takes effect next launch)": "DirectX 12 渲染器（下次启动时生效）",
 "Discover every upgrade and relic.": "发现所有强化和遗物。",
 "Discovered %d / %d": "已发现 %d / %d",
 "Display": "显示",

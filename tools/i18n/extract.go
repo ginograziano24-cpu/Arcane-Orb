@@ -23,7 +23,7 @@ import (
 var skipFiles = map[string]bool{"balance.go": true, "capture_on.go": true, "capture_off.go": true, "debug_on.go": true, "debug_off.go": true,
 	"debug_js.go": true, "sfx.go": true, "trailer_audio.go": true, "i18n.go": true, "crash_other.go": true,
 	"steam_windows.go": true, "steam_lb_windows.go": true, "steam_other.go": true, "steam_net_other.go": true, "presence.go": true,
-	"orb.go": true, "post.go": true, "skyfx.go": true, "sdf.go": true, "duel_net_native.go": true, "duel_net_js.go": true, "i18n_names.go": true}
+	"orb.go": true, "post.go": true, "skyfx.go": true, "sdf.go": true, "duel_net_native.go": true, "duel_net_js.go": true, "i18n_names.go": true, "models.go": true, "music.go": true}
 
 // calls whose string arguments are never shown to the player
 var skipCalls = map[string]bool{"Errorf": true, "Printf": true, "Println": true, "Fprintf": true, "Fprintln": true, "panic": true, "Play": true,

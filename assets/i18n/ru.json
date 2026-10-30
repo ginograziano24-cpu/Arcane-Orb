@@ -480,6 +480,7 @@
 "Dig (lose 12 health): take what they carried": "Копать (−12 здоровья): забрать то, что у них было",
 "Dimmed Fortune": "Угасшая удача",
 "Direct connections need the desktop build.": "Прямое подключение работает только в версии для ПК.",
+"DirectX 12 renderer (takes effect next launch)": "Рендерер DirectX 12 (вступит в силу при следующем запуске)",
 "Discover every upgrade and relic.": "Откройте все улучшения и реликвии.",
 "Discovered %d / %d": "Открыто %d / %d",
 "Display": "Экран",
