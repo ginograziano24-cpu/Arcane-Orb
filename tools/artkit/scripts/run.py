@@ -38,8 +38,12 @@ def smoke():
 TASKS = {
     "smoke": smoke,
 }
+import importlib
 import backdrops
 TASKS.update(backdrops.TASKS)
+import models
+importlib.reload(models)
+TASKS.update(models.TASKS)
 
 
 def main():

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"runtime"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -159,6 +160,9 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		vs := toggle("vs", "VSync", st.VSync)
 		st.ShowFPS = toggle("fps", "Show FPS", st.ShowFPS)
 		st.CenterHUD = !toggle("edgehud", "Ultrawide: spread the HUD to the screen edges", !st.CenterHUD)
+		if runtime.GOOS == "windows" {
+			st.DX12 = toggle("dx12", "DirectX 12 renderer (takes effect next launch)", st.DX12)
+		}
 		if nwm != wm || vs != st.VSync {
 			st.Fullscreen, st.Borderless, st.VSync = nwm == 0, nwm == 1, vs
 			g.applySettings()

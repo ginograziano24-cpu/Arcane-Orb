@@ -5,6 +5,8 @@ import (
 	"image/color"
 	"math"
 	"math/rand"
+	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -186,6 +188,9 @@ func NewGame() *Game {
 	g := &Game{rng: rand.New(rand.NewSource(time.Now().UnixNano())), last: time.Now(), skyAct: -1}
 	g.save = loadSave()
 	g.settings = &g.save.Settings
+	if g.settings.DX12 && runtime.GOOS == "windows" && os.Getenv("EBITENGINE_DIRECTX") == "" {
+		os.Setenv("EBITENGINE_DIRECTX", "version=12") // read when the graphics driver starts
+	}
 	if steamOnDeck() && g.settings.TextScale == 0 {
 		g.settings.TextScale = 1.15 // a little larger on the Deck's 7" screen
 	}

@@ -104,3 +104,41 @@ func drawModel(B *Batch, name string, pos, scale V3, rot Mat3, tint color.RGBA, 
 	B.Draw(m, pos, scale, rot, tint, emissive)
 	return true
 }
+
+// nominal size the brick models are built at (models.py)
+const brickW, brickH, brickD = 1.88, 0.80, 0.99
+
+var brickModelNames = [NumWorlds]string{WNeon: "brick_neon", WMeadow: "brick_meadow", WCaverns: "brick_caverns", WRuins: "brick_ruins", WClouds: "brick_clouds", WMachine: "brick_machine"}
+
+func brickModel(world int) *Mesh {
+	if world < 0 || world >= NumWorlds {
+		return nil
+	}
+	return model(brickModelNames[world])
+}
+
+var worldModelSuffix = [NumWorlds]string{WNeon: "neon", WMeadow: "meadow", WCaverns: "caverns", WRuins: "ruins", WClouds: "clouds", WMachine: "machine"}
+
+func wallModel(world int) *Mesh {
+	if world < 0 || world >= NumWorlds {
+		return nil
+	}
+	return model("wall_" + worldModelSuffix[world])
+}
+
+func postModel(world int) *Mesh {
+	if world < 0 || world >= NumWorlds {
+		return nil
+	}
+	return model("post_" + worldModelSuffix[world])
+}
+
+// drawCrystal draws a crystal shard of colour col (the modelled shard when
+// it is in the build); the unused colour keeps the old call shape.
+func drawCrystal(B *Batch, col color.RGBA, pos, scale V3, rot Mat3, _ color.RGBA, emis float32) {
+	if m := model("crystal_shard"); m != nil {
+		B.Draw(m, pos, scale, rot, col, emis)
+		return
+	}
+	B.Draw(cached("crystal"+colKey(col), func() *Mesh { return Crystal(col) }), pos, scale, rot, color.RGBA{}, emis)
+}

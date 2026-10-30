@@ -158,10 +158,22 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 			nx, nz = -nx, -nz
 		}
 		steps := int(math.Ceil(ln / 2.2))
+		wm := wallModel(bio.ID)
 		for k := 0; k < steps; k++ {
 			t0, t1 := float64(k)/float64(steps)*ln, float64(k+1)/float64(steps)*ln
 			p0 := [2]float64{a.X + ux*t0, a.Z + uz*t0}
 			p1 := [2]float64{a.X + ux*t1, a.Z + uz*t1}
+			if wm != nil {
+				// the modelled wall section, turned to face the arena
+				mx, mz := (p0[0]+p1[0])/2, (p0[1]+p1[1])/2
+				B.Draw(wm, V3{mx, 0, mz}, V3{(t1 - t0) / 2 * 1.02, 1, 1}, rotXYZ(0, math.Atan2(-nx, -nz), 0), color.RGBA{}, 0)
+				if bio.Neon {
+					B.Quad([4]V3{{p0[0], wallH + 0.01, p0[1]}, {p1[0], wallH + 0.01, p1[1]},
+						{p1[0] - nx*0.2, wallH + 0.01, p1[1] - nz*0.2}, {p0[0] - nx*0.2, wallH + 0.01, p0[1] - nz*0.2}},
+						sprWhite, bio.Trim, [4]float32{1, 1, 1, 1}, true)
+				}
+				continue
+			}
 			fp := [4][2]float64{p0, p1, {p1[0] - nx*1.4, p1[1] - nz*1.4}, {p0[0] - nx*1.4, p0[1] - nz*1.4}}
 			if math.Abs(ux) < 0.01 || math.Abs(uz) < 0.01 {
 				// axis-aligned segments get the textured material
@@ -239,7 +251,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		}
 		s := 0.6
 		B.DecalBelow(rk.X, rk.Z-0.2, 0.02, 1.8, 1.4, sprShadow, color.RGBA{0, 0, 0, 160})
-		B.Box(rk.X-s, 0, rk.Z-s, rk.X+s, 1.1, rk.Z+s, color.RGBA{110, 100, 92, 255}, sprWhite, 0)
+		if !drawModel(B, "rock_fall", V3{rk.X, 0, rk.Z}, v3(1), rotXYZ(rk.Spin, rk.Spin*0.7, 0), color.RGBA{}, 0) {
+			B.Box(rk.X-s, 0, rk.Z-s, rk.X+s, 1.1, rk.Z+s, color.RGBA{110, 100, 92, 255}, sprWhite, 0)
+		}
 		B.Decal(rk.TX, PaddleZ, 0.03, 2, 2, sprRing, alpha(color.RGBA{255, 60, 60, 255}, 0.4), true)
 	}
 	g.drawDangerLine(B, L)
@@ -248,7 +262,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		def := powerDefs[d.P]
 		bob := 0.6 + 0.15*math.Sin(d.T*6)
 		B.DecalBelow(d.X, d.Z-0.2, 0.02, 1.4, 0.8, sprShadow, color.RGBA{0, 0, 0, 140})
-		B.Box(d.X-0.6, bob-0.25, d.Z-0.3, d.X+0.6, bob+0.25, d.Z+0.3, def.Col, sprWhite, 0.25)
+		if !drawModel(B, "capsule", V3{d.X, bob, d.Z}, v3(1), rotXYZ(0, 0, math.Sin(d.T*3)*0.15), def.Col, 0.2) {
+			B.Box(d.X-0.6, bob-0.25, d.Z-0.3, d.X+0.6, bob+0.25, d.Z+0.3, def.Col, sprWhite, 0.25)
+		}
 		B.Billboard(V3{d.X, bob, d.Z}, 2.2, sprSoft, alpha(def.Col, 0.35), true)
 	}
 	// coins
@@ -488,7 +504,18 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	}
 	mat := bio.BrickMat
 	special := b.Kind != levelgen.Basic && b.Kind != levelgen.Steel
+	bm := brickModel(mat)
+	if b.Kind == levelgen.Steel {
+		bm = brickModel(WMachine)
+	}
 	switch {
+	case bm != nil:
+		// the modelled brick, scaled to this brick's size
+		e := emis
+		if bio.Neon {
+			e += 0.12
+		}
+		B.Draw(bm, V3{x, y0, z}, V3{2 * hw / brickW, h / brickH, 2 * hd / brickD}, identity, col, e)
 	case b.Kind == levelgen.Steel:
 		B.BoxTex(x-hw, y0, z-hd, x+hw, y0+h, z+hd, col, matTop[WMachine], matSide[WMachine], emis)
 	case bio.Taper < 1 && !special:
@@ -567,13 +594,19 @@ func (g *Game) drawPaddle(B *Batch, L *Level) {
 	}
 	lift := 0.08 * L.paddleBounce
 	B.DecalBelow(L.PaddleX+0.3, PaddleZ-0.25, 0.02, w+1.6, 1.8, sprShadow, color.RGBA{0, 0, 0, 200})
-	B.Box(x0+0.5, lift, z0, x1-0.5, PaddleH+lift, z1, body, sprWhite, 0.05)
 	cap := L.Biome.PaddleCap
 	if livery {
 		cap = lc
 	}
-	B.Box(x0, lift, z0-0.05, x0+0.6, PaddleH+0.12+lift, z1+0.05, cap, sprWhite, 0.05)
-	B.Box(x1-0.6, lift, z0-0.05, x1, PaddleH+0.12+lift, z1+0.05, cap, sprWhite, 0.05)
+	if pb, pc := model("paddle_body"), model("paddle_cap"); pb != nil && pc != nil {
+		B.Draw(pb, V3{L.PaddleX, lift, PaddleZ}, V3{math.Max(0.1, w-1.0), 1, PaddleD / 0.7}, identity, body, 0.05)
+		B.Draw(pc, V3{x0 + 0.3, lift, PaddleZ}, v3(1), identity, cap, 0.05)
+		B.Draw(pc, V3{x1 - 0.3, lift, PaddleZ}, v3(1), identity, cap, 0.05)
+	} else {
+		B.Box(x0+0.5, lift, z0, x1-0.5, PaddleH+lift, z1, body, sprWhite, 0.05)
+		B.Box(x0, lift, z0-0.05, x0+0.6, PaddleH+0.12+lift, z1+0.05, cap, sprWhite, 0.05)
+		B.Box(x1-0.6, lift, z0-0.05, x1, PaddleH+0.12+lift, z1+0.05, cap, sprWhite, 0.05)
+	}
 	B.Decal(L.PaddleX, z1-0.02, PaddleH+lift+0.01, w-1.3, 0.16, sprWhite, alpha(lighten(trim, 0.4), 0.9), true)
 	B.Billboard(V3{L.PaddleX, PaddleH + 0.2, PaddleZ}, w*0.9, sprSoft, alpha(trim, 0.18+0.25*L.paddleBounce), true)
 	if L.Timers[PLaser] > 0 || g.run.Stats.LaserInterval > 0 {

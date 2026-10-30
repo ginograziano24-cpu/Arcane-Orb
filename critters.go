@@ -287,6 +287,9 @@ func (g *Game) drawCritters(B *Batch, L *Level) {
 				B.Billboard(p.Add(V3{0.03, 0.04, -0.05}), sz*0.4*s, sprSphere, color.RGBA{255, 255, 255, 255}, false)
 			}
 		}
+		if g.drawCritterModel(B, L, c, s, rot, at, col, emis) {
+			continue
+		}
 		switch L.Biome.ID {
 		case WMeadow: // a hopping rabbit
 			hop := math.Abs(math.Sin(c.hop)) * 0.45
@@ -366,4 +369,70 @@ func (g *Game) drawCritters(B *Batch, L *Level) {
 			}
 		}
 	}
+}
+
+var critterModelNames = [NumWorlds]string{WNeon: "critter_neon", WMeadow: "critter_meadow", WCaverns: "critter_caverns", WRuins: "critter_ruins", WClouds: "critter_clouds", WMachine: "critter_machine"}
+
+// drawCritterModel draws a wanderer with its modelled body plus the parts
+// that animate (legs, wings, rotors, the wind-up key). s is the draw scale
+// including critterSize; the models are built at critterSize already.
+func (g *Game) drawCritterModel(B *Batch, L *Level, c *Critter, s float64, rot Mat3, at func(x, y, z float64) V3, col color.RGBA, emis float32) bool {
+	w := L.Biome.ID
+	if w < 0 || w >= NumWorlds {
+		return false
+	}
+	m := model(critterModelNames[w])
+	if m == nil {
+		return false
+	}
+	k := s / critterSize
+	legs := func(n int, spread, y, z0, dz, amp, speed float64, lc color.RGBA) {
+		for i := 0; i < n; i++ {
+			for _, sx := range []float64{-1, 1} {
+				wv := math.Sin(c.hop*speed+float64(i)*2+sx) * amp
+				B.OBox(at(sx*spread, y, z0+float64(i)*dz+wv), rot.Mul(V3{0.18, 0, 0}).Mul(s), V3{0, 0.03 * s, 0}, rot.Mul(V3{0, 0, 0.03}).Mul(s), lc, 0)
+			}
+		}
+	}
+	y := 0.0
+	switch w {
+	case WMeadow:
+		y = math.Abs(math.Sin(c.hop)) * 0.45 * s
+	case WClouds:
+		y = math.Sin(c.T*3) * 0.12 * s
+	case WNeon:
+		y = math.Sin(c.T*4) * 0.1 * s
+	}
+	B.Draw(m, V3{c.X, y, c.Z}, v3(k), rot, col, emis)
+	switch w {
+	case WRuins:
+		legs(3, 0.45, 0.14, -0.25, 0.25, 0.12, 2, color.RGBA{30, 40, 40, 255})
+	case WClouds:
+		fl := math.Sin(c.T*16) * 0.5
+		for _, sx := range []float64{-1, 1} {
+			d := V3{sx * math.Cos(fl), math.Sin(fl) * 0.6, 0}
+			p := at(sx*0.62, 0.8, 0).Add(V3{0, y, 0})
+			B.OBox(p, rot.Mul(d.Mul(0.24)).Mul(s), V3{0, 0.02 * s, 0}, rot.Mul(V3{0, 0, 0.15}).Mul(s), color.RGBA{255, 240, 200, 255}, 0.3)
+		}
+	case WNeon:
+		for _, sx := range []float64{-1, 1} {
+			for _, sz := range []float64{-1, 1} {
+				p := at(sx*0.45, 1.06, sz*0.38).Add(V3{0, y, 0})
+				B.Billboard(p, 0.6*s, sprRing, alpha(col, 0.55+0.3*math.Sin(c.T*30+sx+sz)), true)
+			}
+		}
+		B.Billboard(at(0, 0.9, 0).Add(V3{0, y, 0}), 1.6*s, sprSoft, alpha(col, 0.25), true)
+	case WCaverns:
+		legs(3, 0.48, 0.12, -0.2, 0.18, 0.08, 2.5, darken(col, 0.5))
+		B.Billboard(at(0, 0.4, 0), 1.8*s, sprSoft, alpha(col, 0.22), true)
+	case WMachine:
+		ka := c.T * 5
+		kp := at(0, 0.78, -0.05)
+		B.OBox(kp, rot.Mul(V3{math.Cos(ka) * 0.22, 0, math.Sin(ka) * 0.03}).Mul(s), V3{0, 0.08 * s, 0}, rot.Mul(V3{-math.Sin(ka) * 0.03, 0, math.Cos(ka) * 0.03}).Mul(s), color.RGBA{230, 190, 90, 255}, 0.2)
+		legs(3, 0.42, 0.12, -0.22, 0.22, 0.1, 2, color.RGBA{70, 60, 50, 255})
+		for _, sx := range []float64{-1, 1} {
+			B.Billboard(at(sx*0.12, 0.38, 0.62), 0.4*s, sprSoft, color.RGBA{255, 90, 60, 160}, true)
+		}
+	}
+	return true
 }

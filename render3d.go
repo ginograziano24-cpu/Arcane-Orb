@@ -9,7 +9,7 @@ import (
 	"image"
 	"image/color"
 	"math"
-	"sort"
+	"slices"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -507,6 +507,7 @@ type Batch struct {
 	glow     []quad
 	verts    []ebiten.Vertex
 	idx      []uint16
+	order    []int32
 	fogColor [3]float32
 	fogNear  float64
 	fogFar   float64
@@ -760,13 +761,29 @@ func (b *Batch) flush(dst *ebiten.Image, qs []quad, blend ebiten.Blend) {
 	if len(qs) == 0 {
 		return
 	}
-	sort.SliceStable(qs, func(i, j int) bool { return qs[i].depth > qs[j].depth })
+	// sort indices rather than the (large) quads themselves: far first
+	order := b.order[:0]
+	for i := range qs {
+		order = append(order, int32(i))
+	}
+	slices.SortStableFunc(order, func(x, y int32) int {
+		dx, dy := qs[x].depth, qs[y].depth
+		switch {
+		case dx > dy:
+			return -1
+		case dx < dy:
+			return 1
+		}
+		return 0
+	})
+	b.order = order
 	const maxQ = 16000
-	for start := 0; start < len(qs); start += maxQ {
-		end := min(len(qs), start+maxQ)
+	for start := 0; start < len(order); start += maxQ {
+		end := min(len(order), start+maxQ)
 		b.verts = b.verts[:0]
 		b.idx = b.idx[:0]
-		for _, q := range qs[start:end] {
+		for _, oi := range order[start:end] {
+			q := &qs[oi]
 			base := uint16(len(b.verts))
 			b.verts = append(b.verts, q.v[:]...)
 			b.idx = append(b.idx, base, base+1, base+2, base, base+2, base+3)
@@ -776,7 +793,11 @@ func (b *Batch) flush(dst *ebiten.Image, qs []quad, blend ebiten.Blend) {
 	}
 }
 
+// lastQuads is how many quads the last world flush drew (for profiling).
+var lastQuads int
+
 func (b *Batch) Flush(dst *ebiten.Image) {
+	lastQuads = len(b.quads) + len(b.glow)
 	b.flush(dst, b.quads, ebiten.BlendSourceOver)
 	b.flush(dst, b.glow, ebiten.BlendLighter)
 }

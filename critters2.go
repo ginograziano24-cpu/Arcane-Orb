@@ -354,12 +354,16 @@ func (g *Game) drawMischief(B *Batch, L *Level, c *Critter, s float64, rot Mat3,
 	switch c.Kind {
 	case critThief: // a masked pilferer with a swag bag
 		bob := math.Abs(math.Sin(c.hop)) * 0.18
-		ball("thf", at(0, 0.45+bob, 0), V3{0.34, 0.36, 0.38}, col, darken(col, 0.7), 0)
-		ball("thf", at(0, 0.88+bob, 0.12), V3{0.26, 0.24, 0.26}, col, darken(col, 0.7), 0)
-		B.OBox(at(0, 0.92+bob, 0.33), rot.Mul(V3{0.24, 0, 0}).Mul(s), V3{0, 0.05 * s, 0}, rot.Mul(V3{0, 0, 0.04}).Mul(s), color.RGBA{20, 18, 24, 255}, 0)
-		for _, sx := range []float64{-1, 1} {
-			eye(at(sx*0.1, 0.93+bob, 0.37), 0.08)
-			B.OBox(at(sx*0.16, 1.12+bob, 0.1), rot.Mul(V3{0.05, 0, 0}).Mul(s), V3{0, 0.08 * s, 0}, rot.Mul(V3{0, 0, 0.04}).Mul(s), darken(col, 0.8), 0)
+		if m := model("critter_thief"); m != nil {
+			B.Draw(m, V3{c.X, bob * s, c.Z}, v3(s/critterSize), rot, col, 0)
+		} else {
+			ball("thf", at(0, 0.45+bob, 0), V3{0.34, 0.36, 0.38}, col, darken(col, 0.7), 0)
+			ball("thf", at(0, 0.88+bob, 0.12), V3{0.26, 0.24, 0.26}, col, darken(col, 0.7), 0)
+			B.OBox(at(0, 0.92+bob, 0.33), rot.Mul(V3{0.24, 0, 0}).Mul(s), V3{0, 0.05 * s, 0}, rot.Mul(V3{0, 0, 0.04}).Mul(s), color.RGBA{20, 18, 24, 255}, 0)
+			for _, sx := range []float64{-1, 1} {
+				eye(at(sx*0.1, 0.93+bob, 0.37), 0.08)
+				B.OBox(at(sx*0.16, 1.12+bob, 0.1), rot.Mul(V3{0.05, 0, 0}).Mul(s), V3{0, 0.08 * s, 0}, rot.Mul(V3{0, 0, 0.04}).Mul(s), darken(col, 0.8), 0)
+			}
 		}
 		// the bag swells with every theft and glows with what is inside
 		bag := 0.18 + 0.08*float64(len(c.carry))
@@ -370,12 +374,16 @@ func (g *Game) drawMischief(B *Batch, L *Level, c *Critter, s float64, rot Mat3,
 		}
 	case critMason: // a little stone golem in a hard hat
 		bob := math.Abs(math.Sin(c.hop)) * 0.1
-		ball("msn", at(0, 0.5+bob, 0), V3{0.4, 0.42, 0.34}, col, darken(col, 0.65), 0)
-		ball("msnh", at(0, 1.0+bob, 0.05), V3{0.24, 0.22, 0.22}, lighten(col, 0.1), darken(col, 0.6), 0)
-		eye(at(-0.09, 1.02+bob, 0.25), 0.07)
-		eye(at(0.09, 1.02+bob, 0.25), 0.07)
-		hat := color.RGBA{255, 200, 60, 255}
-		ball("hat", at(0, 1.2+bob, 0.03), V3{0.25, 0.12, 0.25}, hat, darken(hat, 0.75), 0.1)
+		if m := model("critter_mason"); m != nil {
+			B.Draw(m, V3{c.X, bob * s, c.Z}, v3(s/critterSize), rot, col, 0)
+		} else {
+			ball("msn", at(0, 0.5+bob, 0), V3{0.4, 0.42, 0.34}, col, darken(col, 0.65), 0)
+			ball("msnh", at(0, 1.0+bob, 0.05), V3{0.24, 0.22, 0.22}, lighten(col, 0.1), darken(col, 0.6), 0)
+			eye(at(-0.09, 1.02+bob, 0.25), 0.07)
+			eye(at(0.09, 1.02+bob, 0.25), 0.07)
+			hat := color.RGBA{255, 200, 60, 255}
+			ball("hat", at(0, 1.2+bob, 0.03), V3{0.25, 0.12, 0.25}, hat, darken(hat, 0.75), 0.1)
+		}
 		if c.buildT > 0 {
 			// hammering: the arm swings and a ring fills over the cell
 			sw := math.Sin(c.T*16) * 0.25
@@ -392,22 +400,38 @@ func (g *Game) drawMischief(B *Batch, L *Level, c *Critter, s float64, rot Mat3,
 		k := s / critterSize
 		p := V3{c.X, 2.0 + math.Sin(c.T*5)*0.12, c.Z}
 		B.Billboard(p, 3.6*k, sprSoft, alpha(lighten(col, 0.3), 0.35), true)
-		// the bird: a body and two beating wings, lit so it reads over any floor
-		dir := V3{math.Copysign(1, c.vx), 0, 0}
-		perp := V3{0, 0, 1}
-		bs := 3.4 * k
-		em := float32(0.35)
-		if L.Biome.Neon || L.Biome.ID == WCaverns {
-			em = 0.85 // dark worlds: let it glow like everything else there
+		if bb, bw := model("bird_body"), model("bird_wing"); bb != nil && bw != nil {
+			ry := math.Atan2(c.vx, 0)
+			fl := math.Sin(c.T*9) * 0.7
+			ks := 2 * k
+			e := float32(0.25)
+			if L.Biome.Neon || L.Biome.ID == WCaverns {
+				e = 0.8
+			}
+			B.Draw(bb, p, v3(ks), rotXYZ(0, ry, 0), col, e)
+			B.Draw(bw, p.Add(V3{0, 0.1, 0}), v3(ks), rotXYZ(0, ry, fl), col, e)
+			B.Draw(bw, p.Add(V3{0, 0.1, 0}), v3(ks), rotXYZ(0, ry, math.Pi-fl), col, e)
+			goto bomb
 		}
-		flap := math.Sin(c.T*9) * 0.8
-		B.OBox(p, dir.Mul(0.32*bs), V3{0, 0.11 * bs, 0}, perp.Mul(0.12*bs), col, em)
-		B.OBox(p.Add(dir.Mul(0.36*bs)).Add(V3{0, 0.05 * bs, 0}), dir.Mul(0.1*bs), V3{0, 0.09 * bs, 0}, perp.Mul(0.09*bs), lighten(col, 0.15), em)
-		B.OBox(p.Add(dir.Mul(0.5*bs)), dir.Mul(0.08*bs), V3{0, 0.025 * bs, 0}, perp.Mul(0.03*bs), color.RGBA{255, 190, 60, 255}, 0.4)
-		for _, sg := range []float64{-1, 1} {
-			w := perp.Mul(sg * 0.42 * bs).Add(V3{0, flap * 0.3 * bs, 0})
-			B.OBox(p.Add(w), w, V3{0, 0.025 * bs, 0}, dir.Mul(0.18*bs), darken(col, 0.85), em)
+		{
+			// the bird: a body and two beating wings, lit so it reads over any floor
+			dir := V3{math.Copysign(1, c.vx), 0, 0}
+			perp := V3{0, 0, 1}
+			bs := 3.4 * k
+			em := float32(0.35)
+			if L.Biome.Neon || L.Biome.ID == WCaverns {
+				em = 0.85 // dark worlds: let it glow like everything else there
+			}
+			flap := math.Sin(c.T*9) * 0.8
+			B.OBox(p, dir.Mul(0.32*bs), V3{0, 0.11 * bs, 0}, perp.Mul(0.12*bs), col, em)
+			B.OBox(p.Add(dir.Mul(0.36*bs)).Add(V3{0, 0.05 * bs, 0}), dir.Mul(0.1*bs), V3{0, 0.09 * bs, 0}, perp.Mul(0.09*bs), lighten(col, 0.15), em)
+			B.OBox(p.Add(dir.Mul(0.5*bs)), dir.Mul(0.08*bs), V3{0, 0.025 * bs, 0}, perp.Mul(0.03*bs), color.RGBA{255, 190, 60, 255}, 0.4)
+			for _, sg := range []float64{-1, 1} {
+				w := perp.Mul(sg * 0.42 * bs).Add(V3{0, flap * 0.3 * bs, 0})
+				B.OBox(p.Add(w), w, V3{0, 0.025 * bs, 0}, dir.Mul(0.18*bs), darken(col, 0.85), em)
+			}
 		}
+	bomb:
 		bp := p.Add(V3{0, -0.75, 0})
 		B.Billboard(bp, 1.1*k, sprSphere, color.RGBA{40, 36, 44, 255}, false)
 		if math.Mod(c.T*6, 1) < 0.5 {

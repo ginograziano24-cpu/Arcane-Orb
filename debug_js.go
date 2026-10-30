@@ -13,7 +13,7 @@ func init() {
 		if dbgGame == nil || dbgGame.level == nil {
 			return "nolevel"
 		}
-		out := ""
+		out := fmt.Sprintf("quads %d; ", lastQuads)
 		for _, c := range dbgGame.level.Critters {
 			out += fmt.Sprintf("k%d x%.1f z%.1f g%.2f t%.1f; ", c.Kind, c.X, c.Z, c.gone, c.T)
 		}

@@ -157,10 +157,18 @@ func (g *Game) dressMeadow(B *Batch, L *Level, e *envState, t, side float64, r *
 	// background: rolling hills and a red barn on the far ridge
 	hillRange(B, 41, 80, 170, 160, 9, color.RGBA{112, 150, 84, 255}, 8, 18)
 	bx := -side * 52
-	B.Box(bx-5, -0.6, 72, bx+5, 5, 80, color.RGBA{170, 60, 48, 255}, sprWhite, 0)
-	B.OBox(V3{bx, 6.4, 76}, V3{5.4, 0, 0}, V3{0, 1.8, 0}, V3{0, 0, 4.2}, color.RGBA{96, 70, 60, 255}, 0)
-	B.Box(bx-1.4, -0.6, 71.9, bx+1.4, 3.2, 72, color.RGBA{240, 230, 210, 255}, sprWhite, 0)
+	if !drawModel(B, "barn", V3{bx, -0.6, 76}, v3(1), rotXYZ(0, side*0.25, 0), color.RGBA{}, 0) {
+		B.Box(bx-5, -0.6, 72, bx+5, 5, 80, color.RGBA{170, 60, 48, 255}, sprWhite, 0)
+		B.OBox(V3{bx, 6.4, 76}, V3{5.4, 0, 0}, V3{0, 1.8, 0}, V3{0, 0, 4.2}, color.RGBA{96, 70, 60, 255}, 0)
+		B.Box(bx-1.4, -0.6, 71.9, bx+1.4, 3.2, 72, color.RGBA{240, 230, 210, 255}, sprWhite, 0)
+	}
 	for _, sx := range []float64{-1, 1} { // hedgerows
+		if hm := model("hedgerow"); hm != nil {
+			for k := 0; k < 5; k++ {
+				B.Draw(hm, V3{sx * (36 + float64(k)*12), -0.6, 59}, V3{2, 1, 1}, identity, color.RGBA{}, 0)
+			}
+			continue
+		}
 		B.Box(sx*30, -0.6, 58, sx*90, 1.4, 60, color.RGBA{70, 112, 60, 255}, sprWhite, 0)
 	}
 	// sunflowers turning to the low sun, swaying
@@ -169,6 +177,9 @@ func (g *Game) dressMeadow(B *Batch, L *Level, e *envState, t, side float64, r *
 		z := 2 + float64(i)*2.2
 		sway := math.Sin(t*1.3+float64(i)) * 0.08
 		B.Box(x-0.06, -0.6, z-0.06, x+0.06, 2.6, z+0.06, color.RGBA{90, 140, 60, 255}, sprWhite, 0)
+		if drawModel(B, "sunflower_head", V3{x + sway, 2.75, z}, v3(1), rotXYZ(-0.3, side*0.6, sway), color.RGBA{}, 0.05) {
+			continue
+		}
 		B.Draw(cached("sunflower", func() *Mesh {
 			return Lathe([][2]float64{{0, 0.06}, {0.25, 0.08}, {0.32, 0.02}, {0.62, 0}, {0.55, -0.04}, {0, -0.02}}, 12,
 				[]color.RGBA{{96, 60, 30, 255}, {110, 70, 36, 255}, {250, 200, 50, 255}, {240, 180, 40, 255}, {200, 150, 40, 255}}, true)
@@ -179,6 +190,9 @@ func (g *Game) dressMeadow(B *Batch, L *Level, e *envState, t, side float64, r *
 		x := side * (HalfW + 7 + r.Float64()*5)
 		z := 22 + r.Float64()*8
 		s := 0.6 + r.Float64()*0.5
+		if drawModel(B, "pumpkin", V3{x, -0.6, z}, v3(s), rotXYZ(0, x, 0), color.RGBA{}, 0) {
+			continue
+		}
 		B.Draw(cached("pumpkin", func() *Mesh {
 			return Icosphere(1, 0.06, 13, color.RGBA{250, 140, 40, 255}, color.RGBA{200, 90, 20, 255})
 		}), V3{x, -0.6 + 0.5*s, z}, V3{s, s * 0.7, s}, identity, color.RGBA{}, 0)
@@ -195,6 +209,9 @@ func (g *Game) dressMeadow(B *Batch, L *Level, e *envState, t, side float64, r *
 			spin = 4 * math.Pi * (1 - math.Exp(-age*2.5))
 		}
 		a := spin + float64(k)
+		if drawModel(B, "scarecrow", V3{x, -0.6, z}, v3(1), rotXYZ(0, a, 0), color.RGBA{}, 0) {
+			continue
+		}
 		dir := V3{math.Cos(a), 0, math.Sin(a)}
 		B.Box(x-0.08, -0.6, z-0.08, x+0.08, 3.2, z+0.08, color.RGBA{130, 96, 62, 255}, sprWhite, 0)
 		B.OBox(V3{x, 2.4, z}, dir.Mul(1.4), V3{0, 0.07, 0}, V3{-dir.Z, 0, dir.X}.Mul(0.07), color.RGBA{130, 96, 62, 255}, 0)
@@ -231,6 +248,9 @@ func (g *Game) dressMeadow(B *Batch, L *Level, e *envState, t, side float64, r *
 			flapBird(B, p, math.Atan2(-(3+float64(i)), -sx*10), t*0.6+float64(i), color.RGBA{30, 28, 36, 255}, 1)
 		default:
 			bob := math.Max(0, math.Sin(t*2+float64(i)*2)) * 0.05
+			if drawModel(B, "crow", perch.Add(V3{0, bob, 0}), v3(1.3), rotXYZ(0, math.Atan2(math.Cos(heading), math.Sin(heading)), 0), color.RGBA{}, 0) {
+				continue
+			}
 			dir := V3{math.Cos(heading), 0, math.Sin(heading)}
 			B.OBox(perch.Add(V3{0, 0.2 + bob, 0}), dir.Mul(0.26), V3{0, 0.14, 0}, V3{-dir.Z, 0, dir.X}.Mul(0.12), color.RGBA{30, 28, 36, 255}, 0)
 			B.OBox(perch.Add(dir.Mul(0.26)).Add(V3{0, 0.34 + bob, 0}), dir.Mul(0.1), V3{0, 0.1, 0}, V3{-dir.Z, 0, dir.X}.Mul(0.09), color.RGBA{30, 28, 36, 255}, 0)
@@ -243,7 +263,9 @@ func (g *Game) dressMeadow(B *Batch, L *Level, e *envState, t, side float64, r *
 		x := sx * (HalfW + 3.2)
 		z := -2 + float64(i/2)*12 + 6
 		lit := e.lit[i]
-		B.Box(x-0.18, 1.6, z-0.18, x+0.18, 2.1, z+0.18, color.RGBA{60, 50, 40, 255}, sprWhite, 0)
+		if !drawModel(B, "lantern", V3{x, 1.85, z}, v3(1), identity, color.RGBA{}, float32(0.8*lit)) {
+			B.Box(x-0.18, 1.6, z-0.18, x+0.18, 2.1, z+0.18, color.RGBA{60, 50, 40, 255}, sprWhite, 0)
+		}
 		B.Billboard(V3{x, 1.85, z}, 0.32, sprSphere, mixc(color.RGBA{120, 100, 80, 255}, color.RGBA{255, 220, 140, 255}, lit), false)
 		if lit > 0.05 {
 			B.Billboard(V3{x, 1.85, z}, 2.4, sprSoft, alpha(color.RGBA{255, 190, 100, 255}, 0.6*lit*(0.85+0.15*math.Sin(t*7+float64(i)))), true)
@@ -294,14 +316,19 @@ func (g *Game) dressRuins(B *Batch, L *Level, e *envState, t, side float64, r *r
 	gx := -side * 21
 	gz := 44.0
 	stone := lighten(L.Biome.Wall, 0.05)
-	for _, dx := range []float64{-4.4, 4.4} {
-		B.BoxTex(gx+dx-1.1, -0.6, gz-1.2, gx+dx+1.1, 9, gz+1.2, stone, matTop[WRuins], matSide[WRuins], 0)
-	}
-	B.BoxTex(gx-5.8, 9, gz-1.4, gx+5.8, 10.6, gz+1.4, darken(stone, 0.9), matTop[WRuins], matSide[WRuins], 0)
 	open := e.door
-	B.Box(gx-3.3, -0.6, gz-0.2, gx+3.3, 9, gz+0.2, color.RGBA{30, 22, 18, 255}, sprWhite, 0) // the dark inside
-	dy := open * 8.5
-	B.BoxTex(gx-3.3, -0.6+dy, gz-0.5, gx+3.3, 9+dy*0.02, gz-0.25, darken(stone, 0.85), matTop[WRuins], matSide[WRuins], 0)
+	if gm, dm := model("temple_gate"), model("temple_door"); gm != nil && dm != nil {
+		B.Draw(gm, V3{gx, -0.6, gz}, v3(1), identity, color.RGBA{}, 0)
+		B.Draw(dm, V3{gx, -0.6 + open*8.5, gz - 0.4}, v3(1), identity, color.RGBA{}, 0)
+	} else {
+		for _, dx := range []float64{-4.4, 4.4} {
+			B.BoxTex(gx+dx-1.1, -0.6, gz-1.2, gx+dx+1.1, 9, gz+1.2, stone, matTop[WRuins], matSide[WRuins], 0)
+		}
+		B.BoxTex(gx-5.8, 9, gz-1.4, gx+5.8, 10.6, gz+1.4, darken(stone, 0.9), matTop[WRuins], matSide[WRuins], 0)
+		B.Box(gx-3.3, -0.6, gz-0.2, gx+3.3, 9, gz+0.2, color.RGBA{30, 22, 18, 255}, sprWhite, 0) // the dark inside
+		dy := open * 8.5
+		B.BoxTex(gx-3.3, -0.6+dy, gz-0.5, gx+3.3, 9+dy*0.02, gz-0.25, darken(stone, 0.85), matTop[WRuins], matSide[WRuins], 0)
+	}
 	if open > 0.05 {
 		B.Billboard(V3{gx, 4, gz - 0.6}, 9*open, sprSoft, alpha(color.RGBA{255, 210, 120, 255}, 0.55*open), true)
 		for k := 0; k < 4; k++ { // light shafts spilling out
@@ -314,10 +341,12 @@ func (g *Game) dressRuins(B *Batch, L *Level, e *envState, t, side float64, r *r
 	for k, p := range [][2]float64{{-1, 6}, {1, 6}, {-1, 18}, {1, 18}, {-1, 30}, {1, 30}} {
 		x := p[0] * (HalfW + 5)
 		z := p[1]
-		B.Draw(cached("brazierStand", func() *Mesh {
-			return Lathe([][2]float64{{0.6, 0}, {0.5, 0.2}, {0.18, 0.4}, {0.15, 2}, {0.25, 2.1}, {0.8, 2.3}, {0.9, 2.7}, {0.75, 2.75}}, 10,
-				[]color.RGBA{{120, 96, 70, 255}, {130, 104, 76, 255}, {120, 96, 70, 255}, {200, 150, 60, 255}, {210, 160, 70, 255}, {220, 170, 80, 255}, {170, 120, 50, 255}}, true)
-		}), V3{x, -0.6, z}, v3(1), identity, color.RGBA{}, 0)
+		if !drawModel(B, "brazier", V3{x, -0.6, z}, v3(1), identity, color.RGBA{}, 0) {
+			B.Draw(cached("brazierStand", func() *Mesh {
+				return Lathe([][2]float64{{0.6, 0}, {0.5, 0.2}, {0.18, 0.4}, {0.15, 2}, {0.25, 2.1}, {0.8, 2.3}, {0.9, 2.7}, {0.75, 2.75}}, 10,
+					[]color.RGBA{{120, 96, 70, 255}, {130, 104, 76, 255}, {120, 96, 70, 255}, {200, 150, 60, 255}, {210, 160, 70, 255}, {220, 170, 80, 255}, {170, 120, 50, 255}}, true)
+			}), V3{x, -0.6, z}, v3(1), identity, color.RGBA{}, 0)
+		}
 		lit := e.lit[k]
 		if lit > 0.03 {
 			fl := 0.8 + 0.2*math.Sin(t*11+float64(k)*3)
@@ -343,6 +372,9 @@ func (g *Game) dressRuins(B *Batch, L *Level, e *envState, t, side float64, r *r
 			age := 1.2 * (1 - w)
 			tilt = math.Sin(age*16) * math.Exp(-age*3) * 0.35
 		}
+		if drawModel(B, "urn", V3{x, -0.6, z}, v3(0.9), rotXYZ(tilt, float64(i), tilt*0.5), color.RGBA{}, 0) {
+			continue
+		}
 		B.Draw(cached("urn", func() *Mesh {
 			return Lathe([][2]float64{{0.3, 0}, {0.55, 0.3}, {0.6, 0.7}, {0.4, 1.1}, {0.25, 1.25}, {0.35, 1.4}, {0, 1.42}}, 10,
 				[]color.RGBA{{170, 96, 60, 255}, {190, 110, 70, 255}, {60, 150, 150, 255}, {190, 110, 70, 255}, {170, 96, 60, 255}, {160, 90, 56, 255}}, true)
@@ -351,6 +383,9 @@ func (g *Game) dressRuins(B *Batch, L *Level, e *envState, t, side float64, r *r
 	// glyph slabs
 	for _, sx := range []float64{-1, 1} {
 		x := sx * (HalfW + 11)
+		if drawModel(B, "glyph_slab", V3{x, -0.6, 25}, v3(1), rotXYZ(0, sx*math.Pi/2, 0), color.RGBA{}, 0) {
+			continue
+		}
 		B.BoxTex(x-0.4, -0.6, 22, x+0.4, 6, 28, stone, matTop[WRuins], matSide[WRuins], 0)
 		gr := rand.New(rand.NewSource(int64(sx * 9)))
 		for k := 0; k < 12; k++ {
@@ -404,8 +439,10 @@ func (g *Game) dressClouds(B *Batch, L *Level, e *envState, t, side float64, r *
 		sx := float64(i%2*2 - 1)
 		x := sx * (HalfW + 4)
 		z := 4 + float64(i/2)*12
-		B.Box(x-0.07, -0.6, z-0.07, x+0.07, 5.4, z+0.07, color.RGBA{230, 220, 240, 255}, sprWhite, 0)
-		B.Billboard(V3{x, 5.5, z}, 0.36, sprSphere, color.RGBA{255, 210, 100, 255}, false)
+		if !drawModel(B, "banner_pole", V3{x, -0.6, z}, v3(1), identity, color.RGBA{}, 0) {
+			B.Box(x-0.07, -0.6, z-0.07, x+0.07, 5.4, z+0.07, color.RGBA{230, 220, 240, 255}, sprWhite, 0)
+			B.Billboard(V3{x, 5.5, z}, 0.36, sprSphere, color.RGBA{255, 210, 100, 255}, false)
+		}
 		snap := 0.15 + 0.6*e.sideBump(x, 1.5)
 		col := []color.RGBA{{120, 150, 240, 255}, {240, 130, 170, 255}, {255, 210, 100, 255}}[i%3]
 		for k := 0; k < 4; k++ {
@@ -424,8 +461,10 @@ func (g *Game) dressClouds(B *Batch, L *Level, e *envState, t, side float64, r *
 		y := 4 + math.Sin(t*0.8+float64(i))*0.6
 		B.Box(x-0.02, -0.6, z-0.02, x+0.02, y-0.9, z+0.02, color.RGBA{200, 200, 220, 255}, sprWhite, 0)
 		col := []color.RGBA{{255, 140, 160, 255}, {120, 200, 255, 255}, {255, 220, 110, 255}, {170, 240, 150, 255}}[i]
-		B.Draw(cached("buoy"+colKey(col), func() *Mesh { return Icosphere(1, 0.02, 9, lighten(col, 0.2), darken(col, 0.8)) }),
-			V3{x, y, z}, V3{0.9, 1.1, 0.9}, identity, color.RGBA{}, 0.05)
+		if !drawModel(B, "buoy", V3{x, y, z}, v3(1), rotXYZ(0, t*0.3+float64(i), 0), col, 0.05) {
+			B.Draw(cached("buoy"+colKey(col), func() *Mesh { return Icosphere(1, 0.02, 9, lighten(col, 0.2), darken(col, 0.8)) }),
+				V3{x, y, z}, V3{0.9, 1.1, 0.9}, identity, color.RGBA{}, 0.05)
+		}
 	}
 	// on the final wave a thunderhead gathers in the distance
 	if L.wave >= L.waves && L.waves > 1 || L.Boss != nil && e.prog > 0.5 {
@@ -490,6 +529,15 @@ func (g *Game) dressNeon(B *Batch, L *Level, e *envState, t, side float64, r *ra
 	for _, sx := range []float64{-1, 1} {
 		for k, z := range []float64{9, 23} {
 			x := sx * (HalfW + 6)
+			ry := 0.0
+			if sx < 0 {
+				ry = math.Pi
+			}
+			if drawModel(B, "speaker", V3{x, -0.6, z}, V3{1, 1 + 0.03*e.thump, 1}, rotXYZ(0, ry, 0), color.RGBA{}, float32(0.6*e.thump)) {
+				B.Billboard(V3{x - sx*1.6, 2.2, z}, 3+2*e.thump, sprSoft, alpha(bio.Trim, 0.25+0.4*e.thump), true)
+				_ = k
+				continue
+			}
 			B.Box(x-1.4, -0.6, z-1.2, x+1.4, 4.4, z+1.2, color.RGBA{24, 18, 40, 255}, sprWhite, 0)
 			for j := 0; j < 2; j++ {
 				cy := 0.8 + float64(j)*2.2
@@ -508,7 +556,9 @@ func (g *Game) dressNeon(B *Batch, L *Level, e *envState, t, side float64, r *ra
 	for _, sx := range []float64{-1, 1} {
 		x := sx * (HalfW + 15)
 		z := 18.0
-		B.Box(x-0.15, -0.6, z-0.15, x+0.15, 7, z+0.15, color.RGBA{60, 50, 90, 255}, sprWhite, 0)
+		if !drawModel(B, "holo_frame", V3{x, -0.6, z}, v3(1), identity, color.RGBA{}, 0) {
+			B.Box(x-0.15, -0.6, z-0.15, x+0.15, 7, z+0.15, color.RGBA{60, 50, 90, 255}, sprWhite, 0)
+		}
 		B.Quad([4]V3{{x, 11, z - 4}, {x, 11, z + 4}, {x, 6.5, z + 4}, {x, 6.5, z - 4}}, sprWhite, alpha(color.RGBA{30, 200, 255, 255}, 0.18), [4]float32{1, 1, 1, 1}, true)
 		for k := 0; k < 5; k++ {
 			y := 6.8 + math.Mod(float64(k)*0.9+t*1.2, 4.2)
@@ -522,6 +572,9 @@ func (g *Game) dressNeon(B *Batch, L *Level, e *envState, t, side float64, r *ra
 		sx := float64(i%2*2 - 1)
 		x := sx * (HalfW + 10 + float64(i/2)*8)
 		z := 6 + float64(i)*8
+		if drawModel(B, "neon_palm", V3{x, -0.6, z}, v3(1), rotXYZ(0, float64(i)+math.Sin(t*0.8+float64(i))*0.05, 0), color.RGBA{}, 0) {
+			continue
+		}
 		B.Box(x-0.18, -0.6, z-0.18, x+0.18, 6, z+0.18, color.RGBA{40, 30, 70, 255}, sprWhite, 0.1)
 		for k := 0; k < 6; k++ {
 			a := float64(k)/6*2*math.Pi + math.Sin(t*0.8+float64(i))*0.08
@@ -561,16 +614,18 @@ func (g *Game) dressCaverns(B *Batch, L *Level, e *envState, t, side float64, r 
 		z := 1 + float64(i)*4
 		col := bio.Hues[i%6]
 		f := e.sideBump(x, 0.9)
-		B.Draw(cached("crystal"+colKey(col), func() *Mesh { return Crystal(col) }), V3{x, -0.4, z}, V3{0.45, 1.4 + float64(i%3)*0.5, 0.45},
+		drawCrystal(B, col, V3{x, -0.4, z}, V3{0.45, 1.4 + float64(i%3)*0.5, 0.45},
 			rotXYZ(0.2*sx, float64(i), 0.1), color.RGBA{}, float32(0.25+0.75*f))
 		B.Billboard(V3{x, 0.8, z}, 1.8+2*f, sprSoft, alpha(col, 0.25+0.6*f), true)
 	}
 	// glow-worm curtains hanging from rock arches, swaying on bounces
 	for _, sx := range []float64{-1, 1} {
 		ax := sx * (HalfW + 9)
-		B.Draw(cached("arch", func() *Mesh {
-			return Icosphere(1, 0.25, 33, color.RGBA{64, 70, 100, 255}, color.RGBA{30, 34, 52, 255})
-		}), V3{ax, 7, 16}, V3{3, 1.6, 9}, identity, color.RGBA{}, 0)
+		if !drawModel(B, "cave_arch", V3{ax, 7, 16}, v3(1), identity, color.RGBA{}, 0) {
+			B.Draw(cached("arch", func() *Mesh {
+				return Icosphere(1, 0.25, 33, color.RGBA{64, 70, 100, 255}, color.RGBA{30, 34, 52, 255})
+			}), V3{ax, 7, 16}, V3{3, 1.6, 9}, identity, color.RGBA{}, 0)
+		}
 		sway := 0.1 + 0.6*e.sideBump(ax, 2)
 		for k := 0; k < 12; k++ {
 			z := 9 + float64(k)*1.2
@@ -610,10 +665,14 @@ func (g *Game) dressMachine(B *Batch, L *Level, e *envState, t, side float64, r 
 	// smokestacks on the skyline
 	for i, p := range [][2]float64{{-side * 45, 100}, {side * 25, 120}, {-side * 5, 140}, {side * 60, 95}} {
 		h := 26 + float64(i%2)*10
-		B.Draw(cached("stack", func() *Mesh {
-			return Lathe([][2]float64{{3.2, 0}, {2.6, 2}, {2.2, 20}, {2.6, 21}, {2.6, 22}, {2.1, 22.2}}, 10,
-				[]color.RGBA{{70, 66, 70, 255}, {110, 70, 56, 255}, {150, 90, 60, 255}, {60, 58, 62, 255}, {40, 40, 44, 255}}, true)
-		}), V3{p[0], -0.6, p[1]}, V3{1, h / 22, 1}, identity, color.RGBA{}, 0)
+		if m := model("smokestack"); m != nil {
+			B.Draw(m, V3{p[0], -0.6, p[1]}, V3{1, h / 22, 1}, identity, color.RGBA{}, 0)
+		} else {
+			B.Draw(cached("stack", func() *Mesh {
+				return Lathe([][2]float64{{3.2, 0}, {2.6, 2}, {2.2, 20}, {2.6, 21}, {2.6, 22}, {2.1, 22.2}}, 10,
+					[]color.RGBA{{70, 66, 70, 255}, {110, 70, 56, 255}, {150, 90, 60, 255}, {60, 58, 62, 255}, {40, 40, 44, 255}}, true)
+			}), V3{p[0], -0.6, p[1]}, V3{1, h / 22, 1}, identity, color.RGBA{}, 0)
+		}
 		if !low {
 			for k := 0; k < 6; k++ {
 				ph := math.Mod(t*0.12+float64(k)/6+float64(i)*0.3, 1)
@@ -626,9 +685,11 @@ func (g *Game) dressMachine(B *Batch, L *Level, e *envState, t, side float64, r 
 		sx := float64(i%2*2 - 1)
 		x := sx * (HalfW + 2.7)
 		z := 4 + float64(i/2)*11
-		B.Box(x-0.6, -0.58, z-0.6, x+0.6, -0.5, z+0.6, color.RGBA{50, 52, 58, 255}, sprWhite, 0)
-		for k := -1; k <= 1; k++ {
-			B.Box(x-0.5, -0.5, z+float64(k)*0.3-0.04, x+0.5, -0.49, z+float64(k)*0.3+0.04, color.RGBA{25, 25, 30, 255}, sprWhite, 0)
+		if !drawModel(B, "vent", V3{x, -0.6, z}, v3(1), rotXYZ(0, math.Pi/2, 0), color.RGBA{}, 0) {
+			B.Box(x-0.6, -0.58, z-0.6, x+0.6, -0.5, z+0.6, color.RGBA{50, 52, 58, 255}, sprWhite, 0)
+			for k := -1; k <= 1; k++ {
+				B.Box(x-0.5, -0.5, z+float64(k)*0.3-0.04, x+0.5, -0.49, z+float64(k)*0.3+0.04, color.RGBA{25, 25, 30, 255}, sprWhite, 0)
+			}
 		}
 		f := e.sideBump(x, 1.4)
 		if f > 0 {
@@ -643,11 +704,15 @@ func (g *Game) dressMachine(B *Batch, L *Level, e *envState, t, side float64, r 
 	for _, sx := range []float64{-1, 1} {
 		x := sx * (HalfW + 5.5)
 		z := 33.0
+		if drawModel(B, "gauge", V3{x, -0.6, z}, v3(1), identity, color.RGBA{}, 0.1) {
+			goto needle
+		}
 		B.Box(x-0.15, -0.6, z-0.15, x+0.15, 3, z+0.15, color.RGBA{80, 82, 90, 255}, sprWhite, 0)
 		B.Draw(cached("gaugeFace", func() *Mesh {
 			return Lathe([][2]float64{{0, 0.12}, {1.1, 0.12}, {1.2, 0.05}, {1.2, -0.05}, {0, -0.06}}, 18,
 				[]color.RGBA{{236, 228, 210, 255}, {200, 150, 60, 255}, {150, 110, 50, 255}, {80, 82, 90, 255}}, true)
 		}), V3{x, 4.2, z}, v3(1), rotXYZ(math.Pi/2, 0, 0), color.RGBA{}, 0.1)
+	needle:
 		a := math.Pi*1.25 - e.prog*math.Pi*1.5 + math.Sin(t*9)*0.02
 		dir := V3{math.Cos(a), math.Sin(a), 0}
 		B.OBox(V3{x, 4.2, z - 0.16}.Add(dir.Mul(0.45)), dir.Mul(0.5), V3{-dir.Y, dir.X, 0}.Mul(0.04), V3{0, 0, 0.02}, color.RGBA{200, 40, 40, 255}, 0.4)

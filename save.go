@@ -16,6 +16,7 @@ type Settings struct {
 	Fullscreen bool                 `json:"fullscreen"`
 	VSync      bool                 `json:"vsync"`
 	ShowFPS    bool                 `json:"show_fps"`
+	DX12       bool                 `json:"dx12,omitempty"` // Windows: DirectX 12 instead of 11 (next launch)
 	NoBloom    bool                 `json:"no_bloom"`
 	Classic    bool                 `json:"classic_backdrop"` // flat painted picture instead of 3D scenery
 	Quality    int                  `json:"quality"`          // 0 low, 1 medium, 2 high, 3 custom
