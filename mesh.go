@@ -11,9 +11,10 @@ import (
 // crystals, balloons and pipes. Meshes are built once and cached.
 
 type Tri struct {
-	P   [3]V3
-	Col color.RGBA
-	Emi float32
+	P     [3]V3
+	Col   color.RGBA
+	Emi   float32
+	Fixed bool // keeps its own colour when the mesh is drawn with a tint
 }
 
 type Mesh struct{ Tris []Tri }
@@ -56,7 +57,7 @@ func (b *Batch) Draw(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emiss
 			continue
 		}
 		col := t.Col
-		if useTint {
+		if useTint && !t.Fixed {
 			col = color.RGBA{uint8(int(col.R) * int(tint.R) / 255), uint8(int(col.G) * int(tint.G) / 255), uint8(int(col.B) * int(tint.B) / 255), col.A}
 		}
 		e := 1 + t.Emi + emissive

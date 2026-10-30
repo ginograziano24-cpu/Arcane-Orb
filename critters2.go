@@ -45,14 +45,15 @@ func (L *Level) hasCritter(kind int) bool {
 }
 
 func critterKindCol(world, kind int) color.RGBA {
-	w := ((world % 6) + 6) % 6
+	// per world, in world-ID order: Neon, Meadow, Caverns, Ruins, Clouds, Machine
+	w := ((world % NumWorlds) + NumWorlds) % NumWorlds
 	switch kind {
 	case critThief:
-		return []color.RGBA{{150, 110, 80, 255}, {200, 150, 90, 255}, {200, 200, 230, 255}, {255, 80, 200, 255}, {120, 100, 170, 255}, {150, 150, 160, 255}}[w]
+		return [NumWorlds]color.RGBA{WNeon: {255, 80, 200, 255}, WMeadow: {150, 110, 80, 255}, WCaverns: {120, 100, 170, 255}, WRuins: {200, 150, 90, 255}, WClouds: {200, 200, 230, 255}, WMachine: {150, 150, 160, 255}}[w]
 	case critMason:
-		return []color.RGBA{{150, 140, 120, 255}, {210, 180, 130, 255}, {225, 230, 245, 255}, {110, 90, 170, 255}, {90, 110, 150, 255}, {140, 120, 100, 255}}[w]
+		return [NumWorlds]color.RGBA{WNeon: {110, 90, 170, 255}, WMeadow: {150, 140, 120, 255}, WCaverns: {90, 110, 150, 255}, WRuins: {210, 180, 130, 255}, WClouds: {225, 230, 245, 255}, WMachine: {140, 120, 100, 255}}[w]
 	case critBomber:
-		return []color.RGBA{{40, 36, 44, 255}, {120, 80, 50, 255}, {245, 245, 250, 255}, {80, 240, 255, 255}, {110, 70, 150, 255}, {200, 160, 80, 255}}[w]
+		return [NumWorlds]color.RGBA{WNeon: {80, 240, 255, 255}, WMeadow: {40, 36, 44, 255}, WCaverns: {110, 70, 150, 255}, WRuins: {120, 80, 50, 255}, WClouds: {245, 245, 250, 255}, WMachine: {200, 160, 80, 255}}[w]
 	}
 	return critterCol(world, false)
 }
