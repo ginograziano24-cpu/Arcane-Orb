@@ -149,7 +149,7 @@ func (g *Game) drawCodex(s *ebiten.Image) {
 		relic := g.codexTab == 1
 		var list []*Mod
 		for _, m := range modList {
-			if m.Relic == relic {
+			if m.Relic == relic && !m.Retired {
 				list = append(list, m)
 			}
 		}

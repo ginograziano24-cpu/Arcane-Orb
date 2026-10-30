@@ -368,6 +368,10 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	}
 }
 
+// paddleDesignRow picks each origin's band in the paddle design sheet
+// (tools/textures/paddles.py).
+var paddleDesignRow = map[string]int{"guardian": 1, "berserker": 2, "arcane": 3, "engineer": 4, "lucky": 5, "pyro": 6, "storm": 7}
+
 // powerModel names each power-up's own drop model.
 var powerModel = [numPowers]string{PMulti: "pw_multi", PExpand: "pw_expand", PShrink: "pw_shrink", PSlow: "pw_slow",
 	PHaste: "pw_haste", PFire: "pw_fire", PLaser: "pw_laser", PBarrier: "pw_barrier", PGlue: "pw_glue",
@@ -525,7 +529,7 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		emis += 0.15
 	}
 	if b.Layer == 0 {
-		B.DecalBelow(x+0.25, z-0.08, 0.015, CellW*1.15, CellD*1.4, sprShadow, color.RGBA{0, 0, 0, 110})
+		B.DecalBelow(x+0.25*CellW, z-0.08*CellW, 0.015, CellW*1.2, CellD*1.5, sprShadow, color.RGBA{0, 0, 0, 130})
 	}
 	bio := L.Biome
 	if b.BossPart && !b.Core {
@@ -535,10 +539,11 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		seam := lighten(bio.Trim, 0.2)
 		B.Box(x-hw-0.03, y0+h*0.62, z-hd-0.03, x+hw+0.03, y0+h*0.68, z+hd+0.03, seam, sprWhite, float32(0.5+0.4*pulse))
 		B.Decal(x, z, y0+h+0.01, CellW*0.9, CellD*0.9, sprSoft, alpha(seam, 0.22*pulse*ap), true)
-		if b.R/2-2 <= 1 && b.R%2 == 0 && ap > 0.5 {
+		if b.R/levelgen.GridSplit-2 <= 1 && b.R%levelgen.GridSplit == 0 && ap > 0.5 {
 			// a crown of crystal spikes along the brow
-			sh := (1.4 + 1.6*(1-math.Abs(float64(b.C)-13.5)/13.5)) * ap
-			q := 0.22
+			mid := float64(levelgen.Cols-1) / 2
+			sh := (1.4 + 1.6*(1-math.Abs(float64(b.C)-mid)/mid)) * ap
+			q := 0.42 / levelgen.GridSplit
 			B.Prism([4][2]float64{{x - q, z - q*0.7}, {x + q, z - q*0.7}, {x + q, z + q*0.7}, {x - q, z + q*0.7}}, y0+h, y0+h+sh, 0.08, lighten(bio.Trim, 0.1), float32(0.35+0.25*pulse))
 		}
 		g.drawBadge(B, b, x, y0+h, z, t)
@@ -670,7 +675,27 @@ func (g *Game) drawPaddle(B *Batch, L *Level) {
 		B.Box(x0, lift, z0-0.05, x0+0.6, PaddleH+0.12+lift, z1+0.05, cap, sprWhite, 0.05)
 		B.Box(x1-0.6, lift, z0-0.05, x1, PaddleH+0.12+lift, z1+0.05, cap, sprWhite, 0.05)
 	}
-	B.Decal(L.PaddleX, z1-0.02, PaddleH+lift+0.01, w-1.3, 0.16, sprWhite, alpha(lighten(trim, 0.4), 0.9), true)
+	if pt := bakedTexture("paddles"); pt != nil && !g.settings.Classic && w > 1.4 {
+		// the origin's engraved design across the paddle's top, its inlay
+		// glowing in the world's trim colour (pulsing on each bounce)
+		row := 0
+		if g.run.Arch != nil {
+			row = paddleDesignRow[g.run.Arch.ID]
+		}
+		ax0, ax1 := x0+0.55, x1-0.55
+		az0, az1 := z0+0.04, z1-0.04
+		y := PaddleH + lift + 0.006
+		p := [4]V3{{ax0, y, az1}, {ax1, y, az1}, {ax1, y, az0}, {ax0, y, az0}}
+		uv := func(r int) [4][2]float32 {
+			v0, v1 := float32(r*256+2), float32((r+1)*256-2)
+			return [4][2]float32{{2, v0}, {pt.w - 2, v0}, {pt.w - 2, v1}, {2, v1}}
+		}
+		B.QuadUV(p, pt.id, uv(2*row), B.lit(lighten(body, 0.15), V3{0, 1, 0}), [4]float32{1.05, 1.05, 0.95, 0.95}, false)
+		gl := 0.55 + 0.45*L.paddleBounce
+		B.QuadUV(p, pt.id, uv(2*row+1), alpha(lighten(trim, 0.25), gl), [4]float32{1, 1, 1, 1}, true)
+	} else {
+		B.Decal(L.PaddleX, z1-0.02, PaddleH+lift+0.01, w-1.3, 0.16, sprWhite, alpha(lighten(trim, 0.4), 0.9), true)
+	}
 	B.Billboard(V3{L.PaddleX, PaddleH + 0.2, PaddleZ}, w*0.9, sprSoft, alpha(trim, 0.18+0.25*L.paddleBounce), true)
 	if L.Timers[PLaser] > 0 || g.run.Stats.LaserInterval > 0 {
 		for _, cx := range []float64{x0 + 0.3, x1 - 0.3} {
@@ -682,11 +707,12 @@ func (g *Game) drawPaddle(B *Batch, L *Level) {
 
 // bossHeight gives each cell of the Guardian its sculpted height.
 func bossHeight(r, c int) float64 {
-	gr := float64(r/2 - 2) // coarse row within the shape, 0 = crown
+	gr := float64(r/levelgen.GridSplit - 2) // coarse row within the shape, 0 = crown
 	if gr >= 6 {
 		return 1.25 // legs
 	}
-	dx := math.Abs(float64(c)-13.5) / 13.5
+	mid := float64(levelgen.Cols-1) / 2
+	dx := math.Abs(float64(c)-mid) / mid
 	dome := 1 - dx*dx
 	return 1.0 + 3.0*dome*(0.5+0.5*(1-gr/6))
 }

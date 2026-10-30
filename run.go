@@ -449,7 +449,7 @@ func (r *Run) Offer(n int, relic bool, minRarity int, rng *rand.Rand) []*Mod {
 		if r.Challenge == "unadorned" && relic {
 			relic = false // relic rewards become upgrades
 		}
-		if m.Relic == relic && m.Rarity >= minRarity && r.canTake(m) && m.Unlock <= r.Rank && (m.Origin == "" || m.Origin == r.Arch.ID && r.Mastery >= 3) && (m.Needs == "" || r.Owned(m.Needs)) && r.offerAllowed(m) {
+		if !m.Retired && m.Relic == relic && m.Rarity >= minRarity && r.canTake(m) && m.Unlock <= r.Rank && (m.Origin == "" || m.Origin == r.Arch.ID && r.Mastery >= 3) && (m.Needs == "" || r.Owned(m.Needs)) && r.offerAllowed(m) {
 			pool = append(pool, m)
 		}
 	}

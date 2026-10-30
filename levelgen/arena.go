@@ -92,11 +92,11 @@ var StructureNames = []string{"flat", "pyramid", "towers", "terraces", "ramparts
 
 // buildStacks raises columns of bricks into 3D structures.
 func buildStacks(r *rand.Rand, lv *coarse, p Params, d float64, sym bool) {
-	maxStack := 1 + int(0.5+d*2.5) // flat boards early: the budget goes into more bricks
+	maxStack := 3 + int(0.5+d*4.5) // boards rise into structures: 3 high early, 8 late
 	if p.Elite {
 		maxStack++
 	}
-	maxStack = min(4, maxStack)
+	maxStack = min(8, maxStack)
 	mode := r.Intn(len(StructureNames))
 	if p.Depth == 1 && mode == 0 {
 		mode = 1

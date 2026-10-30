@@ -24,7 +24,7 @@ const (
 	BarrierZ = 0.4
 	LoseZ    = -2.5
 	baseW    = 3.6
-	LayerH   = 0.62
+	LayerH   = 0.78
 )
 
 // forceWorld pins the world for testing (-1 = normal rotation).
@@ -910,13 +910,13 @@ func (L *Level) collideWalls(b *Ball) {
 // killWeight is what one small brick is worth against the old, larger
 // bricks: per-brick loot rolls and kill counters scale by it so boards with
 // many more bricks don't flood the run with gold and drops.
-const killWeight = 0.35
+const killWeight = 0.45
 
 // orbSplash is how far past its radius an orb's impact still cracks bricks.
-const orbSplash = 0.45
+const orbSplash = 0.2
 
 // orbPlow is the chance the orb carries on through a brick it destroys.
-const orbPlow = 0.5
+const orbPlow = 0.35
 
 func (L *Level) collideBricks(b *Ball) {
 	// the orb's impact also cracks the small bricks right beside the one it
@@ -1100,8 +1100,8 @@ func (L *Level) shielded(b *Brick) bool {
 	if b.Kind == levelgen.Shield {
 		return false
 	}
-	for dr := -2; dr <= 2; dr++ {
-		for dc := -2; dc <= 2; dc++ {
+	for dr := -levelgen.GridSplit; dr <= levelgen.GridSplit; dr++ {
+		for dc := -levelgen.GridSplit; dc <= levelgen.GridSplit; dc++ {
 			r, c := b.R+dr, b.C+dc
 			if r < 0 || r >= levelgen.MaxRows || c < 0 || c >= levelgen.Cols || (dr == 0 && dc == 0) {
 				continue
@@ -2369,13 +2369,13 @@ func (L *Level) setupBoss() {
 			if row[c] != '#' {
 				continue
 			}
-			for dr := 0; dr < 2; dr++ {
-				for dc := 0; dc < 2; dc++ {
-					fr, fc := 2*(r+2)+dr, 2*c+dc
+			for dr := 0; dr < levelgen.GridSplit; dr++ {
+				for dc := 0; dc < levelgen.GridSplit; dc++ {
+					fr, fc := levelgen.GridSplit*(r+2)+dr, levelgen.GridSplit*c+dc
 					br := L.addBrick(fr, fc, levelgen.Basic, 1+float64(act), body)
 					br.BossPart = true
 					// assemble row by row from the top during the intro
-					br.Appear = -(1.6 + float64(len(shape)-r)*0.95 + math.Abs(float64(fc)-13.5)*0.06)
+					br.Appear = -(1.6 + float64(len(shape)-r)*0.95 + math.Abs(float64(fc)-float64(levelgen.Cols-1)/2)*0.12/levelgen.GridSplit)
 					br.FallY = 4
 					L.Left--
 					b.body = append(b.body, [2]int{fr, fc})
@@ -2540,7 +2540,7 @@ func levelUnits(d *levelgen.Level) float64 {
 // far faster per brick than sparse ones (the orb tunnels instead of
 // crossing empty floor), so chambers carry many more bricks for a similar
 // clear time.
-const denseBudget = 10.0
+const denseBudget = 6.0
 
 // chamberBudget is how much work a chamber at this depth should be, so a
 // fresh run opens with short, readable chambers and they grow from there.

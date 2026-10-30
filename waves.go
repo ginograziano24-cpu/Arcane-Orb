@@ -24,7 +24,7 @@ var gridShift float64
 const (
 	dangerZ      = PaddleZ + 4.6 // bricks that reach this line smash into the paddle's side of the arena
 	advanceSlide = 0.45          // seconds an advance takes
-	advanceStep  = 2 * CellD     // how far the formation creeps each advance
+	advanceStep  = 1.1           // how far the formation creeps each advance (world units)
 )
 
 // ---------------------------------------------------------------- heat

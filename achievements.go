@@ -74,7 +74,7 @@ var achievements = []achievement{
 			// signature items are mastery rewards, not part of the hunt
 			n, seen := 0, 0
 			for _, m := range modList {
-				if m.Origin == "" {
+				if m.Origin == "" && !m.Retired {
 					n++
 					if g.save.Seen[m.ID] {
 						seen++

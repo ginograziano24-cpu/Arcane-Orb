@@ -1596,9 +1596,44 @@ func (g *Game) statLine(s *ebiten.Image, cx, y float64) {
 	u.iconLabel(s, icHeart, b, fBold, 24, x+wa+48, y, rgba(255, 130, 140, 255), alignLeft)
 }
 
+// drawShopStall frames the shop as a market stall (a rendered picture)
+// and keeps it alive: lanterns breathe, motes drift, the merchant blinks.
+func (g *Game) drawShopStall(s *ebiten.Image) {
+	u := g.ui
+	img := uiIcon("shop_stall")
+	if img == nil {
+		return
+	}
+	t := g.stateT
+	for i, lx := range []float64{330, 960, 1590} {
+		p := 0.75 + 0.25*math.Sin(t*2.3+float64(i)*1.7)
+		drawSprite(s, sprSoft, u.X(lx-170), u.Y(220-170), 340*u.S, 340*u.S, ca(rgba(255, 170, 70, 255), 0.22*p), true)
+	}
+	g.drawUIIcon(s, img, 960, 540, 1920, 1)
+	for i, lx := range []float64{330, 960, 1590} {
+		p := 0.7 + 0.3*math.Sin(t*2.3+float64(i)*1.7)
+		drawSprite(s, sprSoft, u.X(lx-40), u.Y(220-40), 80*u.S, 80*u.S, ca(rgba(255, 210, 120, 255), 0.5*p), true)
+	}
+	// gold motes drifting up through the stall
+	for k := 0; k < 26; k++ {
+		ph := math.Mod(t*0.06+float64(k)*0.137, 1)
+		x := 260 + math.Mod(float64(k)*397, 1400) + 18*math.Sin(t*0.9+float64(k))
+		y := 1040 - ph*900
+		a := math.Sin(ph * math.Pi)
+		drawSprite(s, sprSoft, u.X(x-7), u.Y(y-7), 14*u.S, 14*u.S, ca(rgba(255, 210, 110, 255), 0.55*a), true)
+	}
+	// the merchant's eyes, with a blink every few seconds
+	if math.Mod(t, 4.3) > 0.12 {
+		for _, dx := range []float64{-11, 11} {
+			drawSprite(s, sprSoft, u.X(1610+dx-12), u.Y(845-12), 24*u.S, 24*u.S, ca(rgba(255, 220, 120, 255), 0.8), true)
+		}
+	}
+}
+
 func (g *Game) drawShop(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
+	g.drawShopStall(s)
 	g.runPanel(s)
 	u.heading(s, "THE WANDERING SHOP", 56, 40, cGold, 1)
 	u.iconLabel(s, icCoin, fmt.Sprintf("%d gold", r.Gold), fBold, 30, 960, 118, cGold, alignCenter)
@@ -1935,5 +1970,9 @@ var nodeGlyphs = map[NodeType]string{
 }
 
 func (g *Game) nodeIcon(s *ebiten.Image, t NodeType, x, y, size float64) {
+	if img := uiIcon(nodeIconFile[t]); img != nil {
+		g.drawUIIcon(s, img, x, y, size*2.0, 1)
+		return
+	}
 	g.ui.drawEmblemDark(s, glyphImage(nodeGlyphs[t], cWhite), x, y, size*1.25, 0.95)
 }

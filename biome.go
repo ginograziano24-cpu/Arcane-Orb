@@ -68,7 +68,7 @@ var worlds = []Biome{
 	},
 	{
 		ID: WMeadow, Name: "Sunset Meadow", Subtitle: "warm hills at the end of the day",
-		Hues:  [6]color.RGBA{{196, 132, 78, 255}, {232, 186, 96, 255}, {150, 190, 90, 255}, {222, 110, 90, 255}, {240, 214, 150, 255}, {120, 160, 200, 255}},
+		Hues:  [6]color.RGBA{{255, 64, 64, 255}, {255, 150, 30, 255}, {255, 226, 40, 255}, {80, 220, 60, 255}, {40, 170, 255, 255}, {200, 90, 255, 255}},
 		Floor: color.RGBA{214, 170, 120, 255}, FloorAlt: color.RGBA{190, 120, 90, 255}, Outer: color.RGBA{96, 140, 70, 255},
 		Wall: color.RGBA{150, 104, 70, 255}, Trim: color.RGBA{255, 200, 120, 255},
 		Fog: color.RGBA{134, 170, 96, 255}, SkyTop: color.RGBA{60, 90, 160, 255}, SkyBottom: color.RGBA{255, 170, 110, 255},
@@ -78,7 +78,7 @@ var worlds = []Biome{
 	},
 	{
 		ID: WCaverns, Name: "Crystal Caverns", Subtitle: "deep below, the stones are singing",
-		Hues:  [6]color.RGBA{{90, 200, 255, 255}, {170, 130, 255, 255}, {120, 255, 220, 255}, {255, 140, 220, 255}, {200, 230, 255, 255}, {80, 120, 230, 255}},
+		Hues:  [6]color.RGBA{{40, 200, 255, 255}, {160, 90, 255, 255}, {40, 255, 200, 255}, {255, 80, 200, 255}, {130, 240, 255, 255}, {70, 110, 255, 255}},
 		Floor: color.RGBA{70, 80, 110, 255}, FloorAlt: color.RGBA{56, 64, 92, 255}, Outer: color.RGBA{18, 20, 36, 255},
 		Wall: color.RGBA{60, 64, 90, 255}, Trim: color.RGBA{120, 230, 255, 255},
 		Fog: color.RGBA{22, 36, 66, 255}, SkyTop: color.RGBA{6, 8, 18, 255}, SkyBottom: color.RGBA{30, 50, 90, 255},
@@ -88,7 +88,7 @@ var worlds = []Biome{
 	},
 	{
 		ID: WRuins, Name: "Ancient Ruins", Subtitle: "something lived here long before you",
-		Hues:  [6]color.RGBA{{214, 184, 130, 255}, {70, 190, 180, 255}, {200, 150, 70, 255}, {176, 120, 80, 255}, {230, 210, 160, 255}, {90, 140, 90, 255}},
+		Hues:  [6]color.RGBA{{235, 90, 50, 255}, {255, 200, 50, 255}, {30, 200, 190, 255}, {40, 90, 220, 255}, {80, 190, 90, 255}, {250, 150, 60, 255}},
 		Floor: color.RGBA{214, 186, 140, 255}, FloorAlt: color.RGBA{190, 160, 116, 255}, Outer: color.RGBA{196, 160, 110, 255},
 		Wall: color.RGBA{176, 150, 110, 255}, Trim: color.RGBA{230, 190, 90, 255},
 		Fog: color.RGBA{230, 200, 150, 255}, SkyTop: color.RGBA{70, 150, 200, 255}, SkyBottom: color.RGBA{240, 220, 180, 255},
@@ -98,7 +98,7 @@ var worlds = []Biome{
 	},
 	{
 		ID: WClouds, Name: "Cloud Kingdom", Subtitle: "castles drifting above the sky",
-		Hues:  [6]color.RGBA{{150, 200, 255, 255}, {255, 180, 210, 255}, {255, 220, 120, 255}, {200, 170, 255, 255}, {250, 250, 255, 255}, {140, 230, 200, 255}},
+		Hues:  [6]color.RGBA{{255, 110, 180, 255}, {80, 185, 255, 255}, {255, 215, 60, 255}, {165, 115, 255, 255}, {80, 225, 165, 255}, {255, 150, 80, 255}},
 		Floor: color.RGBA{214, 216, 232, 255}, FloorAlt: color.RGBA{196, 202, 228, 255}, Outer: color.RGBA{180, 210, 245, 255},
 		Wall: color.RGBA{230, 232, 245, 255}, Trim: color.RGBA{255, 210, 110, 255},
 		Fog: color.RGBA{220, 220, 238, 255}, SkyTop: color.RGBA{90, 160, 240, 255}, SkyBottom: color.RGBA{220, 235, 255, 255},
@@ -108,7 +108,7 @@ var worlds = []Biome{
 	},
 	{
 		ID: WMachine, Name: "Machine Works", Subtitle: "the whole place is one enormous engine",
-		Hues:  [6]color.RGBA{{196, 112, 64, 255}, {120, 140, 170, 255}, {240, 190, 60, 255}, {90, 96, 110, 255}, {230, 120, 40, 255}, {100, 170, 210, 255}},
+		Hues:  [6]color.RGBA{{255, 120, 30, 255}, {255, 210, 40, 255}, {60, 150, 255, 255}, {230, 50, 50, 255}, {40, 210, 190, 255}, {170, 230, 60, 255}},
 		Floor: color.RGBA{86, 90, 100, 255}, FloorAlt: color.RGBA{70, 74, 84, 255}, Outer: color.RGBA{30, 30, 36, 255},
 		Wall: color.RGBA{80, 84, 96, 255}, Trim: color.RGBA{255, 150, 40, 255},
 		Fog: color.RGBA{40, 32, 30, 255}, SkyTop: color.RGBA{18, 16, 20, 255}, SkyBottom: color.RGBA{150, 70, 30, 255},

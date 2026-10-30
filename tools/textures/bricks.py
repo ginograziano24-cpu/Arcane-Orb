@@ -21,8 +21,8 @@ OUT = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'floor', 'br
 yy, xx = np.mgrid[0:CH, 0:CW].astype(float)
 U = xx / CW            # 0..1 across the face
 V = yy / CH            # 0..1 down the face (top face: 0 = far edge)
-PX = CW / 1.0          # px per world unit across a 1.0-wide brick
-E = np.minimum(np.minimum(U, 1 - U) * 1.0, np.minimum(V, 1 - V) * 0.5)  # world units to the edge
+PX = CW / 2.0          # px per world unit across a 2.0-wide brick
+E = np.minimum(np.minimum(U, 1 - U) * 2.0, np.minimum(V, 1 - V) * 1.1)  # world units to the edge
 
 
 def nz(cy, cx, o=4, seed=0):
@@ -54,127 +54,122 @@ def side_shade(alb, emissive=None):
 
 
 # ------------------------------------------------------------- world tops
+# Clean, bright "candy" blocks: a bold bevel that catches light on the top
+# and left edges, an inset panel, a gloss streak, and a faint world motif.
+
+def candy_top(motif=None, panel=True, gloss=0.12):
+    ex, ey = np.minimum(U, 1 - U) * 2.0, np.minimum(V, 1 - V) * 1.1
+    e = np.minimum(ex, ey)
+    bw = 0.13
+    t = np.clip(e / bw, 0, 1)
+    # which edge is nearest decides light (top/left) or shade (bottom/right)
+    lightside = np.where(ex < ey, U < 0.5, V < 0.5)
+    bev = np.where(lightside, 0.3, -0.38) * (1 - t) ** 1.5
+    v = 0.93 + bev
+    if panel:
+        pe = e - 0.2
+        groove = smoothstep(0.03, 0.0, np.abs(pe)) * 0.16
+        inner = (pe > 0) * 0.03
+        v = v - groove + inner
+    if motif is not None:
+        v = v - motif * 0.14
+    streak = smoothstep(0.18, 0.0, np.abs((U * 2.0 - V * 1.1) - 0.45)) * (e > bw) * gloss
+    v = v + streak + 0.02 * (nz(6, 12, 3, 5) - 0.5)
+    return np.clip(grey(v), 0, 1)
+
+
+def candy_side(lines=None):
+    v = 1.0 - 0.3 * V
+    v = v + smoothstep(0.1, 0.0, V) * 0.22 - smoothstep(0.9, 1.0, V) * 0.25
+    ex = np.minimum(U, 1 - U) * 2.0
+    v = v - smoothstep(0.06, 0.0, ex) * 0.2
+    if lines is not None:
+        v = v - lines * 0.15
+    return np.clip(grey(v), 0, 1)
+
+
+def _panel_coords():
+    return (U - 0.5) * 2.0, (V - 0.5) * 1.1
+
+
 def top_neon():
-    frame = smoothstep(0.05, 0.035, E)
-    inner = smoothstep(0.02, 0.0, np.abs(E - 0.085))
-    glass = 0.72 + 0.18 * nz(4, 8, 3, 1) + 0.12 * smoothstep(0.25, 0.0, np.abs(U - V * 0.5 - 0.25))
-    v = np.where(frame > 0.5, 0.18, glass) + inner * 0.3
-    h = bevel(E, 0.05, 0.03)
-    return lit(grey(v), h, spec=0.4)
+    ex, ey = np.minimum(U, 1 - U) * 2.0, np.minimum(V, 1 - V) * 1.1
+    e = np.minimum(ex, ey)
+    rim = smoothstep(0.1, 0.06, e)
+    glass = 0.86 + 0.1 * smoothstep(0.3, 0.0, np.abs(U * 2 - V * 1.1 - 0.5))
+    v = np.where(rim > 0.5, 0.35, glass) + smoothstep(0.02, 0.0, np.abs(e - 0.14)) * 0.15
+    return np.clip(grey(v), 0, 1)
 
 
 def side_neon():
-    frame = (np.minimum(U, 1 - U) < 0.04) | (V > 0.86) | (V < 0.08)
-    v = np.where(frame, 0.2, 0.8 + 0.15 * nz(4, 8, 3, 2))
-    return side_shade(grey(v))
+    ex = np.minimum(U, 1 - U) * 2.0
+    rim = (ex < 0.08) | (V > 0.85) | (V < 0.1)
+    return grey(np.where(rim, 0.35, 0.92 - 0.12 * V))
 
 
 def top_meadow():
-    plank = np.floor(V * 3)
-    pv = V * 3 - plank
-    grain = nz(3, 40, 4, 10 + 0) * 0.5 + 0.5 * np.sin(U * 90 + nz(2, 6, 3, 11) * 12 + plank * 3)
-    v = 0.78 + 0.12 * grain
-    groove = smoothstep(0.06, 0.0, np.minimum(pv, 1 - pv))
-    v = v * (1 - groove * 0.45)
-    h = bevel(E, 0.05, 0.03) - groove * 0.01
-    # iron corner brackets with nails
-    br = (np.minimum(U, 1 - U) < 0.09)
-    v = np.where(br, 0.32 + 0.08 * nz(8, 8, 2, 12), v)
-    h = h + br * 0.006
-    for cx in (0.045, 0.955):
-        for cy in (0.18, 0.5, 0.82):
-            d = np.hypot((U - cx) * CW, (V - cy) * CH)
-            nail = smoothstep(5, 3, d)
-            v = np.where(nail > 0.5, 0.75, v)
-            h = h + nail * 0.004
-    return lit(grey(v), h)
+    px, py = _panel_coords()
+    # a little flower stamp in the panel
+    ang = np.arctan2(py, px)
+    r = np.hypot(px, py)
+    petals = smoothstep(0.02, 0.0, np.abs(r - (0.16 + 0.06 * np.cos(ang * 5)))) + smoothstep(0.05, 0.03, r)
+    return candy_top(np.clip(petals, 0, 1))
 
 
 def side_meadow():
-    plank = np.floor(V * 2)
-    grain = 0.5 + 0.5 * np.sin(U * 70 + nz(2, 6, 3, 13) * 10 + plank * 2)
-    v = 0.76 + 0.1 * grain
-    v = np.where(np.minimum(U, 1 - U) < 0.09, 0.34, v)
-    v = v * (1 - smoothstep(0.08, 0.0, np.abs(V - 0.5)) * 0.4)
-    return side_shade(grey(v))
+    return candy_side()
 
 
 def top_caverns():
-    # a cut gem: a table in the middle and facets falling to the edges
     du, dv = np.abs(U - 0.5) * 2, np.abs(V - 0.5) * 2
-    table = (du < 0.55) & (dv < 0.45)
-    fac = np.where(du * 0.9 > dv, np.sign(U - 0.5) * 1.0, np.sign(V - 0.5) * 0.5)
-    v = np.where(table, 0.95, 0.72 + 0.18 * fac)
-    edge = smoothstep(0.02, 0.0, np.abs(np.maximum(du / 0.55, dv / 0.45) - 1)) * 0.25
-    spark = smoothstep(0.92, 0.97, nz(10, 20, 2, 20)) * 0.6
-    v = np.clip(v + edge + spark, 0, 1.2)
-    return np.clip(grey(v) * 1.05, 0, 1)
+    table = (du < 0.6) & (dv < 0.5)
+    fac = np.where(du * 0.9 > dv, np.where(U < 0.5, 0.18, -0.12), np.where(V < 0.5, 0.12, -0.2))
+    v = np.where(table, 0.97, 0.82 + fac)
+    edge = smoothstep(0.02, 0.0, np.abs(np.maximum(du / 0.6, dv / 0.5) - 1)) * 0.2
+    return np.clip(grey(v + edge), 0, 1)
 
 
 def side_caverns():
-    v = 0.7 + 0.2 * np.abs(np.sin(U * 9 + V * 2)) + smoothstep(0.1, 0, V) * 0.2
-    return side_shade(grey(v))
+    v = 0.85 + 0.12 * np.sign(np.sin(U * 6.283 * 2)) * 0.5 - 0.25 * V + smoothstep(0.1, 0, V) * 0.2
+    return np.clip(grey(v), 0, 1)
 
 
 def top_ruins():
-    stone = 0.8 + 0.12 * nz(6, 12, 5, 30) + 0.05 * nz(30, 60, 2, 31)
-    h = bevel(E, 0.07, 0.04) + (nz(6, 12, 4, 32) - 0.5) * 0.006
-    groove = smoothstep(0.012, 0.004, np.abs(E - 0.085))
-    h = h - groove * 0.008
-    d = np.hypot((U - 0.5) * 2, (V - 0.5))
-    glyph = smoothstep(0.03, 0.012, np.abs(d - 0.22)) + smoothstep(0.03, 0.012, np.abs(U - 0.5) * 2) * (d < 0.22)
-    h = h - np.clip(glyph, 0, 1) * 0.008
-    v = stone * (1 - 0.35 * groove - 0.35 * np.clip(glyph, 0, 1))
-    return lit(grey(v), h, spec=0.0)
+    px, py = _panel_coords()
+    d = np.hypot(px, py * 1.4)
+    glyph = smoothstep(0.025, 0.01, np.abs(d - 0.2)) + smoothstep(0.025, 0.01, np.abs(px)) * (d < 0.2)
+    return candy_top(np.clip(glyph, 0, 1), gloss=0.06)
 
 
 def side_ruins():
-    v = 0.78 + 0.12 * nz(4, 10, 5, 33)
-    v = v * (1 - 0.3 * smoothstep(0.02, 0.0, np.abs(V - 0.55)))
-    return side_shade(grey(v))
+    return candy_side(smoothstep(0.02, 0.0, np.abs(V - 0.5)))
 
 
 def top_clouds():
-    du, dv = (U - 0.5) * 2, (V - 0.5) * 2
-    pillow = 1 - np.clip(np.maximum(np.abs(du), np.abs(dv)) ** 4, 0, 1)
-    h = pillow * 0.05
-    pipe = smoothstep(0.02, 0.008, np.abs(E - 0.03))
-    tuft = np.zeros_like(U)
-    for cx in (0.3, 0.5, 0.7):
-        tuft = np.maximum(tuft, smoothstep(5, 2.5, np.hypot((U - cx) * CW, (V - 0.5) * CH)))
-    stitch = smoothstep(0.012, 0.0, np.abs(E - 0.08)) * (np.mod(U * 40 + V * 20, 1) < 0.6)
-    v = 0.9 + 0.06 * nz(4, 8, 3, 40) + pipe * 0.1 - tuft * 0.25 - stitch * 0.15
-    h = h - tuft * 0.01 + pipe * 0.004
-    return lit(grey(v), h, spec=0.25)
+    px, py = _panel_coords()
+    tufts = np.zeros_like(U)
+    for cx in (-0.35, 0.0, 0.35):
+        tufts = np.maximum(tufts, smoothstep(0.05, 0.03, np.hypot(px - cx, py)))
+    return candy_top(tufts, gloss=0.16)
 
 
 def side_clouds():
-    v = 0.92 - 0.1 * np.abs(V - 0.45) + 0.1 * smoothstep(0.03, 0.0, np.abs(V - 0.2))
-    return side_shade(grey(v))
+    return candy_side(smoothstep(0.02, 0.0, np.abs(V - 0.3)) * 0.6)
 
 
 def top_machine():
-    h = bevel(E, 0.04, 0.03)
-    v = 0.74 + 0.06 * np.sin(U * 300 + nz(2, 8, 2, 50) * 3) + 0.05 * nz(8, 16, 3, 51)
-    # vent slots in the middle
-    slot = (np.abs(V - 0.5) < 0.2) & (np.abs(np.mod(U * 7, 1) - 0.5) < 0.18) & (U > 0.22) & (U < 0.78)
-    v = np.where(slot, 0.2, v)
-    h = h - slot * 0.008
-    for cx in (0.06, 0.94):
-        for cy in (0.14, 0.86):
-            d = np.hypot((U - cx) * CW, (V - cy) * CH)
-            r = smoothstep(6, 4, d)
-            v = np.where(r > 0.5, 0.95, v)
-            h = h + r * 0.006
-    return lit(grey(v), h, spec=0.35)
+    px, py = _panel_coords()
+    slots = (np.abs(py) < 0.12) & (np.abs(np.mod(px * 4, 1) - 0.5) < 0.18) & (np.abs(px) < 0.55)
+    rivets = np.zeros_like(U)
+    for cx in (-0.85, 0.85):
+        for cy in (-0.4, 0.4):
+            rivets = np.maximum(rivets, smoothstep(0.045, 0.03, np.hypot(px - cx, py - cy)))
+    return np.clip(candy_top(slots.astype(float) * 1.5, gloss=0.1) + rivets[..., None] * 0.1, 0, 1)
 
 
 def side_machine():
-    v = 0.72 + 0.05 * np.sin(V * 60)
-    v = np.where(np.minimum(U, 1 - U) < 0.05, 0.5, v)
-    hz = (V > 0.62) & (V < 0.82) & (np.mod((U * 8 + V * 2), 1) < 0.5)
-    v = np.where(hz, 0.35, v)
-    return side_shade(grey(v))
+    hz = (V > 0.6) & (V < 0.8) & (np.mod((U * 8 + V * 2), 1) < 0.5)
+    return candy_side(hz.astype(float) * 1.6)
 
 
 def top_steel():
@@ -219,21 +214,28 @@ def side_elite():
 
 
 # ------------------------------------------------------------- specials
-def emblem_top(base_col, emblem, glow_col, glow=0.5, h_em=0.012):
-    h = bevel(E, 0.06, 0.035)
-    em = blur(emblem.astype(float), 1.0, False)
-    h = h + em * h_em
-    alb = base_col * (0.85 + 0.2 * nz(6, 12, 3, 70))[..., None]
-    alb = lerp(alb, glow_col, em)
-    trim = smoothstep(0.025, 0.01, np.abs(E - 0.045))
-    alb = lerp(alb, alb * 0.6 + glow_col * 0.4, trim)
-    return lit(alb, h, spec=0.3, emissive=(em * glow)[..., None] * glow_col)
+def emblem_top(base_col, emblem, glow_col, glow=0.35, h_em=0.012):
+    """A vivid candy block with a bold emblem: dark outline, bright fill."""
+    shade = candy_top(panel=False, gloss=0.14)[..., 0]
+    m = emblem.astype(bool)
+    outline = ndimage.binary_dilation(m, iterations=5) & ~m
+    shadow = np.roll(np.roll(ndimage.binary_dilation(m, iterations=5), 4, 0), 4, 1) & ~m & ~outline
+    alb = base_col * shade[..., None]
+    alb = lerp(alb, alb * 0.55, shadow.astype(float))
+    alb = np.where(outline[..., None], base_col * 0.25, alb)
+    fill = lerp(glow_col, np.array([1.0, 1.0, 1.0]), 0.35)
+    fill_sh = fill * (0.92 + 0.12 * (1 - V))[..., None]
+    alb = np.where(m[..., None], fill_sh, alb)
+    alb = blur(alb, 0.6, False) if False else alb
+    return np.clip(alb + (m * glow)[..., None] * glow_col * 0.25, 0, 1)
 
 
 def emblem_side(base_col, glow_col):
-    band = smoothstep(0.06, 0.0, np.abs(V - 0.5))
-    alb = lerp(base_col, glow_col, band * 0.9)
-    return side_shade(alb, emissive=(band * 0.3)[..., None] * glow_col)
+    shade = candy_side()[..., 0]
+    band = smoothstep(0.05, 0.0, np.abs(V - 0.5))
+    alb = base_col * shade[..., None]
+    alb = lerp(alb, lerp(glow_col, np.array([1.0, 1, 1]), 0.3), band * 0.9)
+    return np.clip(alb, 0, 1)
 
 
 DU, DV = (U - 0.5) * 2, (V - 0.5) * 2 * 0.5   # emblem space: 1 unit tall = 1 unit wide
@@ -243,57 +245,57 @@ R = np.hypot(DU, DV * 2)
 def emblems():
     out = {}
     # armored: crossed plates and bolts
-    out['armored'] = (np.array([0.45, 0.48, 0.55]), ((np.abs(DU) < 0.06) | (np.abs(DV) < 0.03)) | (smoothstep(0.08, 0.05, np.hypot(np.abs(DU) - 0.7, np.abs(DV) - 0.15)) > 0.5), np.array([0.85, 0.9, 1.0]))
+    out['armored'] = (np.array([0.55, 0.6, 0.72]), ((np.abs(DU) < 0.06) | (np.abs(DV) < 0.03)) | (smoothstep(0.08, 0.05, np.hypot(np.abs(DU) - 0.7, np.abs(DV) - 0.15)) > 0.5), np.array([0.85, 0.9, 1.0]))
     # explosive: a bomb with a fuse
     bomb = np.hypot(DU * 1.0, DV * 2) < 0.28
     fuse = (np.abs(DU - 0.25 - (DV + 0.2) * 0.8) < 0.03) & (DV < -0.1) & (DV > -0.22)
     spark = np.hypot(DU - 0.36, DV * 2 + 0.3) < 0.07
-    out['explosive'] = (np.array([0.6, 0.12, 0.08]), bomb | fuse | spark, np.array([1.0, 0.75, 0.2]))
+    out['explosive'] = (np.array([0.92, 0.16, 0.1]), bomb | fuse | spark, np.array([1.0, 0.75, 0.2]))
     # chain: lightning zigzag
     zz = np.abs(DV * 2 - 0.4 * np.abs(np.mod(DU * 2.2 + 0.25, 1) - 0.5) * 4 + 0.4) < 0.12
-    out['chain'] = (np.array([0.12, 0.2, 0.45]), zz & (np.abs(DU) < 0.8), np.array([0.6, 0.9, 1.0]))
+    out['chain'] = (np.array([0.15, 0.36, 0.95]), zz & (np.abs(DU) < 0.8), np.array([0.6, 0.9, 1.0]))
     # split: a crack down the middle with arrows apart
     crack = np.abs(DU - 0.05 * np.sin(DV * 40)) < 0.04
     arrows = ((np.abs(np.abs(DU) - 0.5) + np.abs(DV * 2) * 0.6) < 0.12)
-    out['split'] = (np.array([0.5, 0.35, 0.2]), crack | arrows, np.array([1.0, 0.85, 0.5]))
+    out['split'] = (np.array([0.9, 0.52, 0.12]), crack | arrows, np.array([1.0, 0.85, 0.5]))
     # regen: a leaf
     leaf = (np.hypot(DU * 1.2, DV * 2 - 0.0) < 0.42) & (np.hypot(DU * 1.2 - 0.18, DV * 2 + 0.12) > 0.36)
-    out['regen'] = (np.array([0.15, 0.4, 0.18]), leaf | ((np.abs(DU + DV * 1.4) < 0.025) & (R < 0.4)), np.array([0.6, 1.0, 0.5]))
+    out['regen'] = (np.array([0.15, 0.76, 0.25]), leaf | ((np.abs(DU + DV * 1.4) < 0.025) & (R < 0.4)), np.array([0.6, 1.0, 0.5]))
     # moving: double arrows left-right
     mv = ((np.abs(DV) < 0.03) & (np.abs(DU) < 0.6)) | ((np.abs(np.abs(DU) - 0.55) * 1.0 + np.abs(DV) * 2 < 0.15) & (np.abs(DU) > 0.45))
-    out['moving'] = (np.array([0.35, 0.3, 0.55]), mv, np.array([0.85, 0.8, 1.0]))
+    out['moving'] = (np.array([0.56, 0.36, 0.92]), mv, np.array([0.85, 0.8, 1.0]))
     # shield: a heater shield outline
     sh_y = DV * 2
     sh = (np.abs(DU) < 0.32 - np.clip(sh_y, 0, 1) * 0.5) & (sh_y > -0.35) & (sh_y < 0.45)
     sh_in = (np.abs(DU) < 0.24 - np.clip(sh_y, 0, 1) * 0.5) & (sh_y > -0.27) & (sh_y < 0.36)
-    out['shield'] = (np.array([0.2, 0.3, 0.6]), sh & ~sh_in | ((np.abs(DU) < 0.03) & sh), np.array([0.7, 0.85, 1.0]))
+    out['shield'] = (np.array([0.2, 0.46, 0.96]), sh & ~sh_in | ((np.abs(DU) < 0.03) & sh), np.array([0.7, 0.85, 1.0]))
     # teleport: a swirl
     ang = np.arctan2(DV * 2, DU)
     sw = (np.abs(np.mod(R * 9 - ang / np.pi, 2) - 1) < 0.35) & (R < 0.45)
-    out['teleport'] = (np.array([0.35, 0.12, 0.5]), sw, np.array([0.9, 0.5, 1.0]))
+    out['teleport'] = (np.array([0.72, 0.15, 0.86]), sw, np.array([0.9, 0.5, 1.0]))
     # spawner: three seeds
     sp = np.zeros_like(U, bool)
     for cx, cy in ((-0.25, 0.08), (0.25, 0.08), (0.0, -0.12)):
         sp |= np.hypot((DU - cx), (DV - cy) * 2) < 0.14
-    out['spawner'] = (np.array([0.4, 0.3, 0.15]), sp, np.array([0.8, 1.0, 0.4]))
+    out['spawner'] = (np.array([0.55, 0.76, 0.1]), sp, np.array([0.8, 1.0, 0.4]))
     # multiplier: x2
     x2 = ((np.abs(np.abs(DU + 0.22) - np.abs(DV * 2)) < 0.05) & (np.abs(DV * 2) < 0.3) & (np.abs(DU + 0.22) < 0.3))
     two_y = DV * 2
     two = (((np.abs(np.hypot(DU - 0.3, two_y + 0.1) - 0.14) < 0.04) & (two_y < -0.02)) |
            ((np.abs(two_y - 0.26) < 0.04) & (np.abs(DU - 0.3) < 0.16)) |
            ((np.abs((DU - 0.3) + (two_y - 0.26) * 0.8 + 0.0) < 0.05) & (two_y > -0.05) & (two_y < 0.26)))
-    out['multiplier'] = (np.array([0.5, 0.35, 0.05]), x2 | two, np.array([1.0, 0.85, 0.3]))
+    out['multiplier'] = (np.array([1.0, 0.7, 0.05]), x2 | two, np.array([1.0, 0.85, 0.3]))
     # crystal: a gem
     gy = DV * 2
     crown = (gy > -0.28) & (gy < -0.06) & (np.abs(DU) < 0.2 + (gy + 0.28) * 0.7)
     pav = (gy >= -0.06) & (gy < 0.34) & (np.abs(DU) < (0.34 - gy) * 0.9)
     facet = (np.abs(np.abs(DU) - 0.12 - (gy + 0.06) * -0.2) < 0.02) & (gy > -0.06)
     gem = (crown | pav) & ~facet
-    out['crystal'] = (np.array([0.1, 0.35, 0.45]), gem, np.array([0.6, 1.0, 1.0]))
+    out['crystal'] = (np.array([0.08, 0.74, 0.9]), gem, np.array([0.6, 1.0, 1.0]))
     # mystery: a question mark
     qy = DV * 2
     q = ((np.abs(np.hypot(DU, qy + 0.12) - 0.16) < 0.045) & ((qy < -0.12) | (DU > 0))) | ((np.abs(DU) < 0.045) & (qy > 0.0) & (qy < 0.16)) | (np.hypot(DU, qy - 0.3) < 0.06)
-    out['mystery'] = (np.array([0.45, 0.2, 0.5]), q, np.array([1.0, 0.85, 1.0]))
+    out['mystery'] = (np.array([0.62, 0.25, 0.78]), q, np.array([1.0, 0.85, 1.0]))
     return out
 
 

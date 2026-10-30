@@ -93,6 +93,9 @@ type Mod struct {
 	Needs  string // only offered once this mod is owned
 	Curse  bool   // a curse: never offered, removed by cleansing
 	Origin string // signature item: only this origin, from Mastery 3
+	// Retired: a near-duplicate of another item, no longer offered (kept so
+	// saved runs that own it still load).
+	Retired bool
 }
 
 var modList = []*Mod{

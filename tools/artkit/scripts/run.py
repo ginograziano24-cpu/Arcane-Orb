@@ -44,6 +44,9 @@ TASKS.update(backdrops.TASKS)
 import models
 importlib.reload(models)
 TASKS.update(models.TASKS)
+import icons
+importlib.reload(icons)
+TASKS.update(icons.TASKS)
 
 
 def main():

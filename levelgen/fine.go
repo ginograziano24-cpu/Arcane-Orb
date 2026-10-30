@@ -2,16 +2,26 @@ package levelgen
 
 import "math/rand"
 
-// The game plays on a fine grid: every cell of the coarse layout the
-// generator draws (formations, picture boards) becomes a 2x2 block of
-// smaller bricks, so boards carry four times as many bricks over the same
-// floor and picture boards keep their exact shapes.
+// The game grid can split every cell of the coarse layout the generator
+// draws into GridSplit x GridSplit smaller bricks. At GridSplit 1 bricks keep their
+// chunky size and boards get their volume from tall stacks instead.
+const GridSplit = 1
+
 const (
-	Cols    = lCols * 2
-	MaxRows = lRows * 2
-	CellW   = lCellW / 2
-	CellD   = lCellD / 2
+	Cols    = lCols * GridSplit
+	MaxRows = lRows * GridSplit
+	CellW   = lCellW / GridSplit
+	CellD   = lCellD / GridSplit
 )
+
+// tallStack turns a picture board's drawn height (1-4) into bricks: boards
+// rise into real structures.
+func tallStack(h int) int {
+	if h <= 1 {
+		return 1
+	}
+	return min(8, h*2-1)
+}
 
 func CellX(c int) float64 { return -WorldHalfW + (float64(c)+0.5)*CellW }
 func CellZ(r int) float64 { return GridTopZ - (float64(r)+0.5)*CellD }
@@ -19,7 +29,7 @@ func CellZ(r int) float64 { return GridTopZ - (float64(r)+0.5)*CellD }
 // CellInside requires the whole fine cell to be inside the walls.
 func CellInside(poly []Pt, r, c int) bool {
 	x, z := CellX(c), CellZ(r)
-	hw, hd := CellW/2-0.03, CellD/2-0.03
+	hw, hd := CellW/2-0.05, CellD/2-0.05
 	for _, d := range [][2]float64{{-hw, -hd}, {hw, -hd}, {hw, hd}, {-hw, hd}} {
 		if !Inside(poly, Pt{x + d[0], z + d[1]}) {
 			return false
@@ -78,12 +88,12 @@ func Generate(p Params) *Level {
 // get rounded corners and, sometimes, a mosaic of shades; picture boards
 // stay exact.
 func refine(cl *coarse, r *rand.Rand) *Level {
-	lv := &Level{Name: cl.Name, Formation: cl.Formation, Structure: cl.Structure, Rows: cl.Rows * 2,
+	lv := &Level{Name: cl.Name, Formation: cl.Formation, Structure: cl.Structure, Rows: cl.Rows * GridSplit,
 		Objective: cl.Objective, Seed: cl.Seed, Shape: cl.Shape, LayerShift: cl.LayerShift}
 	designed := len(cl.Formation) >= 6 && cl.Formation[:6] == "design"
-	round := !designed && r.Float64() < 0.7
+	round := GridSplit > 1 && !designed && r.Float64() < 0.7
 	mosaic := 0
-	if !designed && r.Float64() < 0.45 {
+	if GridSplit > 1 && !designed && r.Float64() < 0.45 {
 		mosaic = 1 + r.Intn(3)
 	}
 	empty := func(rr, c int) bool {
@@ -96,14 +106,20 @@ func refine(cl *coarse, r *rand.Rand) *Level {
 				continue
 			}
 			sc := 0
-			if c < lCols/2 {
+			if GridSplit > 1 && c < lCols/2 {
 				sc = 1
 			}
+			if designed {
+				cell.Stack = tallStack(cell.Stack)
+				if cell.Kind == Elite {
+					cell.Stack = 1
+				}
+			}
 			special := cell.Kind != Basic && cell.Kind != Steel
-			for dr := 0; dr < 2; dr++ {
-				for dc := 0; dc < 2; dc++ {
+			for dr := 0; dr < GridSplit; dr++ {
+				for dc := 0; dc < GridSplit; dc++ {
 					fc := cell
-					if special && !(dr == 1 && dc == sc) {
+					if special && !(dr == GridSplit-1 && dc == sc) {
 						fc = Cell{Kind: Basic, HP: min(max(1, cell.HP), 2), Color: cell.Color, Stack: cell.Stack}
 						if cell.Kind == Elite {
 							fc.Stack = 1
@@ -112,7 +128,7 @@ func refine(cl *coarse, r *rand.Rand) *Level {
 					}
 					if fc.Kind == Basic && !special {
 						fc.Cap = cell.Cap
-						if cell.Cap != Empty && !(dr == 1 && dc == sc) {
+						if cell.Cap != Empty && !(dr == GridSplit-1 && dc == sc) {
 							fc.Cap = Empty
 						}
 					}
@@ -140,7 +156,7 @@ func refine(cl *coarse, r *rand.Rand) *Level {
 							continue
 						}
 					}
-					lv.Cells[2*rr+dr][2*c+dc] = fc
+					lv.Cells[GridSplit*rr+dr][GridSplit*c+dc] = fc
 				}
 			}
 		}
