@@ -222,60 +222,6 @@ var biomeChords = [][][3]int{
 
 func note(root float64, semi int) float64 { return root * math.Pow(2, float64(semi)/12) }
 
-func (s *Sounds) renderTrack(idx int, root float64) [2][]byte {
-	const bpm = 104.0
-	beat := 60 / bpm
-	bars := 8
-	n := int(float64(bars*4) * beat * sampleRate)
-	base := make([]float64, n)
-	hot := make([]float64, n)
-	rng := rand.New(rand.NewSource(int64(idx) + 11))
-	chords := biomeChords[idx%len(biomeChords)]
-	bell := []int{0, 2, 1, 2, 0, 1, 2, 1}
-	for i := 0; i < n; i++ {
-		t := float64(i) / sampleRate
-		bt := t / beat
-		bar := int(bt / 4)
-		ch := chords[(bar/2)%4]
-		inBar := math.Mod(bt, 4)
-		// pad
-		v := 0.0
-		for k, semi := range ch {
-			f := note(root, semi)
-			det := 1 + 0.003*float64(k-1)
-			v += 0.06 * (sine(f*det, t) + 0.4*sine(f*2*det, t) + 0.15*tri(f*0.5, t))
-		}
-		swell := 0.75 + 0.25*math.Sin(2*math.Pi*bt/8)
-		v *= swell
-		// bass on eighths
-		e := math.Mod(bt, 0.5)
-		bf := note(root/2, ch[0])
-		v += 0.16 * (tri(bf, t) + 0.3*sine(bf*2, t)) * math.Exp(-e*5)
-		// soft bells every beat
-		bi := int(bt) % len(bell)
-		bb := math.Mod(bt, 1)
-		v += 0.05 * sine(note(root*2, ch[bell[bi]]), t) * math.Exp(-bb*4)
-		base[i] = v
-		// intensity layer: 16th arp + drums
-		s16 := math.Mod(bt, 0.25)
-		step := int(bt*4) % 8
-		af := note(root*2, ch[step%3]+12*(step/3%2))
-		h := 0.07 * (sq(af, t)*0.35 + sine(af, t)) * math.Exp(-s16*14)
-		kb := math.Mod(inBar, 1)
-		h += 0.35 * sine(55*math.Exp(-kb*18)+45, t) * math.Exp(-kb*9)
-		hb := math.Mod(bt+0.5, 1)
-		h += 0.05 * (rng.Float64()*2 - 1) * math.Exp(-hb*40)
-		if math.Abs(inBar-1) < 0.5 || math.Abs(inBar-3) < 0.5 {
-			sb := math.Mod(inBar, 2) - 1
-			if sb >= 0 {
-				h += 0.12 * (rng.Float64()*2 - 1) * math.Exp(-sb*14)
-			}
-		}
-		hot[i] = h
-	}
-	return [2][]byte{pcm(base), pcm(hot)}
-}
-
 func (s *Sounds) buildMusic() {
 	roots := []float64{110, 98, 123.5, 130.8}
 	for _, i := range []int{3, 0, 1, 2} {
