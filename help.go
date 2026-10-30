@@ -495,5 +495,5 @@ func (g *Game) helpScrolls(s *ebiten.Image, a float64) {
 	y = g.textBlock(s, "Scrolls", "One-shot spells you carry between chambers, three at a time. Read one mid-fight with "+g.bindText("scrolls")+": meteors, frost novas, wildfire, extra orbs, healing and more. Elites and Guardians always leave one; shops and events sell them.", tx, y, 800, a)
 	y = g.textBlock(s, "Omens", "Some chambers on the map carry an omen. Some change the fight: gilded bricks, frenzied orbs, volatile powder. Others set a challenge, like a time limit or no dropped orbs, with a prize if you manage it. Hover a node to read it before you choose your path.", tx, y, 800, a)
 	y = g.textBlock(s, "Curses", "Bargains at events can lay a curse on you: a narrower paddle, weaker hits, a thinner purse. Curses sit in your build in crimson until you cleanse them.", tx, y, 800, a)
-	g.textBlock(s, "Campfires", "Rest to heal, Train for a new upgrade, Empower an upgrade you own to double it, or Cleanse a curse.", tx, y, 800, a)
+	g.textBlock(s, "Campfires", "Rest to regain a lost life (or heal when your lives are full), Train for a new upgrade, Empower an upgrade you own to double it, or Cleanse a curse.", tx, y, 800, a)
 }

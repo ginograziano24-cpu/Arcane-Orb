@@ -25,6 +25,7 @@ type Settings struct {
 	FastAnim   bool                 `json:"fast_animations"`  // shorter transitions, no slow-motion or hit-stop
 	NoTips     bool                 `json:"no_tips"`          // hide first-time coach tips
 	CenterHUD  bool                 `json:"center_hud"`       // ultrawide: keep the HUD in the 16:9 centre
+	TopDown    bool                 `json:"top_down"`         // always use the steep, top-down camera
 	TextScale  float64              `json:"text_scale"`       // body text size, 1 = default (0 = default)
 	GameSpeed  float64              `json:"game_speed"`       // chamber speed assist, 0.5..1 (0 = 1)
 	ColorBlind int                  `json:"color_blind"`      // 0 off, 1 protanopia, 2 deuteranopia, 3 tritanopia

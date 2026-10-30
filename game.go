@@ -1790,7 +1790,15 @@ func (g *Game) drawRest(s *ebiten.Image) {
 		healPct = 0.25
 	}
 	heal := math.Round(r.Stats.MaxHP * healPct)
-	if u.button(s, "rest", fmt.Sprintf("Rest  (+%.0f health)", heal), 380, 380, 560, 76, cGreen, true) {
+	// health only matters against Guardians, so a rest gives back a lost
+	// life first
+	if r.Lives < r.maxLives() {
+		if u.button(s, "rest", "Rest  (regain a life)", 380, 380, 560, 76, cGreen, true) {
+			r.Lives++
+			g.snd.PlayKeyed("heal")
+			g.setState(StMap)
+		}
+	} else if u.button(s, "rest", fmt.Sprintf("Rest  (+%.0f health)", heal), 380, 380, 560, 76, cGreen, true) {
 		r.HP = math.Min(r.Stats.MaxHP, r.HP+heal)
 		g.snd.PlayKeyed("heal")
 		g.setState(StMap)

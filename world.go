@@ -21,7 +21,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	cam := &g.cam
 	cam.Eye = V3{L.PaddleX * 0.12, 15, -10.5}
 	cam.Target = V3{L.PaddleX * 0.05, 3, 17}
-	if L.Designed {
+	if L.Designed || g.settings.TopDown {
 		// a steeper view so the drawing reads clearly
 		cam.Eye = V3{L.PaddleX * 0.1, 21, -6.5}
 		cam.Target = V3{L.PaddleX * 0.04, 0, 17.5}
