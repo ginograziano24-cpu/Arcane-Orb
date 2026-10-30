@@ -79,16 +79,16 @@ func (L *Level) heatArmour() {
 func (L *Level) setupWaves() {
 	r := L.g.run
 	L.heat = r.heat()
-	L.wave, L.waves = 1, 2
+	// a chamber is one big, packed board; elites and duel rounds still
+	// come in two waves
+	L.wave, L.waves = 1, 1
 	switch {
 	case L.Node == NBoss:
 		L.waves = 1
 	case L.Node == NElite:
-		L.waves = 3
+		L.waves = 2
 	case r.Duel:
 		L.waves = 2 // every duel round is two waves
-	case r.ActDepth <= 1:
-		L.waves = 1 // a world opens with a short chamber
 	}
 	L.advT = L.advInterval()
 	L.cacheAt = -1
@@ -111,7 +111,29 @@ func (L *Level) waveParams(seed int64) levelgen.Params {
 }
 
 // waveBreak is the share of an early wave still standing when it breaks.
-const waveBreak = 0.12
+const waveBreak = 0.15
+
+// finalBreak is the share of a packed last wave left when it crumbles.
+const finalBreak = 0.05
+
+// crumbleRest breaks every brick still standing, counting the required
+// ones as broken.
+func (L *Level) crumbleRest() {
+	g := L.g
+	for _, b := range L.Bricks {
+		if b.Alive && b.Kind.Required() {
+			b.Alive = false
+			g.run.Bricks++
+			L.breakPop(b, b.X(), b.Z())
+			L.debris(V3{b.X(), 0.5, b.Z()}, 6, b.Col)
+			if b.R >= 0 && b.R < levelgen.MaxRows && b.C >= 0 && b.C < levelgen.Cols && L.Grid[b.R][b.C] == b {
+				L.Grid[b.R][b.C] = nil
+			}
+		}
+	}
+	L.Left = 0
+	L.Shake = math.Max(L.Shake, 0.3)
+}
 
 // nextWave sweeps the floor and drops the next formation in from above.
 func (L *Level) nextWave() {
@@ -323,6 +345,15 @@ func (L *Level) planCache() {
 	if L.waves == 1 {
 		p = 0.9 // a short chamber always pays something
 	}
+	L.cacheTwice = L.waves == 1 && L.Node != NElite
+	if L.cacheTwice {
+		// one big board stands in for two waves: up to two caches,
+		// the first in its opening half
+		if L.rng.Float64() < p {
+			L.cacheAt = 0.2 + 0.3*L.rng.Float64()
+		}
+		return
+	}
 	if L.rng.Float64() < p {
 		L.cacheAt = 0.25 + 0.6*L.rng.Float64()
 	}
@@ -334,6 +365,12 @@ func (L *Level) maybeDropCache(x, z float64) {
 	}
 	if float64(L.startLeft-L.Left)/float64(L.startLeft) >= L.cacheAt {
 		L.cacheAt = -1
+		if L.cacheTwice {
+			L.cacheTwice = false
+			if L.rng.Float64() < 0.6 {
+				L.cacheAt = 0.6 + 0.3*L.rng.Float64()
+			}
+		}
 		L.caches++
 		L.Drops = append(L.Drops, &Drop{X: x, Z: z, P: PCache})
 		L.text(V3{x, 2.2, z}, "A RUNE CACHE FALLS!", color.RGBA{255, 222, 110, 255}, true)

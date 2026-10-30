@@ -467,7 +467,7 @@ func (g *Game) dressClouds(B *Batch, L *Level, e *envState, t, side float64, r *
 		}
 	}
 	// on the final wave a thunderhead gathers in the distance
-	if L.wave >= L.waves && L.waves > 1 || L.Boss != nil && e.prog > 0.5 {
+	if L.wave >= L.waves && (L.waves > 1 || e.prog > 0.5) || L.Boss != nil && e.prog > 0.5 {
 		f := math.Mod(t*0.7, 4)
 		if f < 0.15 {
 			fl := 1 - f/0.15
@@ -583,7 +583,7 @@ func (g *Game) dressNeon(B *Batch, L *Level, e *envState, t, side float64, r *ra
 		}
 	}
 	// the final wave makes the horizon glitch
-	if L.wave >= L.waves && L.waves > 1 || L.Boss != nil && e.prog > 0.5 {
+	if L.wave >= L.waves && (L.waves > 1 || e.prog > 0.5) || L.Boss != nil && e.prog > 0.5 {
 		if math.Mod(t*1.3, 2) < 0.25 {
 			for k := 0; k < 4; k++ {
 				y := 6 + float64(k)*5 + math.Sin(t*30+float64(k))*2
@@ -721,7 +721,7 @@ func (g *Game) dressMachine(B *Batch, L *Level, e *envState, t, side float64, r 
 		}
 	}
 	// the final wave sets the alarm lights sweeping
-	if L.wave >= L.waves && L.waves > 1 || L.Boss != nil && e.prog > 0.5 {
+	if L.wave >= L.waves && (L.waves > 1 || e.prog > 0.5) || L.Boss != nil && e.prog > 0.5 {
 		for _, sx := range []float64{-1, 1} {
 			x := sx * (HalfW + 3)
 			a := t * 5 * sx

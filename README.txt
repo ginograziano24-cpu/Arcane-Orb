@@ -58,6 +58,29 @@ ORIGIN MASTERY  -  levels 1 to 10 for every origin
   - Livery, Orb Trail, Aspect and Gift are toggles on the origin screen
   - Duels ignore mastery so both players stay even
 
+PACKED BOARDS
+  - A chamber is now one big, packed board instead of two thin waves:
+    roughly three to four times as many bricks on the floor, laid out
+    as full formations and picture boards
+  - 13 new picture boards (Hot Air Balloon, Mushroom House, Rainbow
+    Arch, Treasure Chest, Octopus, Cupcake, Tree of Life, Phoenix,
+    Diamond Mosaic, Volcano, Lighthouse, Sailing Ship, Dragon), and
+    picture boards turn up far more often
+  - Early boards are flat so the bricks spread across the floor;
+    stacks grow taller deeper into a world
+  - Once only a handful of bricks are left, the stragglers crumble:
+    no hunting the last brick
+  - A board can release up to two rune caches. Elites still come in
+    two waves
+  - Balance (autopilot): chambers clear as fast or faster than before,
+    because the orb tunnels through packed bricks instead of crossing
+    empty floor
+
+MUSIC
+  - New soundtrack loops, twice as long: a short mallet motif that
+    answers itself, a pumping octave bass, bells doubling the tune in
+    the second half, and fuller drums when the action heats up
+
 LOOKS AND FEEL
   - Every world has new set dressing that reacts to play: scarecrows
     spin and crows scatter when the orb hits their wall, braziers and
@@ -74,15 +97,15 @@ NEW IN THIS BUILD  -  longer chambers, three fresh worlds
   - Every world is a fresh start: items, relics, fusions, scrolls and
     gold reset when you reach a new world, and you climb again from
     your Sanctum gifts and starting gold. Lives and health refill
-  - Chambers come in waves (elites in three). When a wave is nearly
-    gone the stragglers crumble and the next formation drops in
+  - Elite chambers come in waves. When a wave is nearly gone the
+    stragglers crumble and the next formation drops in
   - The formation advances a row whenever the ADVANCE gauge under the
     chamber title fills; bricks that reach the red line smash for damage
   - Heat: one point per item (two per fusion) you hold in this world.
     Each point adds 7% brick health, more armoured bricks and a quicker
     advance, and Guardians scale with it too, so late chambers stay
     real fights
-  - Rune caches: most waves hide one. Catch it and the fight pauses
+  - Rune caches: most boards hide one or two. Catch it and the fight pauses
     while you choose one of three items (or take 10 gold)
   - Balance (autopilot, 4 origins): about 95-145 s per chamber from the
     first to the last of a world, 160 s for elites, 90-105 s per

@@ -206,6 +206,7 @@ type Level struct {
 	advWarned             bool
 	heat                  int
 	cacheAt               float64 // share of this wave's bricks that releases a rune cache (<0: none)
+	cacheTwice            bool    // a single packed board may release a second cache
 	caches, pendingPick   int
 	env                   envState
 	crushes               int
@@ -723,6 +724,12 @@ func (L *Level) Update(dt float64, in Input) {
 			// an early wave breaks once it's nearly gone: no hunting the
 			// last few bricks before the next one lands
 			if L.wave < L.waves && L.Boss == nil && L.Left <= max(1, int(math.Ceil(float64(L.startLeft)*waveBreak))) {
+				done = true
+			}
+			// a packed final wave crumbles once only a few stragglers remain
+			if !done && L.wave == L.waves && L.Boss == nil && L.startLeft >= 30 &&
+				L.Left <= max(2, int(math.Ceil(float64(L.startLeft)*finalBreak))) {
+				L.crumbleRest()
 				done = true
 			}
 		}
@@ -2489,10 +2496,16 @@ func levelUnits(d *levelgen.Level) float64 {
 	return u
 }
 
+// denseBudget scales every chamber's brick budget. Packed formations clear
+// far faster per brick than sparse ones (the orb tunnels instead of
+// crossing empty floor), so chambers carry many more bricks for a similar
+// clear time.
+const denseBudget = 3.0
+
 // chamberBudget is how much work a chamber at this depth should be, so a
 // fresh run opens with short, readable chambers and they grow from there.
 func chamberBudget(p levelgen.Params) float64 {
-	u := (26 + 4.5*float64(min(p.Depth, 26))) * (1 + 0.12*float64(p.Act-1))
+	u := denseBudget * (22 + 4.6*float64(min(p.Depth, 26))) * (1 + 0.12*float64(p.Act-1))
 	if p.Elite {
 		u *= 1.3
 	}
@@ -2514,7 +2527,9 @@ func pacedLevelScaled(p levelgen.Params, scale float64) *levelgen.Level {
 		q.Seed = p.Seed + int64(k)*7919
 		d := levelgen.Generate(q)
 		u := levelUnits(d)
-		dist := math.Abs(math.Log(u / want))
+		// prefer full boards: more bricks on the floor for the same work
+		cells := float64(d.Count(func(c levelgen.Cell) bool { return c.Kind != levelgen.Empty }))
+		dist := math.Abs(math.Log(u/want)) - 0.35*cells/float64(levelgen.MaxRows*levelgen.Cols)
 		if dist < bestD {
 			best, bestD = d, dist
 		}

@@ -14,7 +14,7 @@ const (
 )
 
 // DesignChance is how often a level uses a hand-drawn showcase design.
-var DesignChance = 0.22
+var DesignChance = 0.38
 
 type Kind uint8
 
@@ -229,7 +229,7 @@ func genOnce(r *rand.Rand, p Params) *Level {
 		*lv = Level{Name: lv.Name}
 	}
 
-	rows := 6 + r.Intn(4) + int(d*4.5)
+	rows := 8 + r.Intn(4) + int(d*4)
 	if p.Elite {
 		rows += 2
 	}
