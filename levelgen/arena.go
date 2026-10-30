@@ -11,12 +11,12 @@ const (
 	WorldFarZ  = 31.5
 	WorldNearZ = -3.0
 	GridTopZ   = 30.3
-	CellW      = 2.0
-	CellD      = 1.1
+	lCellW     = 2.0
+	lCellD     = 1.1
 )
 
-func CellX(c int) float64 { return -WorldHalfW + (float64(c)+0.5)*CellW }
-func CellZ(r int) float64 { return GridTopZ - (float64(r)+0.5)*CellD }
+func lCellX(c int) float64 { return -WorldHalfW + (float64(c)+0.5)*lCellW }
+func lCellZ(r int) float64 { return GridTopZ - (float64(r)+0.5)*lCellD }
 
 type Pt struct{ X, Z float64 }
 
@@ -76,10 +76,10 @@ func Inside(poly []Pt, p Pt) bool {
 	return in
 }
 
-// CellInside requires the whole cell footprint to be inside the walls.
-func CellInside(poly []Pt, r, c int) bool {
-	x, z := CellX(c), CellZ(r)
-	hw, hd := CellW/2-0.05, CellD/2-0.05
+// lCellInside requires the whole cell footprint to be inside the walls.
+func lCellInside(poly []Pt, r, c int) bool {
+	x, z := lCellX(c), lCellZ(r)
+	hw, hd := lCellW/2-0.05, lCellD/2-0.05
 	for _, d := range [][2]float64{{-hw, -hd}, {hw, -hd}, {hw, hd}, {-hw, hd}} {
 		if !Inside(poly, Pt{x + d[0], z + d[1]}) {
 			return false
@@ -91,7 +91,7 @@ func CellInside(poly []Pt, r, c int) bool {
 var StructureNames = []string{"flat", "pyramid", "towers", "terraces", "ramparts", "battlements", "dunes", "dome"}
 
 // buildStacks raises columns of bricks into 3D structures.
-func buildStacks(r *rand.Rand, lv *Level, p Params, d float64, sym bool) {
+func buildStacks(r *rand.Rand, lv *coarse, p Params, d float64, sym bool) {
 	maxStack := 1 + int(0.5+d*2.5) // flat boards early: the budget goes into more bricks
 	if p.Elite {
 		maxStack++
@@ -104,9 +104,9 @@ func buildStacks(r *rand.Rand, lv *Level, p Params, d float64, sym bool) {
 	lv.Structure = StructureNames[mode]
 	lv.LayerShift = []int{0, 1, 2, 3}[r.Intn(4)]
 	// bounds of the formation for centring
-	minR, maxR, minC, maxC := MaxRows, -1, Cols, -1
-	for rr := 0; rr < MaxRows; rr++ {
-		for c := 0; c < Cols; c++ {
+	minR, maxR, minC, maxC := lRows, -1, lCols, -1
+	for rr := 0; rr < lRows; rr++ {
+		for c := 0; c < lCols; c++ {
 			if lv.Cells[rr][c].Kind != Empty {
 				minR, maxR = min(minR, rr), max(maxR, rr)
 				minC, maxC = min(minC, c), max(maxC, c)
@@ -118,7 +118,7 @@ func buildStacks(r *rand.Rand, lv *Level, p Params, d float64, sym bool) {
 	}
 	cr, cc := float64(minR+maxR)/2, float64(minC+maxC)/2
 	hr, hc := math.Max(1, float64(maxR-minR)/2+0.5), math.Max(1, float64(maxC-minC)/2+0.5)
-	var blocks [MaxRows/2 + 1][Cols/2 + 1]int
+	var blocks [lRows/2 + 1][lCols/2 + 1]int
 	for i := range blocks {
 		for j := range blocks[i] {
 			blocks[i][j] = 1 + r.Intn(maxStack)
@@ -133,8 +133,8 @@ func buildStacks(r *rand.Rand, lv *Level, p Params, d float64, sym bool) {
 	}
 	freq := 0.6 + r.Float64()*0.6
 	ph := r.Float64() * 6
-	for rr := 0; rr < MaxRows; rr++ {
-		for c := 0; c < Cols; c++ {
+	for rr := 0; rr < lRows; rr++ {
+		for c := 0; c < lCols; c++ {
 			cell := &lv.Cells[rr][c]
 			if cell.Kind != Basic && cell.Kind != Steel && cell.Kind != Explosive && cell.Kind != Crystal &&
 				cell.Kind != Armored && cell.Kind != Regen && cell.Kind != Chain && cell.Kind != Split {
@@ -184,10 +184,10 @@ func buildStacks(r *rand.Rand, lv *Level, p Params, d float64, sym bool) {
 	}
 }
 
-func edgeCell(lv *Level, r, c int) bool {
+func edgeCell(lv *coarse, r, c int) bool {
 	for _, d := range dirs4 {
 		a, b := r+d[0], c+d[1]
-		if a < 0 || a >= MaxRows || b < 0 || b >= Cols || lv.Cells[a][b].Kind == Empty {
+		if a < 0 || a >= lRows || b < 0 || b >= lCols || lv.Cells[a][b].Kind == Empty {
 			return true
 		}
 	}

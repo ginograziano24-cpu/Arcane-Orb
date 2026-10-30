@@ -82,7 +82,7 @@ func (L *Level) meteor() {
 // blackHole (Event Horizon) devours bricks around a point.
 func (L *Level) blackHole(x, z float64) {
 	s := &L.g.run.Stats
-	rad := 3.4 * CellW
+	rad := 3.4 * effCell
 	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: rad, Life: 0.8, Max: 0.8, Col: color.RGBA{150, 80, 255, 255}},
 		&Ring{X: x, Z: z, MaxR: rad * 0.6, Life: 0.6, Max: 0.6, Col: color.RGBA{40, 10, 70, 255}})
 	L.sparks(V3{x, 1, z}, 60, color.RGBA{170, 110, 255, 255}, 12)

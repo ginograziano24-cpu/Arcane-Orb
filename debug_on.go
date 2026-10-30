@@ -78,6 +78,20 @@ func debugPre(g *Game) {
 			g.save.Hints = map[string]bool{"level": true, "waves": true, "critter": true, "map": true, "reward": true, "cache": true}
 			continue
 		}
+		if a == "tomap" && g.run != nil && g.run.Map != nil {
+			g.setState(StMap)
+			continue
+		}
+		if strings.HasPrefix(a, "node:") && g.run != nil && g.run.Map != nil {
+			want := int(a[5] - '0')
+			for i, n := range g.run.Map.Nodes {
+				if int(n.Type) == want {
+					g.enterNode(i)
+					break
+				}
+			}
+			continue
+		}
 		if a == "notips" {
 			g.settings.NoTips = true
 			g.coachQ = nil
@@ -152,7 +166,7 @@ func debugKeys(g *Game) {
 		g.settings.NoTips = true
 	}
 	if want("advance") && g.level != nil {
-		g.level.shiftTarget += CellD * 5
+		g.level.shiftTarget += CellD * 10
 	}
 	if want("cache") && g.level != nil {
 		g.level.Drops = append(g.level.Drops, &Drop{X: g.level.PaddleX, Z: PaddleZ + 4, P: PCache})

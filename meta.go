@@ -31,7 +31,7 @@ func rankOf(xp int) int {
 
 // runXP is the experience a finished run awards.
 func runXP(r *Run, win bool) int {
-	xp := float64(r.Depth*15 + r.Elites*30 + r.Bosses*120 + r.Bricks/10 + r.MaxCombo)
+	xp := float64(r.Depth*15 + r.Elites*30 + r.Bosses*120 + r.Bricks/30 + r.MaxCombo)
 	if win {
 		xp += 300
 	}

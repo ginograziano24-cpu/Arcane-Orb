@@ -439,7 +439,7 @@ func (g *Game) drawMischief(B *Batch, L *Level, c *Critter, s float64, rot Mat3,
 		}
 		B.DecalBelow(c.X, c.Z, 0.02, 1.6, 1.0, sprShadow, color.RGBA{0, 0, 0, 110})
 		// a target ring hints where the bomb would land
-		rr := 1.8 * CellW * 1.9
+		rr := 1.8 * effCell * 1.9
 		B.Decal(c.X, c.Z, 0.04, rr, rr, sprRing, alpha(color.RGBA{255, 170, 80, 255}, 0.35+0.15*math.Sin(c.T*6)), true)
 	}
 }

@@ -702,11 +702,11 @@ func designRow(d *Design, rows []string, i int) string {
 
 // applyDesign fills the level from a showcase design; returns false if it
 // cannot be placed.
-func applyDesign(r *rand.Rand, lv *Level, p Params, d float64, idx int) bool {
+func applyDesign(r *rand.Rand, lv *coarse, p Params, d float64, idx int) bool {
 	ds := &Designs[idx]
 	flip := !ds.Half && r.Intn(2) == 0
 	rows := len(ds.Art)
-	top := max(0, min(MaxRows-rows, (12-rows)/2+r.Intn(2)))
+	top := max(0, min(lRows-rows, (12-rows)/2+r.Intn(2)))
 	colShift := r.Intn(6)
 	maxHP := 1 + int(math.Round(d*2))
 	extra := 0
@@ -719,13 +719,13 @@ func applyDesign(r *rand.Rand, lv *Level, p Params, d float64, idx int) bool {
 		if ds.Tall != nil {
 			tall = designRow(ds, ds.Tall, i)
 		}
-		if len(art) != Cols {
+		if len(art) != lCols {
 			return false
 		}
-		for c := 0; c < Cols; c++ {
+		for c := 0; c < lCols; c++ {
 			cc := c
 			if flip {
-				cc = Cols - 1 - c
+				cc = lCols - 1 - c
 			}
 			ch := art[c]
 			if ch == '.' || ch == ' ' {
@@ -782,14 +782,14 @@ func applyDesign(r *rand.Rand, lv *Level, p Params, d float64, idx int) bool {
 }
 
 // designShape picks an arena outline that doesn't cut into the design.
-func designShape(r *rand.Rand, lv *Level) {
+func designShape(r *rand.Rand, lv *coarse) {
 	order := r.Perm(NumShapes)
 	for _, s := range order {
 		poly := Arena(s)
 		ok := true
-		for rr := 0; rr < MaxRows && ok; rr++ {
-			for c := 0; c < Cols; c++ {
-				if lv.Cells[rr][c].Kind != Empty && !CellInside(poly, rr, c) {
+		for rr := 0; rr < lRows && ok; rr++ {
+			for c := 0; c < lCols; c++ {
+				if lv.Cells[rr][c].Kind != Empty && !lCellInside(poly, rr, c) {
 					ok = false
 					break
 				}
@@ -797,9 +797,9 @@ func designShape(r *rand.Rand, lv *Level) {
 		}
 		if ok {
 			lv.Shape = s
-			for rr := 0; rr < MaxRows; rr++ {
-				for c := 0; c < Cols; c++ {
-					lv.Outside[rr][c] = !CellInside(poly, rr, c)
+			for rr := 0; rr < lRows; rr++ {
+				for c := 0; c < lCols; c++ {
+					lv.Outside[rr][c] = !lCellInside(poly, rr, c)
 				}
 			}
 			return

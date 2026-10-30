@@ -65,16 +65,16 @@ func TestDesigns(t *testing.T) {
 				t.Fatalf("%s tall row %d has %d chars", d.Name, j, len(d.Tall[j]))
 			}
 		}
-		lv := &Level{}
+		cl := &coarse{}
 		r := rand.New(rand.NewSource(int64(i)))
-		if !applyDesign(r, lv, Params{Depth: 6}, 0.3, i) {
+		if !applyDesign(r, cl, Params{Depth: 6}, 0.3, i) {
 			t.Fatalf("%s failed", d.Name)
 		}
-		if lv.Required() < 16 {
-			t.Errorf("%s only has %d bricks", d.Name, lv.Required())
+		if cl.Required() < 16 {
+			t.Errorf("%s only has %d bricks", d.Name, cl.Required())
 		}
-		if i%6 == 0 {
-			fmt.Printf("%s\n%s\n", d.Name, ascii(lv))
+		if i%10 == 0 {
+			fmt.Printf("%s\n%s\n", d.Name, ascii(refine(cl, r)))
 		}
 	}
 	n := 0

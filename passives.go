@@ -184,7 +184,7 @@ func (L *Level) holyWave(x float64) {
 	for r := levelgen.MaxRows - 1; r >= 0 && hits < s.parryHits(); r-- {
 		for c := 0; c < levelgen.Cols; c++ {
 			b := L.Grid[r][c]
-			if b == nil || !b.Alive || math.Abs(b.X()-x) > CellW*1.1 {
+			if b == nil || !b.Alive || math.Abs(b.X()-x) > effCell*0.6 {
 				continue
 			}
 			L.damage(b, Hit{Src: "Parry", Dmg: dmg, Elemental: true, Silent: true})

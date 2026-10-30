@@ -15,15 +15,16 @@ const (
 	HalfW    = 14.0
 	FarZ     = 31.5
 	GridTopZ = 30.3
-	CellW    = 2.0
-	CellD    = 1.1
+	CellW    = levelgen.CellW // 1.0: bricks are small and many
+	CellD    = levelgen.CellD // 0.55
+	effCell  = 2.0            // the unit effect radii are measured in (the old, larger cell)
 	PaddleZ  = 2.2
 	PaddleD  = 0.7
 	PaddleH  = 0.7
 	BarrierZ = 0.4
 	LoseZ    = -2.5
 	baseW    = 3.6
-	LayerH   = 0.85
+	LayerH   = 0.62
 )
 
 // forceWorld pins the world for testing (-1 = normal rotation).
@@ -103,16 +104,16 @@ type powerDef struct {
 }
 
 var powerDefs = [numPowers]powerDef{
-	PMulti:   {"M", "Multi-Orb", color.RGBA{255, 210, 60, 255}, true, 12, 0},
+	PMulti:   {"M", "Multi-Orb", color.RGBA{255, 210, 60, 255}, true, 10, 0},
 	PExpand:  {"E", "Expand", color.RGBA{70, 150, 255, 255}, true, 11, 0},
 	PShrink:  {"S", "Shrink", color.RGBA{230, 60, 60, 255}, false, 5, 0},
-	PSlow:    {"W", "Slow", color.RGBA{80, 220, 200, 255}, true, 8, 12},
+	PSlow:    {"W", "Slow", color.RGBA{80, 220, 200, 255}, true, 8, 10},
 	PHaste:   {"H", "Haste", color.RGBA{200, 40, 120, 255}, false, 5, 10},
-	PFire:    {"F", "Fire Orb", color.RGBA{255, 120, 30, 255}, true, 5, 9},
-	PLaser:   {"L", "Laser", color.RGBA{255, 70, 70, 255}, true, 7, 10},
+	PFire:    {"F", "Fire Orb", color.RGBA{255, 120, 30, 255}, true, 5, 7},
+	PLaser:   {"L", "Laser", color.RGBA{255, 70, 70, 255}, true, 7, 8},
 	PBarrier: {"B", "Barrier", color.RGBA{150, 120, 255, 255}, true, 7, 0},
-	PGlue:    {"G", "Glue", color.RGBA{120, 220, 70, 255}, true, 7, 14},
-	PMagnet:  {"$", "Magnet", color.RGBA{255, 200, 80, 255}, true, 5, 15},
+	PGlue:    {"G", "Glue", color.RGBA{120, 220, 70, 255}, true, 7, 11},
+	PMagnet:  {"$", "Magnet", color.RGBA{255, 200, 80, 255}, true, 5, 12},
 	PLife:    {"+", "Extra Life", color.RGBA{255, 110, 160, 255}, true, 0, 0},
 	PCache:   {"?", "Rune Cache", color.RGBA{255, 214, 90, 255}, true, 0, 0},
 }
@@ -906,11 +907,26 @@ func (L *Level) collideWalls(b *Ball) {
 	}
 }
 
+// killWeight is what one small brick is worth against the old, larger
+// bricks: per-brick loot rolls and kill counters scale by it so boards with
+// many more bricks don't flood the run with gold and drops.
+const killWeight = 0.35
+
+// orbSplash is how far past its radius an orb's impact still cracks bricks.
+const orbSplash = 0.45
+
+// orbPlow is the chance the orb carries on through a brick it destroys.
+const orbPlow = 0.5
+
 func (L *Level) collideBricks(b *Ball) {
-	c0 := int(math.Floor((b.X - b.R + HalfW) / CellW))
-	c1 := int(math.Floor((b.X + b.R + HalfW) / CellW))
-	r0 := rowAt(b.Z + b.R)
-	r1 := rowAt(b.Z - b.R)
+	// the orb's impact also cracks the small bricks right beside the one it
+	// strikes (orbSplash beyond its radius); only real contacts bounce it
+	reach := b.R + orbSplash
+	c0 := int(math.Floor((b.X - reach + HalfW) / CellW))
+	c1 := int(math.Floor((b.X + reach + HalfW) / CellW))
+	r0 := rowAt(b.Z + reach)
+	r1 := rowAt(b.Z - reach)
+	var splash []*Brick
 	var best *Brick
 	bestPen := -1.0
 	var nx, nz float64
@@ -928,6 +944,9 @@ func (L *Level) collideBricks(b *Ball) {
 			dx, dz := b.X-px, b.Z-pz
 			d2 := dx*dx + dz*dz
 			if d2 >= b.R*b.R {
+				if d2 < reach*reach {
+					splash = append(splash, br)
+				}
 				continue
 			}
 			hits = append(hits, br)
@@ -948,6 +967,16 @@ func (L *Level) collideBricks(b *Ball) {
 		return
 	}
 	reflect := true
+	// splash: plain damage to the bricks beside the impact (no procs, no combo)
+	if len(splash) > 0 {
+		s := &L.g.run.Stats
+		sd := math.Max(1, s.Damage*s.DmgMult) * 0.75
+		for _, br := range splash {
+			if br.Alive && br.Kind != levelgen.Steel && !br.BossPart {
+				L.damage(br, Hit{Dmg: sd, Silent: true})
+			}
+		}
+	}
 	for _, br := range hits {
 		if !br.Alive {
 			continue
@@ -958,6 +987,9 @@ func (L *Level) collideBricks(b *Ball) {
 				reflect = false
 			} else if destroyed && b.PierceLeft > 0 {
 				b.PierceLeft--
+				reflect = false
+			} else if destroyed && br.Kind != levelgen.Elite && L.rng.Float64() < orbPlow {
+				// small bricks don't stop a moving orb: it ploughs on
 				reflect = false
 			} else if destroyed && b.Phantom > 0 {
 				reflect = false
@@ -1068,8 +1100,8 @@ func (L *Level) shielded(b *Brick) bool {
 	if b.Kind == levelgen.Shield {
 		return false
 	}
-	for dr := -1; dr <= 1; dr++ {
-		for dc := -1; dc <= 1; dc++ {
+	for dr := -2; dr <= 2; dr++ {
+		for dc := -2; dc <= 2; dc++ {
 			r, c := b.R+dr, b.C+dc
 			if r < 0 || r >= levelgen.MaxRows || c < 0 || c >= levelgen.Cols || (dr == 0 && dc == 0) {
 				continue
@@ -1413,9 +1445,9 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	L.g.snd.BrickBreak(L.Combo, b.MaxHP >= 2 || b.Kind == levelgen.Elite)
 
 	// gold
-	coinP := 0.32 + s.CoinChance
+	coinP := (0.32 + s.CoinChance) * killWeight
 	if s.Philosopher {
-		coinP = 0.6 + s.CoinChance
+		coinP = (0.6 + s.CoinChance) * killWeight
 	}
 	if L.rng.Float64() < coinP {
 		L.gainGold(1+L.rng.Intn(2), x, z, true)
@@ -1433,9 +1465,10 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	}
 	if s.Hydra {
 		L.hydraCount++
-		need := 30
+		kw := killWeight
+		need := int(30 / kw)
 		if r.HasFusion("brood") {
-			need = 15
+			need = int(15 / kw)
 		}
 		if L.hydraCount >= need && len(L.Balls) < 14 {
 			L.hydraCount = 0
@@ -1446,7 +1479,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 		}
 	}
 	// power-up drop
-	dropP := 0.055 * s.Luck
+	dropP := 0.055 * killWeight * s.Luck
 	if L.hasOmen("bountiful") {
 		dropP *= 2
 	}
@@ -1567,7 +1600,7 @@ func (L *Level) explode(x, z, radiusCells, dmg float64, big bool) {
 	g := L.g
 	st := &g.run.Stats
 	dmg *= 1 + st.BlastMult
-	rad := radiusCells * CellW * 0.95
+	rad := radiusCells * effCell * 0.95
 	rc := color.RGBA{255, 170, 60, 255}
 	if st.CryoCharge {
 		rc = color.RGBA{150, 225, 255, 255}
@@ -1766,7 +1799,7 @@ func (L *Level) applyPower(p Power) {
 		L.release()
 		var add []*Ball
 		for _, b := range L.Balls {
-			if len(L.Balls)+len(add) >= 14 {
+			if len(L.Balls)+len(add) >= 9 {
 				break
 			}
 			for _, a := range []float64{-0.4, 0.4} {
@@ -1782,7 +1815,7 @@ func (L *Level) applyPower(p Power) {
 	case PHaste:
 		L.Timers[PSlow] = 0
 	case PBarrier:
-		L.Barrier = min(5, L.Barrier+2)
+		L.Barrier = min(4, L.Barrier+1)
 	}
 }
 
@@ -2316,7 +2349,7 @@ func (L *Level) setupBoss() {
 	act := L.g.run.Act
 	// the Guardian grows with the build you bring to it (heat), so it stays
 	// a real fight however the world went
-	b := &Boss{Name: L.Biome.BossName, MaxHP: (50 + 55*float64(act-1)) * (1 + heatHP*float64(L.heat)) * ascHP(L.g.run.Asc, false, true) * math.Pow(1.25, float64(L.g.run.Loop()))}
+	b := &Boss{Name: L.Biome.BossName, MaxHP: (115 + 125*float64(act-1)) * (1 + heatHP*float64(L.heat)) * ascHP(L.g.run.Asc, false, true) * math.Pow(1.25, float64(L.g.run.Loop()))}
 	b.HP = b.MaxHP
 	L.Boss = b
 	shape := []string{
@@ -2330,16 +2363,23 @@ func (L *Level) setupBoss() {
 		".###......###.",
 	}
 	body := bossBody(L.Biome)
+	// the shape is drawn on the coarse grid; each mark is a 2x2 block of bricks
 	for r, row := range shape {
 		for c := 0; c < len(row); c++ {
-			if row[c] == '#' {
-				br := L.addBrick(r+2, c, levelgen.Basic, 2+float64(act), body)
-				br.BossPart = true
-				// assemble row by row from the top during the intro
-				br.Appear = -(1.6 + float64(len(shape)-r)*0.95 + math.Abs(float64(c)-6.5)*0.12)
-				br.FallY = 4
-				L.Left--
-				b.body = append(b.body, [2]int{r + 2, c})
+			if row[c] != '#' {
+				continue
+			}
+			for dr := 0; dr < 2; dr++ {
+				for dc := 0; dc < 2; dc++ {
+					fr, fc := 2*(r+2)+dr, 2*c+dc
+					br := L.addBrick(fr, fc, levelgen.Basic, 1+float64(act), body)
+					br.BossPart = true
+					// assemble row by row from the top during the intro
+					br.Appear = -(1.6 + float64(len(shape)-r)*0.95 + math.Abs(float64(fc)-13.5)*0.06)
+					br.FallY = 4
+					L.Left--
+					b.body = append(b.body, [2]int{fr, fc})
+				}
 			}
 		}
 	}
@@ -2500,12 +2540,12 @@ func levelUnits(d *levelgen.Level) float64 {
 // far faster per brick than sparse ones (the orb tunnels instead of
 // crossing empty floor), so chambers carry many more bricks for a similar
 // clear time.
-const denseBudget = 3.0
+const denseBudget = 10.0
 
 // chamberBudget is how much work a chamber at this depth should be, so a
 // fresh run opens with short, readable chambers and they grow from there.
 func chamberBudget(p levelgen.Params) float64 {
-	u := denseBudget * (22 + 4.6*float64(min(p.Depth, 26))) * (1 + 0.12*float64(p.Act-1))
+	u := denseBudget * (12 + 5.6*float64(min(p.Depth, 26))) * (1 + 0.12*float64(p.Act-1))
 	if p.Elite {
 		u *= 1.3
 	}

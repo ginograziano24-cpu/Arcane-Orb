@@ -36,7 +36,7 @@ var glossary = []glossTerm{
 	{"Execute", []string{"execut"}, "Bricks pushed below the threshold break outright.", rgba(255, 90, 90, 255)},
 	{"Scroll", []string{"scroll"}, "Single-use spells. Read one during a chamber with 1, 2 or 3.", rgba(240, 220, 160, 255)},
 	{"Curse", []string{"curse", "cursed"}, "A lingering penalty that stays with you until something lifts it.", rgba(200, 60, 120, 255)},
-	{"Lives", []string{"a life", "lives", "extra life"}, "Dropping every orb or running out of health costs a life. Lives refill to two each act.", rgba(255, 130, 170, 255)},
+	{"Lives", []string{"a life", "lives", "extra life"}, "Dropping every orb costs a life, and so does running out of health in a Guardian fight. Lives refill to two each act.", rgba(255, 130, 170, 255)},
 }
 
 func glossFor(text string) []*glossTerm {
@@ -139,9 +139,9 @@ var coachTips = map[string]coachTip{
 	"reward":  {"reward", "Take one", "Pick one card, or skip it for a little gold. Hover a card to see what its keywords mean.\n\nSome items fuse: own both halves and they forge into something stronger. Cards that complete a fusion say so.", "star", true},
 	"shop":    {"shop", "The shop", "Spend gold on items, relics, healing and scrolls. Anything you don't buy is gone when you leave.", "coin", true},
 	"scroll":  {"scroll", "A scroll", "Scrolls are one-use spells. Read one during a chamber with {scrolls}. You can carry a few at once.", "book", false},
-	"life":    {"life", "A life lost", "The paddle reforms in a moment. Your health refills, but lives don't come back until the next act unless a heart falls from a broken brick; catch it with the paddle.", "heart", false},
+	"life":    {"life", "A life lost", "The paddle reforms in a moment. Lives don't come back until the next act unless a heart falls from a broken brick; catch it with the paddle.", "heart", false},
 	"curse":   {"curse", "Cursed", "Curses weaken you until something lifts them. Look for events and items that cleanse them.", "mask", false},
-	"waves":   {"waves", "Waves and heat", "This chamber comes in waves: when one is nearly gone the rest crumble and the next drops in.\n\nThe formation creeps a row closer when the ADVANCE gauge under the title fills. Bricks that reach the red line near your paddle smash for damage.\n\nHEAT is how strong your build has grown this world. Each point toughens the bricks and hurries the advance.", "burst", false},
+	"waves":   {"waves", "Waves and heat", "This chamber comes in waves: when one is nearly gone the rest crumble and the next drops in.\n\nThe formation creeps closer when the ADVANCE gauge under the title fills. Bricks that reach the red line near your paddle smash: the paddle reels and you spill gold.\n\nHEAT is how strong your build has grown this world. Each point toughens the bricks and hurries the advance.", "burst", false},
 	"critter": {"critter", "Critters", "Little creatures wander the open floor. Hit one with the orb and it bursts into coins, sometimes a power-up. The golden ones are rare, quick and worth far more.", "coin", false},
 	"thief":   {"thief", "Stop, thief!", "A Pilferer is after that power-up. If it grabs one it runs for the wall: hit it with the orb and it drops everything it stole.", "coin", false},
 	"mason":   {"mason", "The Mason", "This little builder lays fresh bricks in front of the formation. Hit it with the orb to send it packing, with a few coins for your trouble.", "anvil", false},

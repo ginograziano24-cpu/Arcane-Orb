@@ -44,7 +44,7 @@ func (L *Level) maybeDropLife(x, z float64) {
 	if r.Lives >= r.maxLives() || r.LifeFinds >= maxLifeFinds || L.lifeDropFalling() || L.Cleared {
 		return
 	}
-	if L.rng.Float64() < lifeDropP*r.Stats.Luck {
+	if L.rng.Float64() < lifeDropP*killWeight*r.Stats.Luck {
 		L.Drops = append(L.Drops, &Drop{X: x, Z: z, P: PLife})
 		L.text(V3{x, 2.2, z}, "A HEART FALLS!", color.RGBA{255, 120, 160, 255}, true)
 		L.g.snd.PlayVol("abilready", 0.8)

@@ -163,3 +163,94 @@ func drawBakedGround(B *Batch, t *bakedTex, tint color.RGBA, y float64) {
 func mulc(a, b color.RGBA) color.RGBA {
 	return color.RGBA{uint8(int(a.R) * int(b.R) / 255), uint8(int(a.G) * int(b.G) / 255), uint8(int(a.B) * int(b.B) / 255), 255}
 }
+
+// ---------------------------------------------------------------- bricks
+
+// The brick sheet (tools/textures/bricks.py): 8 x 6 cells of 256 x 128.
+var brickSheetCol = map[int]int{WNeon: 0, WMeadow: 1, WCaverns: 2, WRuins: 3, WClouds: 4, WMachine: 5}
+
+var brickSpecialCell = map[levelgen.Kind]int{
+	levelgen.Armored: 0, levelgen.Explosive: 1, levelgen.Chain: 2, levelgen.Split: 3, levelgen.Regen: 4,
+	levelgen.Moving: 5, levelgen.Shield: 6, levelgen.Teleport: 7, levelgen.Spawner: 8,
+	levelgen.Multiplier: 9, levelgen.Crystal: 10, levelgen.Mystery: 11,
+}
+
+type sheetRect struct{ u0, v0, u1, v1 float32 }
+
+func brickCell(i, j int) sheetRect {
+	const w, h, in = 256, 128, 2
+	return sheetRect{float32(i*w + in), float32(j*h + in), float32((i+1)*w - in), float32((j+1)*h - in)}
+}
+
+// brickRects picks the top and side cells for a brick, and whether its
+// colours are its own (specials) rather than tinted.
+func brickRects(world int, k levelgen.Kind) (top, side sheetRect, own bool) {
+	switch k {
+	case levelgen.Steel:
+		return brickCell(6, 0), brickCell(6, 1), false
+	case levelgen.Elite:
+		return brickCell(7, 0), brickCell(7, 1), true
+	}
+	if i, ok := brickSpecialCell[k]; ok {
+		return brickCell(i%8, 2+i/8), brickCell(i%8, 4+i/8), true
+	}
+	c := brickSheetCol[world]
+	return brickCell(c, 0), brickCell(c, 1), false
+}
+
+// drawTexBrick draws a brick as a bevelled, textured block: an inset top,
+// chamfered edges that catch the light, and the faces toward the camera.
+func drawTexBrick(B *Batch, t *bakedTex, x0, y0, z0, x1, y1, z1 float64, col color.RGBA, top, side sheetRect, emis float32) {
+	eye := B.cam.Eye
+	c := math.Min(0.07, math.Min((x1-x0), (z1-z0))*0.2)
+	if y1-y0 < c*2.5 {
+		c = (y1 - y0) * 0.35
+	}
+	ix0, ix1, iz0, iz1, iy := x0+c, x1-c, z0+c, z1-c, y1-c
+	sh := func(a, b, cc, d float32) [4]float32 { return [4]float32{a + emis, b + emis, cc + emis, d + emis} }
+	// texture coordinates: the top cell covers the inset top; bevels use the
+	// cell's rim; sides use the side cell
+	tu := func(x float64) float32 { return top.u0 + (top.u1-top.u0)*float32((x-x0)/(x1-x0)) }
+	tv := func(z float64) float32 { return top.v0 + (top.v1-top.v0)*float32((z1-z)/(z1-z0)) }
+	topUV := func(p [4]V3) [4][2]float32 {
+		var o [4][2]float32
+		for i := range p {
+			o[i] = [2]float32{tu(p[i].X), tv(p[i].Z)}
+		}
+		return o
+	}
+	if eye.Y > y1 {
+		p := [4]V3{{ix0, y1, iz1}, {ix1, y1, iz1}, {ix1, y1, iz0}, {ix0, y1, iz0}}
+		B.QuadUV(p, t.id, topUV(p), B.lit(col, V3{0, 1, 0}), sh(1.08, 1.08, 1, 1), false)
+		// front bevel (toward the camera)
+		p = [4]V3{{ix0, y1, iz0}, {ix1, y1, iz0}, {x1, iy, z0}, {x0, iy, z0}}
+		B.QuadUV(p, t.id, topUV(p), B.lit(col, V3{0, 0.7, -0.7}), sh(1.25, 1.25, 1.05, 1.05), false)
+		// side bevels
+		if eye.X < x1 {
+			p = [4]V3{{ix0, y1, iz1}, {ix0, y1, iz0}, {x0, iy, z0}, {x0, iy, z1}}
+			B.QuadUV(p, t.id, topUV(p), B.lit(col, V3{-0.7, 0.7, 0}), sh(1.15, 1.15, 0.95, 0.95), false)
+		}
+		if eye.X > x0 {
+			p = [4]V3{{ix1, y1, iz0}, {ix1, y1, iz1}, {x1, iy, z1}, {x1, iy, z0}}
+			B.QuadUV(p, t.id, topUV(p), B.lit(col, V3{0.7, 0.7, 0}), sh(1.15, 1.15, 0.95, 0.95), false)
+		}
+		// back bevel shows when the camera is high above
+		if eye.Y-y1 > (z1-eye.Z)*0.9 {
+			p = [4]V3{{x0, iy, z1}, {x1, iy, z1}, {ix1, y1, iz1}, {ix0, y1, iz1}}
+			B.QuadUV(p, t.id, topUV(p), B.lit(col, V3{0, 0.7, 0.7}), sh(0.85, 0.85, 1, 1), false)
+		}
+	}
+	uv := func(r sheetRect, x0f, x1f float32) [4][2]float32 {
+		w := r.u1 - r.u0
+		return [4][2]float32{{r.u0 + w*x0f, r.v0}, {r.u0 + w*x1f, r.v0}, {r.u0 + w*x1f, r.v1}, {r.u0 + w*x0f, r.v1}}
+	}
+	if eye.Z < z0 {
+		B.QuadUV([4]V3{{x0, iy, z0}, {x1, iy, z0}, {x1, y0, z0}, {x0, y0, z0}}, t.id, uv(side, 0, 1), B.lit(col, V3{0, 0, -1}), sh(1, 1, 0.55, 0.55), false)
+	}
+	ef := float32((z1 - z0) / (x1 - x0))
+	if eye.X < x0 {
+		B.QuadUV([4]V3{{x0, iy, z1}, {x0, iy, z0}, {x0, y0, z0}, {x0, y0, z1}}, t.id, uv(side, 0, ef), B.lit(col, V3{-1, 0, 0}), sh(0.9, 0.9, 0.5, 0.5), false)
+	} else if eye.X > x1 {
+		B.QuadUV([4]V3{{x1, iy, z0}, {x1, iy, z1}, {x1, y0, z1}, {x1, y0, z0}}, t.id, uv(side, 1-ef, 1), B.lit(col, V3{1, 0, 0}), sh(0.9, 0.9, 0.5, 0.5), false)
+	}
+}

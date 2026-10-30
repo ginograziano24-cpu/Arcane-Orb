@@ -269,6 +269,10 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		def := powerDefs[d.P]
 		bob := 0.6 + 0.15*math.Sin(d.T*6)
 		B.DecalBelow(d.X, d.Z-0.2, 0.02, 1.4, 0.8, sprShadow, color.RGBA{0, 0, 0, 140})
+		if drawModel(B, powerModel[d.P], V3{d.X, bob + 0.15, d.Z}, v3(0.95), rotXYZ(-0.35, math.Sin(d.T*2.2)*0.45, 0), color.RGBA{}, 0.15) {
+			B.Billboard(V3{d.X, bob + 0.15, d.Z}, 2.2, sprSoft, alpha(def.Col, 0.3), true)
+			continue
+		}
 		if !drawModel(B, "capsule", V3{d.X, bob, d.Z}, v3(1), rotXYZ(0, 0, math.Sin(d.T*3)*0.15), def.Col, 0.2) {
 			B.Box(d.X-0.6, bob-0.25, d.Z-0.3, d.X+0.6, bob+0.25, d.Z+0.3, def.Col, sprWhite, 0.25)
 		}
@@ -364,6 +368,11 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	}
 }
 
+// powerModel names each power-up's own drop model.
+var powerModel = [numPowers]string{PMulti: "pw_multi", PExpand: "pw_expand", PShrink: "pw_shrink", PSlow: "pw_slow",
+	PHaste: "pw_haste", PFire: "pw_fire", PLaser: "pw_laser", PBarrier: "pw_barrier", PGlue: "pw_glue",
+	PMagnet: "pw_magnet", PLife: "pw_life", PCache: "pw_cache"}
+
 // drawWorldOverlay draws the 2D layer over the world (lightning, capsule
 // letters, floating text and flashes). k maps the world camera's pixels to
 // dst's, so the overlay stays sharp when the 3D scene renders below
@@ -389,6 +398,29 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 			drawSprite(screen, sprRing, x-r, y-r, 2*r, 2*r, color.RGBA{255, 250, 255, 70}, true)
 		}
 	}
+	// health bars over bricks the orb has dented (the Guardian's armour
+	// has its own bar)
+	for _, b := range L.Bricks {
+		if !b.Alive || b.BossPart || b.Kind == levelgen.Steel || b.HP >= b.MaxHP || b.Appear < 1 || b.Up != nil {
+			continue
+		}
+		top := float64(b.Layer+1)*LayerH + 0.12
+		lx, ly := proj(V3{b.X() + b.OffX - CellW*0.42, top, b.Z() + b.OffZ})
+		rx, _ := proj(V3{b.X() + b.OffX + CellW*0.42, top, b.Z() + b.OffZ})
+		w := rx - lx
+		if w < 6 {
+			continue
+		}
+		bh := math.Max(3, w*0.12)
+		a := 0.95
+		if b.SinceHit > 3 {
+			a = math.Max(0.45, 0.95-(b.SinceHit-3)*0.25)
+		}
+		f := clamp01(b.HP / b.MaxHP)
+		fillRect(screen, lx-1, ly-1, w+2, bh+2, prem(color.RGBA{10, 8, 16, 255}, a*0.85))
+		fc := mixc(color.RGBA{255, 70, 60, 255}, color.RGBA{120, 255, 120, 255}, f)
+		fillRect(screen, lx, ly, w*f, bh, prem(fc, a))
+	}
 	// lightning arcs (2D, over everything)
 	for _, a := range L.Arcs {
 		al := a.Life / 0.3
@@ -404,6 +436,9 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 	}
 	// capsule letters
 	for _, d := range L.Drops {
+		if model(powerModel[d.P]) != nil {
+			continue // the power's own model says what it is
+		}
 		x, y := proj(V3{d.X, 0.95 + 0.15*math.Sin(d.T*6), d.Z})
 		g.ui.textAt(screen, powerDefs[d.P].Letter, fBold, 20, x, y-13*g.ui.S, color.RGBA{20, 20, 30, 255}, alignCenter)
 	}
@@ -436,12 +471,12 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		return
 	}
 	ap = 1 - (1-ap)*(1-ap)
-	hw, hd := CellW/2*0.94, CellD/2*0.9
+	hw, hd := CellW/2*0.9, CellD/2*0.86
 	frac := b.HP / b.MaxHP
 	y0 := float64(b.Layer)*LayerH + b.FallY
 	h := LayerH * 0.94
 	if b.Kind == levelgen.Elite {
-		h = 1.7
+		h = 0.95
 	}
 	if b.Kind != levelgen.Steel && b.Layer == 0 && b.Up == nil {
 		h *= 0.8 + 0.2*frac
@@ -490,7 +525,7 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		emis += 0.15
 	}
 	if b.Layer == 0 {
-		B.DecalBelow(x+0.5, z-0.15, 0.015, CellW*1.15, CellD*1.4, sprShadow, color.RGBA{0, 0, 0, 120})
+		B.DecalBelow(x+0.25, z-0.08, 0.015, CellW*1.15, CellD*1.4, sprShadow, color.RGBA{0, 0, 0, 110})
 	}
 	bio := L.Biome
 	if b.BossPart && !b.Core {
@@ -500,10 +535,10 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		seam := lighten(bio.Trim, 0.2)
 		B.Box(x-hw-0.03, y0+h*0.62, z-hd-0.03, x+hw+0.03, y0+h*0.68, z+hd+0.03, seam, sprWhite, float32(0.5+0.4*pulse))
 		B.Decal(x, z, y0+h+0.01, CellW*0.9, CellD*0.9, sprSoft, alpha(seam, 0.22*pulse*ap), true)
-		if b.R-2 <= 1 && ap > 0.5 {
+		if b.R/2-2 <= 1 && b.R%2 == 0 && ap > 0.5 {
 			// a crown of crystal spikes along the brow
-			sh := (1.4 + 1.6*(1-math.Abs(float64(b.C)-6.5)/6.5)) * ap
-			q := 0.42
+			sh := (1.4 + 1.6*(1-math.Abs(float64(b.C)-13.5)/13.5)) * ap
+			q := 0.22
 			B.Prism([4][2]float64{{x - q, z - q*0.7}, {x + q, z - q*0.7}, {x + q, z + q*0.7}, {x - q, z + q*0.7}}, y0+h, y0+h+sh, 0.08, lighten(bio.Trim, 0.1), float32(0.35+0.25*pulse))
 		}
 		g.drawBadge(B, b, x, y0+h, z, t)
@@ -514,6 +549,24 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	bm := brickModel(mat)
 	if b.Kind == levelgen.Steel {
 		bm = brickModel(WMachine)
+	}
+	if bt := bakedTexture("bricks"); bt != nil && !g.settings.Classic {
+		top, side, own := brickRects(bio.ID, b.Kind)
+		c := col
+		if own {
+			// specials keep their painted colours; a light wash of the kind colour
+			c = mixc(color.RGBA{255, 255, 255, 255}, col, 0.25)
+			if b.Flash > 0 {
+				c = mixc(c, color.RGBA{255, 255, 255, 255}, b.Flash*0.6)
+			}
+		}
+		e := emis
+		if bio.Neon {
+			e += 0.12
+		}
+		drawTexBrick(B, bt, x-hw, y0, z-hd, x+hw, y0+h, z+hd, c, top, side, e)
+		bm = nil
+		goto drawn
 	}
 	switch {
 	case bm != nil:
@@ -536,6 +589,7 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		}
 		B.BoxTex(x-hw, y0, z-hd, x+hw, y0+h, z+hd, col, matTop[mat], matSide[mat], e)
 	}
+drawn:
 	if bio.Neon && b.Layer == 0 {
 		B.Decal(x, z, 0.02, CellW*1.1, CellD*1.3, sprSoft, alpha(col, 0.25), true)
 	}
@@ -545,7 +599,9 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		B.Box(x-hw-0.02, y0+h*0.42, z-hd-0.02, x+hw+0.02, y0+h*0.58, z+hd+0.02, trim, sprWhite, 0.25)
 	}
 	h = y0 + h
-	g.drawBadge(B, b, x, h, z, t)
+	if !g.drawTopper(B, b, x, h, z, t) && b.Kind != levelgen.Armored && b.Kind != levelgen.Split && b.Kind != levelgen.Moving {
+		g.drawBadge(B, b, x, h, z, t)
+	}
 	if ic, ok := kindIcon[b.Kind]; ok && false {
 		icCol := color.RGBA{255, 255, 255, 230}
 		switch b.Kind {
@@ -626,11 +682,11 @@ func (g *Game) drawPaddle(B *Batch, L *Level) {
 
 // bossHeight gives each cell of the Guardian its sculpted height.
 func bossHeight(r, c int) float64 {
-	gr := float64(r - 2) // row within the shape, 0 = crown
+	gr := float64(r/2 - 2) // coarse row within the shape, 0 = crown
 	if gr >= 6 {
 		return 1.25 // legs
 	}
-	dx := math.Abs(float64(c)-6.5) / 6.5
+	dx := math.Abs(float64(c)-13.5) / 13.5
 	dome := 1 - dx*dx
 	return 1.0 + 3.0*dome*(0.5+0.5*(1-gr/6))
 }

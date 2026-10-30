@@ -118,6 +118,22 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	const vx = 162.0
 	if g.duel != nil {
 		g.drawDuelVitals(screen, 22+vx, 18)
+	} else if L.Boss == nil {
+		// outside a Guardian fight there is no health: lives are what count,
+		// so the plate shows gold and barrier charges only
+		u.frame(screen, 22+vx, 18, 440, 70, 0.92)
+		pop := g.goldPop
+		u.icon(screen, icCoin, vx+64, 53, 32*(1+0.25*pop), 1)
+		gs := 28 * (1 + 0.16*pop)
+		u.textOutlined(screen, itoa(int(math.Round(g.hudGold))), fBold, gs, vx+92, 53-gs*0.64, mixc(cGold, cWhite, pop*0.6), alignLeft)
+		if L.Barrier > 0 {
+			x := vx + 432.0
+			for i := 0; i < L.Barrier; i++ {
+				u.icon(screen, icShield, x, 53, 26, 1)
+				x -= 30
+			}
+			u.text(screen, "BARRIER", fBold, 15, x+8, 45, ca(rgba(190, 172, 255, 255), 0.9), alignRight)
+		}
 	} else {
 		u.frame(screen, 22+vx, 18, 440, 112, 0.92)
 		frac := hp / r.Stats.MaxHP

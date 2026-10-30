@@ -390,7 +390,7 @@ def build_group(group):
 # ------------------------------------------------------------------ assets
 
 import importlib
-ASSET_MODULES = ("m_common", "m_meadow", "m_ruins", "m_clouds", "m_neon", "m_caverns", "m_machine")
+ASSET_MODULES = ("m_common", "m_meadow", "m_ruins", "m_clouds", "m_neon", "m_caverns", "m_machine", "m_powerups")
 for _m in ASSET_MODULES:
     try:
         importlib.reload(importlib.import_module(_m))

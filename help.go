@@ -212,7 +212,7 @@ func (g *Game) helpControls(s *ebiten.Image, a float64) {
 	row([]string{"Start"}, "Pause")
 	row([]string{"B"}, "Back")
 	y += 10
-	g.textBlock(s, "", "Let every orb slip past and you lose a life: the paddle shatters and reforms. You start with two lives and each act tops them back up to two. A rare falling heart restores a lost life, three times a run at most. Health is your shield against Guardians, hazards and curses; run it dry and that costs a life too.", tx, y, 790, a)
+	g.textBlock(s, "", "Let every orb slip past and you lose a life: the paddle shatters and reforms. You start with two lives and each act tops them back up to two. A rare falling heart restores a lost life, three times a run at most. Health only matters in Guardian fights: their attacks wear it down, and running it dry costs a life too.", tx, y, 790, a)
 }
 
 // ---------------------------------------------------------------- page 2

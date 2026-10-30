@@ -24,6 +24,7 @@ var gridShift float64
 const (
 	dangerZ      = PaddleZ + 4.6 // bricks that reach this line smash into the paddle's side of the arena
 	advanceSlide = 0.45          // seconds an advance takes
+	advanceStep  = 2 * CellD     // how far the formation creeps each advance
 )
 
 // ---------------------------------------------------------------- heat
@@ -114,7 +115,7 @@ func (L *Level) waveParams(seed int64) levelgen.Params {
 const waveBreak = 0.15
 
 // finalBreak is the share of a packed last wave left when it crumbles.
-const finalBreak = 0.05
+const finalBreak = 0.07
 
 // crumbleRest breaks every brick still standing, counting the required
 // ones as broken.
@@ -240,7 +241,7 @@ func (L *Level) updateAdvance(dt float64) {
 		return
 	}
 	if L.shift < L.shiftTarget {
-		L.shift = math.Min(L.shiftTarget, L.shift+dt*CellD/advanceSlide)
+		L.shift = math.Min(L.shiftTarget, L.shift+dt*advanceStep/advanceSlide)
 		gridShift = L.shift
 		L.crushCheck()
 	}
@@ -260,7 +261,7 @@ func (L *Level) updateAdvance(dt float64) {
 		L.g.snd.PlayVol("thump", 0.8)
 	}
 	if L.advT <= 0 {
-		L.shiftTarget += CellD
+		L.shiftTarget += advanceStep
 		L.advT = L.advInterval()
 		L.advWarned = false
 		L.Shake = math.Max(L.Shake, 0.35)
@@ -303,10 +304,20 @@ func (L *Level) crushCheck() {
 		}
 	}
 	if smashed > 0 {
+		// no health outside a Guardian fight: the smashed bricks are lost
+		// loot, the paddle reels and a little gold spills
 		L.crushes++
 		r := L.g.run
-		dmg := float64(6+3*(r.Act-1)) + 1.5*float64(smashed-1)
-		L.hurt(math.Round(dmg), "CRUSHED")
+		lost := min(r.Gold, 2+smashed/2+r.Act)
+		r.Gold -= lost
+		L.stun = math.Max(L.stun, 0.5)
+		L.Shake = math.Max(L.Shake, 0.6)
+		L.hurtFlash = 0.6
+		msg := "CRUSHED"
+		if lost > 0 {
+			msg = fmt.Sprintf("CRUSHED  −%d gold", lost)
+		}
+		L.text(V3{L.PaddleX, 1.5, PaddleZ + 2}, msg, color.RGBA{255, 120, 100, 255}, true)
 		L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: dangerZ, MaxR: 6, Life: 0.4, Max: 0.4, Col: color.RGBA{255, 90, 70, 255}})
 	}
 }

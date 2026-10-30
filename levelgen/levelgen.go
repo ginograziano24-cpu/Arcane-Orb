@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	Cols    = 14
-	MaxRows = 16
+	lCols = 14
+	lRows = 16
 )
 
 // DesignChance is how often a level uses a hand-drawn showcase design.
@@ -66,23 +66,23 @@ type Params struct {
 	Elite bool
 }
 
-type Level struct {
+type coarse struct {
 	Name       string
 	Formation  string
 	Structure  string
 	Rows       int
-	Cells      [MaxRows][Cols]Cell
-	Outside    [MaxRows][Cols]bool // cells clipped away by the arena walls
+	Cells      [lRows][lCols]Cell
+	Outside    [lRows][lCols]bool // cells clipped away by the arena walls
 	Objective  Objective
 	Seed       int64
 	Shape      int
 	LayerShift int // colour step between stacked layers
 }
 
-func (l *Level) Count(pred func(Cell) bool) int {
+func (l *coarse) Count(pred func(Cell) bool) int {
 	n := 0
-	for r := 0; r < MaxRows; r++ {
-		for c := 0; c < Cols; c++ {
+	for r := 0; r < lRows; r++ {
+		for c := 0; c < lCols; c++ {
 			if pred(l.Cells[r][c]) {
 				n++
 			}
@@ -91,10 +91,10 @@ func (l *Level) Count(pred func(Cell) bool) int {
 	return n
 }
 
-func (l *Level) Required() int {
+func (l *coarse) Required() int {
 	n := 0
-	for r := 0; r < MaxRows; r++ {
-		for c := 0; c < Cols; c++ {
+	for r := 0; r < lRows; r++ {
+		for c := 0; c < lCols; c++ {
 			if cl := l.Cells[r][c]; cl.Kind.Required() {
 				n += max(1, cl.Stack)
 			}
@@ -117,8 +117,8 @@ func Mix(vals ...int64) int64 {
 	return int64(x & 0x7FFFFFFFFFFFFFFF)
 }
 
-// Generate deterministically builds a level from its parameters.
-func Generate(p Params) *Level {
+// generateCoarse deterministically builds a level from its parameters.
+func generateCoarse(p Params) *coarse {
 	for attempt := 0; attempt < 80; attempt++ {
 		r := rand.New(rand.NewSource(Mix(p.Seed, int64(p.Depth), int64(attempt))))
 		lv := genOnce(r, p)
@@ -127,9 +127,9 @@ func Generate(p Params) *Level {
 			return lv
 		}
 	}
-	lv := &Level{Name: "The Plain Wall", Formation: "wall", Rows: 6, Seed: p.Seed}
+	lv := &coarse{Name: "The Plain Wall", Formation: "wall", Rows: 6, Seed: p.Seed}
 	for r := 1; r < 6; r++ {
-		for c := 0; c < Cols; c++ {
+		for c := 0; c < lCols; c++ {
 			lv.Cells[r][c] = Cell{Kind: Basic, HP: 1, Color: r % 6, Stack: 1}
 		}
 	}
@@ -149,7 +149,7 @@ var nouns = []string{
 	"Catacombs", "Tower", "Bridge", "Caverns", "Hall", "Orrery", "Engine", "Furnace",
 }
 
-type mask [MaxRows][Cols]bool
+type mask [lRows][lCols]bool
 
 func (m *mask) count() int {
 	n := 0
@@ -164,7 +164,7 @@ func (m *mask) count() int {
 }
 
 func mirror(m *mask) {
-	for r := 0; r < MaxRows; r++ {
+	for r := 0; r < lRows; r++ {
 		for c := 0; c < 7; c++ {
 			m[r][13-c] = m[r][c]
 		}
@@ -173,17 +173,17 @@ func mirror(m *mask) {
 
 func combine(a, b mask, f func(a, b bool) bool) mask {
 	var o mask
-	for r := 0; r < MaxRows; r++ {
-		for c := 0; c < Cols; c++ {
+	for r := 0; r < lRows; r++ {
+		for c := 0; c < lCols; c++ {
 			o[r][c] = f(a[r][c], b[r][c])
 		}
 	}
 	return o
 }
 
-func genOnce(r *rand.Rand, p Params) *Level {
+func genOnce(r *rand.Rand, p Params) *coarse {
 	d := math.Min(1, float64(p.Depth-1)/22) // difficulty 0..1
-	lv := &Level{}
+	lv := &coarse{}
 	lv.Name = fmt.Sprintf("The %s %s", adjectives[r.Intn(len(adjectives))], nouns[r.Intn(len(nouns))])
 
 	// showcase designs: hand-drawn castles, creatures, faces and objects,
@@ -216,8 +216,8 @@ func genOnce(r *rand.Rand, p Params) *Level {
 					place(r, lv, Cell{Kind: Elite, HP: 5 + p.Depth/3, Stack: 1}, sym)
 				}
 			}
-			for rr := 0; rr < MaxRows; rr++ {
-				for c := 0; c < Cols; c++ {
+			for rr := 0; rr < lRows; rr++ {
+				for c := 0; c < lCols; c++ {
 					if lv.Outside[rr][c] {
 						lv.Cells[rr][c] = Cell{}
 					}
@@ -226,10 +226,10 @@ func genOnce(r *rand.Rand, p Params) *Level {
 			ensureReachable(lv)
 			return lv
 		}
-		*lv = Level{Name: lv.Name}
+		*lv = coarse{Name: lv.Name}
 	}
 
-	rows := 8 + r.Intn(4) + int(d*4)
+	rows := 10 + r.Intn(3) + int(d*3)
 	if p.Elite {
 		rows += 2
 	}
@@ -257,16 +257,16 @@ func genOnce(r *rand.Rand, p Params) *Level {
 		}
 	}
 	top := r.Intn(3)
-	lv.Rows = min(MaxRows, rows+top)
+	lv.Rows = min(lRows, rows+top)
 	if p.Depth <= 1 {
 		lv.Shape = ShapeHall
 	} else {
 		lv.Shape = r.Intn(NumShapes)
 	}
 	poly := Arena(lv.Shape)
-	for rr := 0; rr < MaxRows; rr++ {
-		for c := 0; c < Cols; c++ {
-			lv.Outside[rr][c] = !CellInside(poly, rr, c)
+	for rr := 0; rr < lRows; rr++ {
+		for c := 0; c < lCols; c++ {
+			lv.Outside[rr][c] = !lCellInside(poly, rr, c)
 		}
 	}
 
@@ -282,13 +282,13 @@ func genOnce(r *rand.Rand, p Params) *Level {
 	}
 	cx, cy := 6.5, float64(rows-1)/2
 	maxDist := math.Hypot(cx, cy) + 0.01
-	var blockColor [MaxRows][Cols]int
-	for rr := 0; rr < MaxRows; rr += 2 {
-		for c := 0; c < Cols; c += 2 {
+	var blockColor [lRows][lCols]int
+	for rr := 0; rr < lRows; rr += 2 {
+		for c := 0; c < lCols; c += 2 {
 			v := r.Intn(6)
 			for dr := 0; dr < 2; dr++ {
 				for dc := 0; dc < 2; dc++ {
-					if rr+dr < MaxRows && c+dc < Cols {
+					if rr+dr < lRows && c+dc < lCols {
 						blockColor[rr+dr][c+dc] = v
 					}
 				}
@@ -296,7 +296,7 @@ func genOnce(r *rand.Rand, p Params) *Level {
 		}
 	}
 	if sym {
-		for rr := 0; rr < MaxRows; rr++ {
+		for rr := 0; rr < lRows; rr++ {
 			for c := 0; c < 7; c++ {
 				blockColor[rr][13-c] = blockColor[rr][c]
 			}
@@ -304,7 +304,7 @@ func genOnce(r *rand.Rand, p Params) *Level {
 	}
 	colorDiv := 1 + r.Intn(2)
 	for rr := 0; rr < rows; rr++ {
-		for c := 0; c < Cols; c++ {
+		for c := 0; c < lCols; c++ {
 			if !m[rr][c] {
 				continue
 			}
@@ -346,7 +346,7 @@ func genOnce(r *rand.Rand, p Params) *Level {
 				}
 			}
 			hp = max(1, min(maxHP, hp))
-			if rr+top < MaxRows && !lv.Outside[rr+top][c] {
+			if rr+top < lRows && !lv.Outside[rr+top][c] {
 				lv.Cells[rr+top][c] = Cell{Kind: Basic, HP: hp, Color: col, Stack: 1}
 			}
 		}
@@ -427,8 +427,8 @@ func genOnce(r *rand.Rand, p Params) *Level {
 	}
 	buildStacks(r, lv, p, d, sym)
 	// never leave bricks or steel outside the walls
-	for rr := 0; rr < MaxRows; rr++ {
-		for c := 0; c < Cols; c++ {
+	for rr := 0; rr < lRows; rr++ {
+		for c := 0; c < lCols; c++ {
 			if lv.Outside[rr][c] {
 				lv.Cells[rr][c] = Cell{}
 			}
@@ -441,7 +441,7 @@ func genOnce(r *rand.Rand, p Params) *Level {
 func edge(m mask, r, c, rows int) bool {
 	for _, d := range dirs4 {
 		rr, cc := r+d[0], c+d[1]
-		if rr < 0 || rr >= rows || cc < 0 || cc >= Cols || !m[rr][cc] {
+		if rr < 0 || rr >= rows || cc < 0 || cc >= lCols || !m[rr][cc] {
 			return true
 		}
 	}
@@ -450,7 +450,7 @@ func edge(m mask, r, c, rows int) bool {
 
 var dirs4 = [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 
-func set(lv *Level, r, c int, cell Cell, sym bool) {
+func set(lv *coarse, r, c int, cell Cell, sym bool) {
 	lv.Cells[r][c] = cell
 	if sym {
 		lv.Cells[r][13-c] = cell
@@ -458,9 +458,9 @@ func set(lv *Level, r, c int, cell Cell, sym bool) {
 }
 
 // place puts a special cell on top of an existing basic brick.
-func place(r *rand.Rand, lv *Level, cell Cell, sym bool) bool {
+func place(r *rand.Rand, lv *coarse, cell Cell, sym bool) bool {
 	for i := 0; i < 40; i++ {
-		rr, c := r.Intn(MaxRows), r.Intn(Cols)
+		rr, c := r.Intn(lRows), r.Intn(lCols)
 		if sym {
 			c = r.Intn(7)
 		}
@@ -484,7 +484,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 	cx, cy := 6.5, float64(rows-1)/2
 	half := 7
 	if !sym {
-		half = Cols
+		half = lCols
 	}
 	finish := func() {
 		if sym {
@@ -503,12 +503,12 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 		for it := 0; it < 2; it++ {
 			var o mask
 			for rr := 0; rr < rows; rr++ {
-				for c := 0; c < Cols; c++ {
+				for c := 0; c < lCols; c++ {
 					cnt := 0
 					for dr := -1; dr <= 1; dr++ {
 						for dc := -1; dc <= 1; dc++ {
 							a, b := rr+dr, c+dc
-							if (dr != 0 || dc != 0) && a >= 0 && a < rows && b >= 0 && b < Cols && m[a][b] {
+							if (dr != 0 || dc != 0) && a >= 0 && a < rows && b >= 0 && b < lCols && m[a][b] {
 								cnt++
 							}
 						}
@@ -539,7 +539,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 		b := float64(rows)/2 + 0.3
 		names := []string{"diamond", "circle", "square"}
 		for rr := 0; rr < rows; rr++ {
-			for c := 0; c < Cols; c++ {
+			for c := 0; c < lCols; c++ {
 				dx := math.Abs(float64(c)-cx) / a
 				dy := math.Abs(float64(rr)-cy) / b
 				var dd float64
@@ -565,7 +565,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 		amp := 1 + r.Float64()*float64(rows)/3
 		thick := 1.0 + r.Float64()*1.5
 		bands := 1 + r.Intn(2)
-		for c := 0; c < Cols; c++ {
+		for c := 0; c < lCols; c++ {
 			x := float64(c)
 			if sym {
 				x = math.Abs(float64(c) - cx)
@@ -590,7 +590,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 				k = float64(rows - 1 - rr)
 			}
 			w := 0.5 + k*slope
-			for c := 0; c < Cols; c++ {
+			for c := 0; c < lCols; c++ {
 				m[rr][c] = math.Abs(float64(c)-cx) <= w
 			}
 		}
@@ -599,7 +599,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 		v := r.Intn(4)
 		k := 2 + r.Intn(2)
 		for rr := 0; rr < rows; rr++ {
-			for c := 0; c < Cols; c++ {
+			for c := 0; c < lCols; c++ {
 				switch v {
 				case 0:
 					m[rr][c] = (rr+c)%2 == 0
@@ -617,7 +617,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 	case 6:
 		mod := 2 + r.Intn(2)
 		for rr := 0; rr < rows; rr++ {
-			for c := 0; c < Cols; c++ {
+			for c := 0; c < lCols; c++ {
 				ring := min(min(rr, rows-1-rr), min(c, 13-c))
 				m[rr][c] = ring%mod != mod-1
 			}
@@ -638,7 +638,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 		mm := 1 + r.Intn(k-1)
 		up := r.Intn(2) == 0
 		for rr := 0; rr < rows; rr++ {
-			for c := 0; c < Cols; c++ {
+			for c := 0; c < lCols; c++ {
 				dc := int(math.Abs(float64(c) - cx))
 				v := rr + dc
 				if up {
@@ -669,7 +669,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 			dir = -1
 		}
 		for rr := 0; rr < rows; rr++ {
-			for c := 0; c < Cols; c++ {
+			for c := 0; c < lCols; c++ {
 				dx := (float64(c) - cx) / 7
 				dy := (float64(rr) - cy) / (float64(rows) / 2)
 				rad := math.Hypot(dx, dy)
@@ -683,9 +683,9 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 		return "spiral", m
 	case 11: // maze (walls of a recursive-backtracker maze)
 		gw, gh := 7, (rows+1)/2
-		var vis [MaxRows][Cols]bool
+		var vis [lRows][lCols]bool
 		for rr := 0; rr < rows; rr++ {
-			for c := 0; c < Cols; c++ {
+			for c := 0; c < lCols; c++ {
 				m[rr][c] = true
 			}
 		}
@@ -693,7 +693,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 		stack := []pt{{r.Intn(gw), r.Intn(gh)}}
 		vis[stack[0].y][stack[0].x] = true
 		carve := func(x, y int) {
-			if y*2 < rows && x*2 < Cols {
+			if y*2 < rows && x*2 < lCols {
 				m[y*2][x*2] = false
 			}
 		}
@@ -714,7 +714,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 			n := nb[r.Intn(len(nb))]
 			vis[n.y][n.x] = true
 			wy, wx := cur.y+n.y, cur.x+n.x // wall cell between (in doubled coords)
-			if wy < rows && wx < Cols {
+			if wy < rows && wx < lCols {
 				m[wy][wx] = false
 			}
 			carve(n.x, n.y)
@@ -761,7 +761,7 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 	default: // arch
 		th := 1.5 + r.Float64()*1.5
 		for rr := 0; rr < rows; rr++ {
-			for c := 0; c < Cols; c++ {
+			for c := 0; c < lCols; c++ {
 				dx := (float64(c) - cx) / 7
 				dy := float64(rows-1-rr) / float64(rows)
 				rad := math.Hypot(dx, dy*1.1)
@@ -772,11 +772,11 @@ func formation(r *rand.Rand, rows int, sym bool) (string, mask) {
 	}
 }
 
-func addSteel(r *rand.Rand, lv *Level, top, rows int, d float64, sym bool) {
+func addSteel(r *rand.Rand, lv *coarse, top, rows int, d float64, sym bool) {
 	steel := Cell{Kind: Steel, HP: 1, Stack: 1}
 	switch r.Intn(5) {
 	case 0:
-		row := min(MaxRows-1, top+rows-1-r.Intn(max(1, rows/3)))
+		row := min(lRows-1, top+rows-1-r.Intn(max(1, rows/3)))
 		gap := 3 + r.Intn(3)
 		for c := 0; c < 7; c++ {
 			if c%gap == gap-1 || c == 6 {
@@ -787,15 +787,15 @@ func addSteel(r *rand.Rand, lv *Level, top, rows int, d float64, sym bool) {
 		}
 		lv.Rows = max(lv.Rows, row+1)
 	case 1:
-		for rr := top; rr < top+rows && rr < MaxRows; rr++ {
-			for c := 0; c < Cols; c++ {
+		for rr := top; rr < top+rows && rr < lRows; rr++ {
+			for c := 0; c < lCols; c++ {
 				if lv.Cells[rr][c].Kind != Basic {
 					continue
 				}
 				isEdge := false
 				for _, dd := range dirs4 {
 					a, b := rr+dd[0], c+dd[1]
-					if a < 0 || a >= MaxRows || b < 0 || b >= Cols || lv.Cells[a][b].Kind == Empty {
+					if a < 0 || a >= lRows || b < 0 || b >= lCols || lv.Cells[a][b].Kind == Empty {
 						isEdge = true
 					}
 				}
@@ -811,13 +811,13 @@ func addSteel(r *rand.Rand, lv *Level, top, rows int, d float64, sym bool) {
 		c := 1 + r.Intn(5)
 		y0 := top + r.Intn(max(1, rows/2))
 		y1 := y0 + 2 + r.Intn(max(1, rows/2))
-		for rr := y0; rr < y1 && rr < MaxRows; rr++ {
+		for rr := y0; rr < y1 && rr < lRows; rr++ {
 			lv.Cells[rr][c], lv.Cells[rr][13-c] = steel, steel
 		}
 	case 3:
 		p := 0.05 + 0.08*d
-		for rr := top; rr < top+rows && rr < MaxRows; rr++ {
-			for c := 0; c < Cols; c++ {
+		for rr := top; rr < top+rows && rr < lRows; rr++ {
+			for c := 0; c < lCols; c++ {
 				if lv.Cells[rr][c].Kind == Basic && r.Float64() < p {
 					set(lv, rr, c, steel, sym)
 				}
@@ -828,7 +828,7 @@ func addSteel(r *rand.Rand, lv *Level, top, rows int, d float64, sym bool) {
 			if r.Float64() > 0.5 {
 				continue
 			}
-			for rr := MaxRows - 1; rr >= 0; rr-- {
+			for rr := lRows - 1; rr >= 0; rr-- {
 				if lv.Cells[rr][c].Kind == Basic {
 					lv.Cells[rr][c], lv.Cells[rr][13-c] = steel, steel
 					break
@@ -840,15 +840,15 @@ func addSteel(r *rand.Rand, lv *Level, top, rows int, d float64, sym bool) {
 
 // ensureReachable converts steel into tough bricks wherever steel would
 // seal destructible bricks away from the ball.
-func ensureReachable(lv *Level) {
+func ensureReachable(lv *coarse) {
 	passable := func(r, c int) bool { return lv.Cells[r][c].Kind != Steel && !lv.Outside[r][c] }
 	for iter := 0; iter < 300; iter++ {
-		var reach [MaxRows][Cols]bool
+		var reach [lRows][lCols]bool
 		var queue [][2]int
-		for c := 0; c < Cols; c++ {
-			if passable(MaxRows-1, c) {
-				reach[MaxRows-1][c] = true
-				queue = append(queue, [2]int{MaxRows - 1, c})
+		for c := 0; c < lCols; c++ {
+			if passable(lRows-1, c) {
+				reach[lRows-1][c] = true
+				queue = append(queue, [2]int{lRows - 1, c})
 			}
 		}
 		topReached := false
@@ -857,7 +857,7 @@ func ensureReachable(lv *Level) {
 			queue = queue[1:]
 			if p[0] == 0 && !topReached {
 				topReached = true
-				for c := 0; c < Cols; c++ {
+				for c := 0; c < lCols; c++ {
 					if passable(0, c) && !reach[0][c] {
 						reach[0][c] = true
 						queue = append(queue, [2]int{0, c})
@@ -866,7 +866,7 @@ func ensureReachable(lv *Level) {
 			}
 			for _, dd := range dirs4 {
 				a, b := p[0]+dd[0], p[1]+dd[1]
-				if a < 0 || a >= MaxRows || b < 0 || b >= Cols || reach[a][b] || !passable(a, b) {
+				if a < 0 || a >= lRows || b < 0 || b >= lCols || reach[a][b] || !passable(a, b) {
 					continue
 				}
 				reach[a][b] = true
@@ -874,8 +874,8 @@ func ensureReachable(lv *Level) {
 			}
 		}
 		stuck := false
-		for r := 0; r < MaxRows && !stuck; r++ {
-			for c := 0; c < Cols; c++ {
+		for r := 0; r < lRows && !stuck; r++ {
+			for c := 0; c < lCols; c++ {
 				if lv.Cells[r][c].Kind.Required() && !reach[r][c] {
 					stuck = true
 					break
@@ -886,15 +886,15 @@ func ensureReachable(lv *Level) {
 			return
 		}
 		best, bestScore := [2]int{-1, -1}, -1
-		for r := 0; r < MaxRows; r++ {
-			for c := 0; c < Cols; c++ {
+		for r := 0; r < lRows; r++ {
+			for c := 0; c < lCols; c++ {
 				if lv.Cells[r][c].Kind != Steel {
 					continue
 				}
 				touchR, touchU := false, false
 				for _, dd := range dirs4 {
 					a, b := r+dd[0], c+dd[1]
-					if a >= MaxRows {
+					if a >= lRows {
 						touchR = true
 						continue
 					}
@@ -902,7 +902,7 @@ func ensureReachable(lv *Level) {
 						touchR = touchR || topReached
 						continue
 					}
-					if b < 0 || b >= Cols {
+					if b < 0 || b >= lCols {
 						continue
 					}
 					if reach[a][b] {

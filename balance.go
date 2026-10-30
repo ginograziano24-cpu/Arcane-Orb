@@ -324,7 +324,7 @@ func init() {
 		}
 		L.release()
 		front := L.frontZ()
-		L.shiftTarget = CellD * 14
+		L.shiftTarget = CellD * 28
 		hp := r.HP
 		step(400)
 		say("advanced: shift=%.2f front %.1f->%.1f left=%d hp %.0f->%.0f", L.shift, front, L.frontZ(), L.Left, hp, r.HP)
