@@ -64,7 +64,7 @@ var worlds = []Biome{
 		Fog: color.RGBA{70, 18, 80, 255}, SkyTop: color.RGBA{18, 6, 44, 255}, SkyBottom: color.RGBA{255, 70, 150, 255},
 		SkyKind: WNeon, LightDir: V3{-0.35, 0.85, -0.4}, LightCol: [3]float32{0.75, 0.7, 0.85}, AmbCol: [3]float32{0.45, 0.38, 0.62},
 		Neon: true, BrickMat: WNeon, FloorMat: WNeon, Taper: 1,
-		PaddleBody: color.RGBA{70, 60, 110, 255}, PaddleCap: color.RGBA{220, 180, 90, 255}, FogNear: 30, FogFar: 85,
+		PaddleBody: color.RGBA{70, 60, 110, 255}, PaddleCap: color.RGBA{220, 180, 90, 255}, FogNear: 42, FogFar: 100,
 	},
 	{
 		ID: WMeadow, Name: "Sunset Meadow", Subtitle: "warm hills at the end of the day",
@@ -84,7 +84,7 @@ var worlds = []Biome{
 		Fog: color.RGBA{22, 36, 66, 255}, SkyTop: color.RGBA{6, 8, 18, 255}, SkyBottom: color.RGBA{30, 50, 90, 255},
 		SkyKind: WCaverns, LightDir: V3{0.3, 0.8, -0.5}, LightCol: [3]float32{0.5, 0.78, 0.9}, AmbCol: [3]float32{0.3, 0.32, 0.5},
 		BrickMat: WCaverns, FloorMat: WCaverns, Taper: 0.72,
-		PaddleBody: color.RGBA{50, 60, 90, 255}, PaddleCap: color.RGBA{140, 230, 255, 255}, FogNear: 25, FogFar: 70,
+		PaddleBody: color.RGBA{50, 60, 90, 255}, PaddleCap: color.RGBA{140, 230, 255, 255}, FogNear: 44, FogFar: 100,
 	},
 	{
 		ID: WRuins, Name: "Ancient Ruins", Subtitle: "something lived here long before you",
@@ -114,7 +114,7 @@ var worlds = []Biome{
 		Fog: color.RGBA{40, 32, 30, 255}, SkyTop: color.RGBA{18, 16, 20, 255}, SkyBottom: color.RGBA{150, 70, 30, 255},
 		SkyKind: WMachine, LightDir: V3{0.4, 0.7, -0.6}, LightCol: [3]float32{0.9, 0.6, 0.35}, AmbCol: [3]float32{0.3, 0.34, 0.44},
 		BrickMat: WMachine, FloorMat: WMachine, Taper: 1,
-		PaddleBody: color.RGBA{70, 74, 84, 255}, PaddleCap: color.RGBA{230, 140, 40, 255}, FogNear: 30, FogFar: 95,
+		PaddleBody: color.RGBA{70, 74, 84, 255}, PaddleCap: color.RGBA{230, 140, 40, 255}, FogNear: 44, FogFar: 110,
 	},
 }
 

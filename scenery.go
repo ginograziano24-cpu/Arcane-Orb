@@ -24,6 +24,10 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 	r := rand.New(rand.NewSource(L.propSeed))
 	side := float64(r.Intn(2)*2 - 1) // which side the hero leans to
 	ground := func(col color.RGBA) {
+		if gt := groundTexture(bio.ID); gt != nil && !g.settings.Classic {
+			drawBakedGround(B, gt, B.lit(color.RGBA{255, 255, 255, 255}, V3{0, 1, 0}), -0.6)
+			return
+		}
 		// tessellated so distance fog is evaluated accurately across it
 		xs := []float64{-300, -200, -140, -100, -75, -55, -40, -30, -22, -16, 0, 16, 22, 30, 40, 55, 75, 100, 140, 200, 300}
 		zs := []float64{-20, -5, 5, 15, 25, 35, 50, 70, 100, 140, 200, 280, 400}

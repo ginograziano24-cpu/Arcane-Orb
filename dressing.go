@@ -122,6 +122,10 @@ func hillRange(B *Batch, seed int64, z0, z1, xspan float64, n int, col color.RGB
 		}
 		h := hmin + r.Float64()*(hmax-hmin)
 		w := h * (2.2 + r.Float64()*1.5)
+		// never let a hill's dome swallow the arena: push it back past the far wall
+		if math.Abs(x)-w < HalfW+6 {
+			z = math.Max(z, FarZ+8+0.7*w)
+		}
 		B.Draw(cached("hill"+colKey(col), func() *Mesh {
 			return Icosphere(2, 0.04, seed, col, darken(col, 0.82))
 		}), V3{x, -h * 0.35, z}, V3{w, h, w * 0.7}, rotXYZ(0, r.Float64()*3, 0), color.RGBA{}, 0)
@@ -606,7 +610,7 @@ func (g *Game) dressNeon(B *Batch, L *Level, e *envState, t, side float64, r *ra
 func (g *Game) dressCaverns(B *Batch, L *Level, e *envState, t, side float64, r *rand.Rand, low bool) {
 	bio := L.Biome
 	// cavern walls: dark rock ridges far out
-	hillRange(B, 91, 42, 72, 120, 12, color.RGBA{50, 54, 80, 255}, 14, 30)
+	hillRange(B, 91, 110, 170, 150, 12, color.RGBA{50, 54, 80, 255}, 14, 30)
 	// chime crystals by the walls flash when the orb strikes their side
 	for i := 0; i < 8; i++ {
 		sx := float64(i%2*2 - 1)

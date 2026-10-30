@@ -118,7 +118,14 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	if bio.Neon {
 		fspr = floorSprites[L.Vis.FloorPattern%len(floorSprites)]
 	}
-	for z := -3.0; z < FarZ+1; z += 2 {
+	ft := floorTexture(L)
+	if classic {
+		ft = nil
+	}
+	if ft != nil {
+		drawBakedFloor(B, L, ft, gp)
+	}
+	for z := -3.0; z < FarZ+1 && ft == nil; z += 2 {
 		for x := -HalfW; x < HalfW; x += 2 {
 			if !levelgen.Inside(L.Walls, levelgen.Pt{X: x + 1, Z: math.Min(z+1, FarZ-0.2)}) {
 				continue

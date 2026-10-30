@@ -499,6 +499,17 @@ func buildAtlas() {
 type quad struct {
 	v     [4]ebiten.Vertex
 	depth float64
+	tex   uint8 // 0 = the sprite atlas, else texImages[tex]
+}
+
+// texImages holds the stand-alone textures quads can sample (index 0 is
+// the atlas, filled in lazily).
+var texImages = []*ebiten.Image{nil}
+
+// registerTex adds a texture for QuadUV and returns its index.
+func registerTex(img *ebiten.Image) uint8 {
+	texImages = append(texImages, img)
+	return uint8(len(texImages) - 1)
 }
 
 type Batch struct {
@@ -546,6 +557,25 @@ func (b *Batch) vtx(p V3, u, v float32, col [4]float32, shade float32) (ebiten.V
 func (b *Batch) Quad(p [4]V3, spr Sprite, col color.RGBA, shades [4]float32, glow bool) {
 	var q quad
 	uv := [4][2]float32{{spr.X0, spr.Y0}, {spr.X1, spr.Y0}, {spr.X1, spr.Y1}, {spr.X0, spr.Y1}}
+	c := cf(col)
+	sum := 0.0
+	for i := 0; i < 4; i++ {
+		var d float64
+		q.v[i], d = b.vtx(p[i], uv[i][0], uv[i][1], c, shades[i])
+		sum += d
+	}
+	q.depth = sum / 4
+	if glow {
+		b.glow = append(b.glow, q)
+	} else {
+		b.quads = append(b.quads, q)
+	}
+}
+
+// QuadUV is Quad with explicit texture coordinates (in pixels) into a
+// registered texture, sampled with wrap-around.
+func (b *Batch) QuadUV(p [4]V3, tex uint8, uv [4][2]float32, col color.RGBA, shades [4]float32, glow bool) {
+	q := quad{tex: tex}
 	c := cf(col)
 	sum := 0.0
 	for i := 0; i < 4; i++ {
@@ -777,20 +807,37 @@ func (b *Batch) flush(dst *ebiten.Image, qs []quad, blend ebiten.Blend) {
 		return 0
 	})
 	b.order = order
+	// draw in runs that share a texture, at most maxQ quads per call
 	const maxQ = 16000
-	for start := 0; start < len(order); start += maxQ {
-		end := min(len(order), start+maxQ)
-		b.verts = b.verts[:0]
-		b.idx = b.idx[:0]
-		for _, oi := range order[start:end] {
-			q := &qs[oi]
-			base := uint16(len(b.verts))
-			b.verts = append(b.verts, q.v[:]...)
-			b.idx = append(b.idx, base, base+1, base+2, base, base+2, base+3)
+	b.verts = b.verts[:0]
+	b.idx = b.idx[:0]
+	cur := uint8(0)
+	emit := func() {
+		if len(b.idx) == 0 {
+			return
 		}
 		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: true}
-		dst.DrawTriangles(b.verts, b.idx, atlas, op)
+		src := atlas
+		if cur != 0 {
+			src = texImages[cur]
+			op.Address = ebiten.AddressRepeat
+			op.Filter = ebiten.FilterLinear
+		}
+		dst.DrawTriangles(b.verts, b.idx, src, op)
+		b.verts = b.verts[:0]
+		b.idx = b.idx[:0]
 	}
+	for _, oi := range order {
+		q := &qs[oi]
+		if q.tex != cur || len(b.verts) >= maxQ*4 {
+			emit()
+			cur = q.tex
+		}
+		base := uint16(len(b.verts))
+		b.verts = append(b.verts, q.v[:]...)
+		b.idx = append(b.idx, base, base+1, base+2, base, base+2, base+3)
+	}
+	emit()
 }
 
 // lastQuads is how many quads the last world flush drew (for profiling).
