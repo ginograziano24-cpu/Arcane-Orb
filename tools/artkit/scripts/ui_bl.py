@@ -249,7 +249,17 @@ def icons():
         g = _mat("g", (1.0, 0.77, 0.25), 0.15, 1.0, coat=0.5)
         cyl((0, 0, 0), 0.95, 0.22, g, n=48)
         torus((0, 0, 0.22), 0.8, 0.06, g, seg=48, rseg=8)
-        _gem(_mat("s", (1.0, 0.85, 0.4), 0.1, 1.0), 0, 0, 0.42, 0.25, sub=1)
+        # a stamped star, faintly lit so it never reads as a dark hole
+        st = _mat("s", (1.0, 0.82, 0.38), 0.25, 0.85, emit=(1.0, 0.7, 0.25), emit_str=0.35)
+        pts = []
+        for k in range(10):
+            a = math.pi / 2 + k * math.pi / 5
+            r = 0.52 if k % 2 == 0 else 0.22
+            pts.append((math.cos(a) * r, math.sin(a) * r))
+        o = prism(pts[::-1], 0.3, st)
+        m = o.modifiers.new("b", 'BEVEL')
+        m.width = 0.04
+        m.segments = 3
 
     def heart():
         r = _mat("r", (0.95, 0.12, 0.25), 0.12, coat=1.0, emit=(0.9, 0.05, 0.2), emit_str=0.2)
@@ -310,4 +320,4 @@ def ui_kit():
     log("ui kit done")
 
 
-TASKS = {"ui_kit": ui_kit, "ui_frames": ui_frames}
+TASKS = {"ui_kit": ui_kit, "ui_frames": ui_frames, "ui_icons": icons}

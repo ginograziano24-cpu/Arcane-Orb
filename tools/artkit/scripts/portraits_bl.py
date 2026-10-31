@@ -65,7 +65,7 @@ def _coord(nt, kind='Object'):
 
 def pbr(name, base, rough=0.5, metal=0.0, coat=0.0, sheen=0.0, emit=None, es=0.0, trans=0.0,
         var=0.0, vscale=4.0, bump=0.0, bscale=40.0, weave=0.0, scratch=0.0, fiber=0.0, sss=0.0,
-        film=0.0, alpha=1.0):
+        film=0.0, alpha=1.0, spec=0.5):
     """A principled material with optional colour variation, noise bump,
     cloth weave, brushed scratches and fibre streaks."""
     m, nt, out = kit.new_mat(name)
@@ -74,10 +74,12 @@ def pbr(name, base, rough=0.5, metal=0.0, coat=0.0, sheen=0.0, emit=None, es=0.0
     setin(p, (*base, 1), 'Base Color')
     setin(p, rough, 'Roughness')
     setin(p, metal, 'Metallic')
+    setin(p, spec, 'Specular IOR Level', 'Specular')
     setin(p, coat, 'Coat Weight', 'Clearcoat')
     setin(p, 0.04, 'Coat Roughness', 'Clearcoat Roughness')
     setin(p, sheen, 'Sheen Weight', 'Sheen')
     setin(p, 0.4, 'Sheen Roughness')
+    setin(p, (*lighten(base, 0.35), 1), 'Sheen Tint')   # white by default: tint it or cloth turns chalky
     setin(p, trans, 'Transmission Weight', 'Transmission')
     setin(p, sss, 'Subsurface Weight', 'Subsurface')
     setin(p, film, 'Thin Film Thickness')
@@ -906,7 +908,7 @@ def m_steel(base=(0.62, 0.64, 0.68), name="steel", rough=0.28):
 
 
 def m_cloth(base, name="cloth", sheen=0.6):
-    return pbr(name, base, rough=0.72, sheen=sheen * 0.3, var=0.3, vscale=3, weave=0.05, bump=0.05, bscale=20)
+    return pbr(name, base, rough=0.85, sheen=sheen * 0.3, var=0.3, vscale=3, weave=0.05, bump=0.05, bscale=20, spec=0.12)
 
 
 def b_arcane():
@@ -965,7 +967,7 @@ def b_berserker():
     bone = pbr("bone", (0.86, 0.8, 0.66), rough=0.4, var=0.25, vscale=8, bump=0.1, bscale=40, coat=0.2)
     hair = pbr("beard", (0.42, 0.13, 0.04), rough=0.55, fiber=0.6, sheen=0.4, coat=0.2)
     torso(jerkin, wide=1.12, chest=1.1)
-    mail = pbr("mail", (0.4, 0.4, 0.42), rough=0.35, metal=1.0, bump=0.6, bscale=180, var=0.3)
+    mail = pbr("mail", (0.2, 0.2, 0.22), rough=0.45, metal=1.0, bump=0.6, bscale=180, var=0.4)
     loft("mail", [(0.5, 0.34, 0.26), (0.75, 0.31, 0.23), (0.98, 0.28, 0.2)], mail, n=48, fold=(0.04, 9, 3, 0.8))
     belt(0.98, m_leather((0.07, 0.04, 0.02), "bbelt"), iron, rx=0.28, ry=0.2, h=0.07)
     ell("beltboss", V(0, -0.215, 0.98), (0.05, 0.02, 0.04), iron)
@@ -1005,7 +1007,7 @@ def b_berserker():
         tube("horn", pts, [0.042, 0.036, 0.026, 0.014, 0.003], bone, n=20, head=True)
     # a full beard: cheek to cheek, combed into two heavy braids
     bd = loft("beard", [(C.eye_c.z - 0.3, 0.05, 0.04, 0, -0.1), (C.eye_c.z - 0.2, 0.11, 0.07, 0, -0.07), (C.eye_c.z - 0.1, 0.13, 0.09, 0, -0.03),
-                        (C.eye_c.z - 0.03, 0.125, 0.095, 0, 0.0), (C.eye_c.z + 0.01, 0.11, 0.09, 0, 0.01)], hair, n=48, cap_bot=True, sub=2, head=True)
+                        (C.eye_c.z - 0.045, 0.12, 0.09, 0, 0.0)], hair, n=48, cap_bot=True, cap_top=True, sub=2, head=True)
     folds(bd, 0.02, 0.012, 0.35)
     C.head.append(bpy.data.objects["beard_fold"])
     ell("moustache", C.eye_c + V(0, -0.105, -0.045), (0.07, 0.03, 0.022), hair, head=True)
