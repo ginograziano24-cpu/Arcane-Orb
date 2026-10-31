@@ -356,14 +356,11 @@ def b_moving():
 
 
 def b_shield():
-    blue = _mat("shield_blue", base=(0.12, 0.35, 0.95), rough=0.1, coat=1.0,
-                pattern=emit_pattern((0.6, 0.9, 1.0), 4.0, "grid", scale=7.0, width=0.06))
+    # cobalt enamel under a glowing glass ward
+    blue = _mat("shield_blue", base=(0.08, 0.25, 0.85), rough=0.1, coat=1.0)
     block("body", blue, bev=0.1, seg=5)
-    dome = _mat("shield_dome", base=(0.6, 0.85, 1.0), rough=0.02, trans=0.9, coat=1.0, emit=(0.4, 0.7, 1.0), emit_str=0.3)
-    o = block("dome", dome, size=(1.9, 0.9, 0.5), loc=(0, 0, 0.42), bev=0.0)
-    s = o.modifiers.new("ss", 'SUBSURF')
-    s.levels = 3
-    s.render_levels = 3
+    dome = _mat("shield_dome", base=(0.35, 0.65, 1.0), rough=0.03, trans=0.6, coat=1.0, emit=(0.2, 0.55, 1.0), emit_str=0.8)
+    block("dome", dome, size=(1.8, 0.8, 0.3), loc=(0, 0, 0.45), bev=0.14, seg=8)
 
 
 def b_teleport():
@@ -395,8 +392,8 @@ def b_crystal():
 
 
 def b_mystery():
-    pearl = _mat("myst_pearl", base=(0.75, 0.55, 0.95), rough=0.1, coat=1.0, film=650.0,
-                 pattern=emit_pattern((0.95, 0.75, 1.0), 3.5, "swirl", scale=3.0))
+    pearl = _mat("myst_pearl", base=(0.4, 0.18, 0.7), rough=0.1, coat=1.0, film=650.0,
+                 pattern=emit_pattern((0.85, 0.55, 1.0), 1.6, "swirl", scale=3.0))
     block("body", pearl, bev=0.12, seg=6)
 
 

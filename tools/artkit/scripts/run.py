@@ -53,6 +53,9 @@ TASKS.update(bricks_bl.TASKS)
 import ui_bl
 importlib.reload(ui_bl)
 TASKS.update(ui_bl.TASKS)
+import portraits_bl
+importlib.reload(portraits_bl)
+TASKS.update(portraits_bl.TASKS)
 
 
 def main():
