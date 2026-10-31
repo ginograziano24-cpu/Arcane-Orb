@@ -321,6 +321,8 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 			glow = color.RGBA{180, 255, 240, 255}
 		}
 		B.DecalBelow(b.X+0.2, b.Z-0.2, 0.02, b.R*3, b.R*2.4, sprShadow, color.RGBA{0, 0, 0, 200})
+		// a pool of the orb's light on the floor
+		B.Decal(b.X, b.Z, 0.025, b.R*11, b.R*11, sprSoft, alpha(glow, 0.2*a), true)
 		for i, p := range b.Trail {
 			f := float64(i+1) / float64(len(b.Trail)+1)
 			B.Billboard(V3{p[0], b.R, p[1]}, b.R*2*f, sprSoft, alpha(glow, 0.35*f*a), true)

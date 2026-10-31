@@ -965,6 +965,10 @@ def b_berserker():
     bone = pbr("bone", (0.86, 0.8, 0.66), rough=0.4, var=0.25, vscale=8, bump=0.1, bscale=40, coat=0.2)
     hair = pbr("beard", (0.42, 0.13, 0.04), rough=0.55, fiber=0.6, sheen=0.4, coat=0.2)
     torso(jerkin, wide=1.12, chest=1.1)
+    mail = pbr("mail", (0.4, 0.4, 0.42), rough=0.35, metal=1.0, bump=0.6, bscale=180, var=0.3)
+    loft("mail", [(0.5, 0.34, 0.26), (0.75, 0.31, 0.23), (0.98, 0.28, 0.2)], mail, n=48, fold=(0.04, 9, 3, 0.8))
+    belt(0.98, m_leather((0.07, 0.04, 0.02), "bbelt"), iron, rx=0.28, ry=0.2, h=0.07)
+    ell("beltboss", V(0, -0.215, 0.98), (0.05, 0.02, 0.04), iron)
     # studded straps across the chest
     for s in (-1, 1):
         tube("strap", [V(s * 0.2, -0.15, 1.45), V(s * 0.02, -0.21, 1.22), V(-s * 0.16, -0.19, 0.98)], 0.022, m_leather((0.09, 0.05, 0.03), "strap"), flat=0.3, n=12)
@@ -993,18 +997,24 @@ def b_berserker():
     boolean(helm, cut)
     solidify(helm, 0.01, 1.0)
     torus("helmrim", hc + V(0, 0, -0.005), 1.0, 0.012, iron, scale=(0.14, 0.15, 1.0), head=True)
-    rbox("nasal", C.eye_c + V(0, -0.115, 0.0), (0.016, 0.012, 0.09), iron, bev=0.004, head=True)
+    plate3d("nasal", [(-0.022, 0.0), (0.022, 0.0), (0.012, -0.075), (0.0, -0.085), (-0.012, -0.075)], hc + V(0, -0.15, -0.005), V(1, 0, 0), V(0, 0.15, 1).normalized(), 0.01, iron)
+    C.head.append(bpy.data.objects["nasal"])
     for s in (-1, 1):
         base = hc + V(s * 0.12, 0, 0.03)
         pts = [base, base + V(s * 0.1, 0.0, 0.03), base + V(s * 0.18, -0.02, 0.12), base + V(s * 0.2, -0.05, 0.25), base + V(s * 0.17, -0.07, 0.33)]
         tube("horn", pts, [0.042, 0.036, 0.026, 0.014, 0.003], bone, n=20, head=True)
-    ell("beardmass", C.eye_c + V(0, -0.07, -0.13), (0.1, 0.07, 0.11), hair, head=True)
-    for i in range(5):
-        x = (i - 2) * 0.034
-        top = C.eye_c + V(x, -0.11 - 0.01 * (2 - abs(i - 2)), -0.15)
-        pts = [top + V(0, -0.005 * k, -0.07 * k) + V(0.006 * math.sin(k * 2.2 + i), 0, 0) for k in range(5)]
-        tube("braid", pts, [0.022, 0.02, 0.018, 0.015, 0.011], hair, n=14, head=True)
-        cyl("bead", pts[3] + V(0, 0, 0.012), pts[3] - V(0, 0, 0.012), 0.017, m_gold("ring"), head=True)
+    # a full beard: cheek to cheek, combed into two heavy braids
+    bd = loft("beard", [(C.eye_c.z - 0.3, 0.05, 0.04, 0, -0.1), (C.eye_c.z - 0.2, 0.11, 0.07, 0, -0.07), (C.eye_c.z - 0.1, 0.13, 0.09, 0, -0.03),
+                        (C.eye_c.z - 0.03, 0.125, 0.095, 0, 0.0), (C.eye_c.z + 0.01, 0.11, 0.09, 0, 0.01)], hair, n=48, cap_bot=True, sub=2, head=True)
+    folds(bd, 0.02, 0.012, 0.35)
+    C.head.append(bpy.data.objects["beard_fold"])
+    ell("moustache", C.eye_c + V(0, -0.105, -0.045), (0.07, 0.03, 0.022), hair, head=True)
+    ring_m = m_gold("ring")
+    for sx in (-1, 1):
+        top = C.eye_c + V(sx * 0.045, -0.1, -0.24)
+        pts = [top + V(sx * 0.004 * k, -0.01 * k, -0.06 * k) for k in range(5)]
+        tube("braid", pts, [0.026, 0.024, 0.021, 0.017, 0.006], hair, n=14, head=True)
+        cyl("bead", pts[2] + V(0, 0, 0.014), pts[2] - V(0, 0, 0.014), 0.025, ring_m, head=True)
     eyes((1.0, 0.35, 0.08), 28, at=C.eye_c + V(0, -0.025, 0))
     # arms in leather with iron bracers
     w = arm("L", (-0.38, -0.08, 1.12), (-0.25, -0.24, 1.3), jerkin, r=(0.085, 0.07, 0.058))
@@ -1305,7 +1315,7 @@ def b_pyro():
         pts = [b0, b0 + V(rnd2.uniform(-0.03, 0.03), 0, h * 0.35), b0 + V(rnd2.uniform(-0.05, 0.05), 0, h * 0.7), b0 + V(rnd2.uniform(-0.04, 0.04), 0, h)]
         tube("tongue", pts, [0.03, 0.026, 0.014, 0.002], tongue_y if k % 3 == 0 else tongue_o, n=10)
     pt = bpy.data.lights.new("firelight", 'POINT')
-    pt.energy = 140
+    pt.energy = 35
     pt.color = (1.0, 0.45, 0.12)
     pt.shadow_soft_size = 0.12
     lo = bpy.data.objects.new("firelight", pt)
@@ -1357,7 +1367,7 @@ def b_storm():
         b_end = mid + V(rnd.uniform(-0.2, 0.2), rnd.uniform(-0.1, 0.1), rnd.uniform(0.05, 0.25))
         tube("branch", bolt_pts(mid, b_end, k + 50, jag=0.04, steps=6), 0.005, boltm, n=6, sub=0)
     pt = bpy.data.lights.new("boltlight", 'POINT')
-    pt.energy = 120
+    pt.energy = 45
     pt.color = (0.6, 0.85, 1.0)
     lo = bpy.data.objects.new("boltlight", pt)
     bpy.context.scene.collection.objects.link(lo)
