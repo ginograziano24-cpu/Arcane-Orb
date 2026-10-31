@@ -2545,7 +2545,7 @@ const denseBudget = 6.0
 // chamberBudget is how much work a chamber at this depth should be, so a
 // fresh run opens with short, readable chambers and they grow from there.
 func chamberBudget(p levelgen.Params) float64 {
-	u := denseBudget * (12 + 5.6*float64(min(p.Depth, 26))) * (1 + 0.12*float64(p.Act-1))
+	u := denseBudget * (9.5 + 5.6*float64(min(p.Depth, 26))) * (1 + 0.12*float64(p.Act-1))
 	if p.Elite {
 		u *= 1.3
 	}
