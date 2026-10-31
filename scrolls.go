@@ -247,7 +247,9 @@ func (g *Game) drawScrolls(screen *ebiten.Image, L *Level) {
 		if g.padActive && i == g.scrollSel && i < len(r.Scrolls) {
 			edge = ca(cGold, 0.9+0.1*math.Sin(L.T*6))
 		}
-		strokePath(screen, box, 1.6*S, edge, false)
+		if !u.kitFrame(screen, x+3, y+3, size-6, size-6, 0.95) || edge != ca(th.Edge, 0.6) {
+			strokePath(screen, box, 1.6*S, edge, false)
+		}
 		if i < len(r.Scrolls) {
 			sd := scrollByID[r.Scrolls[i]]
 			drawSprite(screen, sprSoft, u.X(x-10), u.Y(y-10), (size+20)*S, (size+20)*S, ca(sd.Col, 0.18), true)

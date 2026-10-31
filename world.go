@@ -468,6 +468,14 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 	}
 }
 
+// specialGlow is the light each special brick gives off.
+var specialGlow = map[levelgen.Kind]color.RGBA{
+	levelgen.Explosive: {255, 120, 30, 255}, levelgen.Chain: {110, 210, 255, 255}, levelgen.Split: {255, 200, 90, 255},
+	levelgen.Regen: {130, 255, 120, 255}, levelgen.Shield: {120, 180, 255, 255}, levelgen.Teleport: {230, 110, 255, 255},
+	levelgen.Spawner: {255, 210, 90, 255}, levelgen.Multiplier: {255, 210, 80, 255}, levelgen.Crystal: {110, 240, 255, 255},
+	levelgen.Mystery: {220, 170, 255, 255}, levelgen.Elite: {255, 200, 90, 255},
+}
+
 func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	x, z := b.X()+b.OffX, b.Z()+b.OffZ
 	ap := clamp01(b.Appear)
@@ -555,7 +563,7 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	if b.Kind == levelgen.Steel {
 		bm = brickModel(WMachine)
 	}
-	if bt := bakedTexture("bricks"); bt != nil && !g.settings.Classic {
+	if bt := brickSheet(); bt != nil && !g.settings.Classic {
 		top, side, own := brickRects(bio.ID, b.Kind)
 		c := col
 		if own {
@@ -566,6 +574,10 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 			}
 		}
 		e := emis
+		if own && special {
+			// specials breathe so they stand out from the field
+			e += 0.06 + 0.07*float32(math.Sin(t*2.6+float64(b.C)*0.5+float64(b.R)*0.3))
+		}
 		if bio.Neon {
 			e += 0.12
 		}
@@ -598,14 +610,12 @@ drawn:
 	if bio.Neon && b.Layer == 0 {
 		B.Decal(x, z, 0.02, CellW*1.1, CellD*1.3, sprSoft, alpha(col, 0.25), true)
 	}
-	// HP trim: silver for 2, gold for 3, crimson for 4+
-	if b.MaxHP >= 2 && b.Kind == levelgen.Basic {
-		trim := []color.RGBA{{220, 225, 240, 255}, {255, 210, 90, 255}, {255, 80, 90, 255}}[min(2, int(b.MaxHP)-2)]
-		B.Box(x-hw-0.02, y0+h*0.42, z-hd-0.02, x+hw+0.02, y0+h*0.58, z+hd+0.02, trim, sprWhite, 0.25)
-	}
 	h = y0 + h
-	if !g.drawTopper(B, b, x, h, z, t) && b.Kind != levelgen.Armored && b.Kind != levelgen.Split && b.Kind != levelgen.Moving {
-		g.drawBadge(B, b, x, h, z, t)
+	// special bricks announce themselves with their material and a soft
+	// pulse of their own light, not with symbols
+	if gc, ok := specialGlow[b.Kind]; ok && b.Up == nil && !b.BossPart {
+		p := 0.55 + 0.45*math.Sin(t*2.6+x*0.9+z*0.5)
+		B.Billboard(V3{x, h + 0.05, z}, CellW*1.25, sprSoft, alpha(gc, 0.16+0.12*p), true)
 	}
 	if ic, ok := kindIcon[b.Kind]; ok && false {
 		icCol := color.RGBA{255, 255, 255, 230}

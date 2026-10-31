@@ -47,6 +47,12 @@ TASKS.update(models.TASKS)
 import icons
 importlib.reload(icons)
 TASKS.update(icons.TASKS)
+import bricks_bl
+importlib.reload(bricks_bl)
+TASKS.update(bricks_bl.TASKS)
+import ui_bl
+importlib.reload(ui_bl)
+TASKS.update(ui_bl.TASKS)
 
 
 def main():

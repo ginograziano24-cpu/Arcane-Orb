@@ -26,9 +26,10 @@ const (
 )
 
 type bakedTex struct {
-	id   uint8
-	w, h float32
-	avg  color.RGBA // mean colour, for distant ground drawn untextured
+	id      uint8
+	w, h    float32
+	avg     color.RGBA // mean colour, for distant ground drawn untextured
+	specOff float32    // brick sheet: the specular layer sits this far below the diffuse
 }
 
 var bakedTexCache = map[string]*bakedTex{}
@@ -177,10 +178,67 @@ var brickSpecialCell = map[levelgen.Kind]int{
 
 type sheetRect struct{ u0, v0, u1, v1 float32 }
 
+var brickCellW, brickCellH float32 = 256, 128
+
 func brickCell(i, j int) sheetRect {
-	const w, h, in = 256, 128, 2
-	return sheetRect{float32(i*w + in), float32(j*h + in), float32((i+1)*w - in), float32((j+1)*h - in)}
+	w, h, in := brickCellW, brickCellH, float32(2)
+	return sheetRect{float32(i)*w + in, float32(j)*h + in, float32(i+1)*w - in, float32(j+1)*h - in}
 }
+
+// brickSheet loads the brick textures: the diffuse sheet and, when there is
+// one, the specular sheet stacked below it in the same image (highlights
+// as premultiplied white over alpha), so a brick's shine draws right after
+// its colour without switching textures.
+func brickSheet() *bakedTex {
+	if t, ok := bakedTexCache["#bricks"]; ok {
+		return t
+	}
+	var t *bakedTex
+	dd, err := floorFS.ReadFile("assets/floor/bricks.jpg")
+	if err == nil {
+		if dimg, _, err := image.Decode(bytes.NewReader(dd)); err == nil {
+			b := dimg.Bounds()
+			w, h := b.Dx(), b.Dy()
+			var simg image.Image
+			if sd, err := floorFS.ReadFile("assets/floor/bricks_spec.jpg"); err == nil {
+				simg, _, _ = image.Decode(bytes.NewReader(sd))
+			}
+			rows := h
+			if simg != nil {
+				rows = 2 * h
+			}
+			out := image.NewRGBA(image.Rect(0, 0, w, rows))
+			for y := 0; y < h; y++ {
+				for x := 0; x < w; x++ {
+					r, g, bl, _ := dimg.At(b.Min.X+x, b.Min.Y+y).RGBA()
+					i := out.PixOffset(x, y)
+					out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = uint8(r>>8), uint8(g>>8), uint8(bl>>8), 255
+				}
+			}
+			if simg != nil {
+				sb := simg.Bounds()
+				for y := 0; y < h && y < sb.Dy(); y++ {
+					for x := 0; x < w && x < sb.Dx(); x++ {
+						r, g, bl, _ := simg.At(sb.Min.X+x, sb.Min.Y+y).RGBA()
+						l := (r*30 + g*59 + bl*11) / 100 >> 8
+						i := out.PixOffset(x, h+y)
+						out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = uint8(r>>8), uint8(g>>8), uint8(bl>>8), uint8(min(255, l))
+					}
+				}
+			}
+			t = &bakedTex{id: registerTex(ebiten.NewImageFromImage(out)), w: float32(w), h: float32(rows)}
+			if simg != nil {
+				t.specOff = float32(h)
+			}
+			brickCellW, brickCellH = float32(w)/8, float32(h)/6
+		}
+	}
+	bakedTexCache["#bricks"] = t
+	return t
+}
+
+// brickShine scales the baked highlights.
+const brickShine = 1.0
 
 // brickRects picks the top and side cells for a brick, and whether its
 // colours are its own (specials) rather than tinted.
@@ -207,7 +265,22 @@ func drawTexBrick(B *Batch, t *bakedTex, x0, y0, z0, x1, y1, z1 float64, col col
 		c = (y1 - y0) * 0.35
 	}
 	ix0, ix1, iz0, iz1, iy := x0+c, x1-c, z0+c, z1-c, y1-c
+	// the baked tiles already carry their lighting: the world's light only
+	// nudges the colour
+	lc := func(n V3) color.RGBA { return mixc(col, B.lit(col, n), 0.3) }
 	sh := func(a, b, cc, d float32) [4]float32 { return [4]float32{a + emis, b + emis, cc + emis, d + emis} }
+	// every face is drawn twice when the sheet has a specular layer: its
+	// colour, then its highlights screened on top
+	spec := color.RGBA{255, 255, 255, uint8(255 * clamp01(brickShine))}
+	quad := func(p [4]V3, uv [4][2]float32, c color.RGBA, shades [4]float32) {
+		B.QuadUV(p, t.id, uv, c, shades, false)
+		if t.specOff > 0 {
+			for i := range uv {
+				uv[i][1] += t.specOff
+			}
+			B.QuadUV(p, t.id, uv, spec, [4]float32{1, 1, 1, 1}, false)
+		}
+	}
 	// texture coordinates: the top cell covers the inset top; bevels use the
 	// cell's rim; sides use the side cell
 	tu := func(x float64) float32 { return top.u0 + (top.u1-top.u0)*float32((x-x0)/(x1-x0)) }
@@ -221,23 +294,23 @@ func drawTexBrick(B *Batch, t *bakedTex, x0, y0, z0, x1, y1, z1 float64, col col
 	}
 	if eye.Y > y1 {
 		p := [4]V3{{ix0, y1, iz1}, {ix1, y1, iz1}, {ix1, y1, iz0}, {ix0, y1, iz0}}
-		B.QuadUV(p, t.id, topUV(p), B.lit(col, V3{0, 1, 0}), sh(1.08, 1.08, 1, 1), false)
+		quad(p, topUV(p), lc(V3{0, 1, 0}), sh(1, 1, 1, 1))
 		// front bevel (toward the camera)
 		p = [4]V3{{ix0, y1, iz0}, {ix1, y1, iz0}, {x1, iy, z0}, {x0, iy, z0}}
-		B.QuadUV(p, t.id, topUV(p), B.lit(col, V3{0, 0.7, -0.7}), sh(1.25, 1.25, 1.05, 1.05), false)
+		quad(p, topUV(p), lc(V3{0, 0.7, -0.7}), sh(1.25, 1.25, 1.05, 1.05))
 		// side bevels
 		if eye.X < x1 {
 			p = [4]V3{{ix0, y1, iz1}, {ix0, y1, iz0}, {x0, iy, z0}, {x0, iy, z1}}
-			B.QuadUV(p, t.id, topUV(p), B.lit(col, V3{-0.7, 0.7, 0}), sh(1.15, 1.15, 0.95, 0.95), false)
+			quad(p, topUV(p), lc(V3{-0.7, 0.7, 0}), sh(1.15, 1.15, 0.95, 0.95))
 		}
 		if eye.X > x0 {
 			p = [4]V3{{ix1, y1, iz0}, {ix1, y1, iz1}, {x1, iy, z1}, {x1, iy, z0}}
-			B.QuadUV(p, t.id, topUV(p), B.lit(col, V3{0.7, 0.7, 0}), sh(1.15, 1.15, 0.95, 0.95), false)
+			quad(p, topUV(p), lc(V3{0.7, 0.7, 0}), sh(1.15, 1.15, 0.95, 0.95))
 		}
 		// back bevel shows when the camera is high above
 		if eye.Y-y1 > (z1-eye.Z)*0.9 {
 			p = [4]V3{{x0, iy, z1}, {x1, iy, z1}, {ix1, y1, iz1}, {ix0, y1, iz1}}
-			B.QuadUV(p, t.id, topUV(p), B.lit(col, V3{0, 0.7, 0.7}), sh(0.85, 0.85, 1, 1), false)
+			quad(p, topUV(p), lc(V3{0, 0.7, 0.7}), sh(0.85, 0.85, 1, 1))
 		}
 	}
 	uv := func(r sheetRect, x0f, x1f float32) [4][2]float32 {
@@ -245,12 +318,12 @@ func drawTexBrick(B *Batch, t *bakedTex, x0, y0, z0, x1, y1, z1 float64, col col
 		return [4][2]float32{{r.u0 + w*x0f, r.v0}, {r.u0 + w*x1f, r.v0}, {r.u0 + w*x1f, r.v1}, {r.u0 + w*x0f, r.v1}}
 	}
 	if eye.Z < z0 {
-		B.QuadUV([4]V3{{x0, iy, z0}, {x1, iy, z0}, {x1, y0, z0}, {x0, y0, z0}}, t.id, uv(side, 0, 1), B.lit(col, V3{0, 0, -1}), sh(1, 1, 0.55, 0.55), false)
+		quad([4]V3{{x0, iy, z0}, {x1, iy, z0}, {x1, y0, z0}, {x0, y0, z0}}, uv(side, 0, 1), lc(V3{0, 0, -1}), sh(0.95, 0.95, 0.78, 0.78))
 	}
 	ef := float32((z1 - z0) / (x1 - x0))
 	if eye.X < x0 {
-		B.QuadUV([4]V3{{x0, iy, z1}, {x0, iy, z0}, {x0, y0, z0}, {x0, y0, z1}}, t.id, uv(side, 0, ef), B.lit(col, V3{-1, 0, 0}), sh(0.9, 0.9, 0.5, 0.5), false)
+		quad([4]V3{{x0, iy, z1}, {x0, iy, z0}, {x0, y0, z0}, {x0, y0, z1}}, uv(side, 0, ef), lc(V3{-1, 0, 0}), sh(0.82, 0.82, 0.66, 0.66))
 	} else if eye.X > x1 {
-		B.QuadUV([4]V3{{x1, iy, z0}, {x1, iy, z1}, {x1, y0, z1}, {x1, y0, z0}}, t.id, uv(side, 1-ef, 1), B.lit(col, V3{1, 0, 0}), sh(0.9, 0.9, 0.5, 0.5), false)
+		quad([4]V3{{x1, iy, z0}, {x1, iy, z1}, {x1, y0, z1}, {x1, y0, z0}}, uv(side, 1-ef, 1), lc(V3{1, 0, 0}), sh(0.82, 0.82, 0.66, 0.66))
 	}
 }

@@ -41,7 +41,9 @@ func (u *UI) bar(dst *ebiten.Image, x, y, w, h, frac, trail float64, col color.R
 			fillRect(dst, u.X(tx)-0.75*S, u.Y(y+3), 1.5*S, (h-6)*S, rgba(0, 0, 0, 80))
 		}
 	}
-	strokePath(dst, well, 1.6*S, ca(th.Edge, 0.8), false)
+	if !u.kitBar(dst, x, y, w, h) {
+		strokePath(dst, well, 1.6*S, ca(th.Edge, 0.8), false)
+	}
 }
 
 // medallion is a framed round badge used for map nodes and the legend.
@@ -121,13 +123,18 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	} else if L.Boss == nil {
 		// outside a Guardian fight there is no health: lives are what count,
 		// so the plate shows gold and barrier charges only
-		u.frame(screen, 22+vx, 18, 440, 70, 0.92)
+		// sized to what it holds: the gold count, then any barrier charges
+		pw := 210.0
+		if L.Barrier > 0 {
+			pw += 110 + 30*float64(L.Barrier)
+		}
+		u.frame(screen, 22+vx, 18, pw, 70, 0.92)
 		pop := g.goldPop
 		u.icon(screen, icCoin, vx+64, 53, 32*(1+0.25*pop), 1)
 		gs := 28 * (1 + 0.16*pop)
 		u.textOutlined(screen, itoa(int(math.Round(g.hudGold))), fBold, gs, vx+92, 53-gs*0.64, mixc(cGold, cWhite, pop*0.6), alignLeft)
 		if L.Barrier > 0 {
-			x := vx + 432.0
+			x := vx + pw - 8
 			for i := 0; i < L.Barrier; i++ {
 				u.icon(screen, icShield, x, 53, 26, 1)
 				x -= 30

@@ -224,6 +224,9 @@ func (u *UI) frame(dst *ebiten.Image, x, y, w, h, a float64) {
 	fillPath(dst, body, ca(th.BgTop, a), ca(th.BgBot, a), vgrad(sy, sy+sh), false)
 	// glass sheen over the upper part
 	fillPath(dst, body, rgba(255, 255, 255, uint8(20*a)), rgba(255, 255, 255, 0), vgrad(sy, sy+math.Min(sh, 110*S)), false)
+	if u.kitFrame(dst, x, y, w, h, a) {
+		return
+	}
 	strokePath(dst, body, 2*S, ca(th.Edge, 0.92*a), false)
 	in := 5.0
 	if w > 2*in+4 && h > 2*in+4 {
@@ -477,6 +480,17 @@ func iconImage(k iconKind) *ebiten.Image {
 
 // iconAt draws an icon centred on screen point (cx, cy); s is its size in px.
 func iconAt(dst *ebiten.Image, k iconKind, cx, cy, s, a float64) {
+	if ki := kitIcon(k); ki != nil {
+		kw := float64(ki.Bounds().Dx())
+		sc := s / (kw * 0.8)
+		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+		op.GeoM.Translate(-kw/2, -kw/2)
+		op.GeoM.Scale(sc, sc)
+		op.GeoM.Translate(cx, cy)
+		op.ColorScale.ScaleAlpha(float32(clamp01(a)))
+		dst.DrawImage(ki, op)
+		return
+	}
 	img := iconImage(k)
 	sc := s / (float64(iconRes) * 0.84)
 	op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
