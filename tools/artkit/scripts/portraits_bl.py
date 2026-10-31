@@ -89,13 +89,21 @@ def pbr(name, base, rough=0.5, metal=0.0, coat=0.0, sheen=0.0, emit=None, es=0.0
         if s is not None:
             C.magic_nodes.append((s, es))
     co = _coord(nt)
+    ao = nt.nodes.new('ShaderNodeAmbientOcclusion')
+    try:
+        ao.samples = 12
+    except Exception:
+        pass
+    setin(ao, 0.09, 'Distance')
+    setin(ao, (*base, 1), 'Color')
+    nt.links.new(ao.outputs['Color'], p.inputs['Base Color'])
     if var > 0:
         n = kit.noise_tex(nt, vscale, 6, 0.55, co)
         lo = darken(base, var)
         hi = lighten(base, var * 0.25)
         r = kit.ramp(nt, [(0.3, lo), (0.7, hi)])
         nt.links.new(n.outputs['Fac'], r.inputs['Fac'])
-        nt.links.new(r.outputs['Color'], p.inputs['Base Color'])
+        nt.links.new(r.outputs['Color'], ao.inputs['Color'])
     heights = []
     if bump > 0:
         n = kit.noise_tex(nt, bscale, 10, 0.6, co)
@@ -119,7 +127,7 @@ def pbr(name, base, rough=0.5, metal=0.0, coat=0.0, sheen=0.0, emit=None, es=0.0
         heights.append((n.outputs['Fac'], fiber))
         r = kit.ramp(nt, [(0.35, darken(base, 0.45)), (0.65, lighten(base, 0.12))])
         nt.links.new(n.outputs['Fac'], r.inputs['Fac'])
-        nt.links.new(r.outputs['Color'], p.inputs['Base Color'])
+        nt.links.new(r.outputs['Color'], ao.inputs['Color'])
     if scratch > 0:
         mp = nt.nodes.new('ShaderNodeMapping')
         setin(mp, (1.0, 60.0, 1.0), 'Scale')
@@ -150,8 +158,12 @@ def glow(name, rgb, strength, eye=False):
 
 
 def hollow():
-    """The dark inside of a hood or helm."""
-    return pbr("hollow", (0.006, 0.005, 0.008), rough=0.9)
+    """The dark inside of a hood or helm: no specular, so it stays a void."""
+    m, nt, out = kit.new_mat("hollow")
+    d = nt.nodes.new('ShaderNodeBsdfDiffuse')
+    setin(d, (0.002, 0.002, 0.003, 1), 'Color')
+    nt.links.new(d.outputs[0], out.inputs['Surface'])
+    return m
 
 
 def fire_volume(name, rgb, strength=18.0, scale=5.0):
@@ -212,6 +224,26 @@ def _obj(name, bm, mat, smooth=True, head=False):
         f.use_smooth = smooth
     if head:
         C.head.append(o)
+    return o
+
+
+def folds(o, strength=0.012, across=0.07, along=1.4):
+    """Vertical cloth folds: noise stretched along Z, applied as geometry."""
+    e = bpy.data.objects.new(o.name + "_fold", None)
+    bpy.context.scene.collection.objects.link(e)
+    e.scale = (across, across, along)
+    d = o.modifiers.new("folds", 'DISPLACE')
+    t = bpy.data.textures.new("folds", 'CLOUDS')
+    t.noise_scale = 1.0
+    try:
+        t.noise_depth = 3
+    except Exception:
+        pass
+    d.texture = t
+    d.texture_coords = 'OBJECT'
+    d.texture_coords_object = e
+    d.strength = strength
+    d.mid_level = 0.5
     return o
 
 
@@ -456,7 +488,10 @@ def torso(mat, wide=1.0, chest=1.0, fold=None, low=0.55, neck=True):
              (1.51, 0.16 * w, 0.12), (1.555, 0.075, 0.075)]
     if neck:
         rings.append((1.64, 0.062, 0.062))
-    return loft("torso", rings, mat, fold=fold, cap_top=True)
+    o = loft("torso", rings, mat, fold=fold, cap_top=True, sub=2)
+    if fold:
+        folds(o, 0.014)
+    return o
 
 
 def shoulder_caps(mat, r=0.1):
@@ -566,6 +601,7 @@ def capelet(mat, inner=None, low=1.28, amp=0.07):
                          (1.58, 0.17, 0.15), (1.63, 0.11, 0.11)], mat, n=64, fold=(amp, 11, 6, 1.0), sub=0)
     solidify(o, 0.012, 1.0, inner=inner)
     subsurf(o, 2)
+    folds(o, 0.012, 0.05, 0.6)
     return o
 
 
@@ -579,7 +615,7 @@ def staff(base, top, wood, metal, r=0.022):
         cyl("staffring", p - d.normalized() * 0.018, p + d.normalized() * 0.018, r * 1.35, metal)
 
 
-def cape(mat, z0=1.48, z1=0.3, r0=0.27, r1=0.5, a0=15, a1=165, cy=0.04, folds=7, amp=0.05, inner=None):
+def cape(mat, z0=1.48, z1=0.3, r0=0.27, r1=0.5, a0=15, a1=165, cy=0.04, nfold=7, amp=0.05, inner=None):
     """A cloak hanging behind the shoulders: an open arc lofted downward."""
     bm = bmesh.new()
     rows = []
@@ -591,7 +627,7 @@ def cape(mat, z0=1.48, z1=0.3, r0=0.27, r1=0.5, a0=15, a1=165, cy=0.04, folds=7,
         row = []
         for i in range(na + 1):
             a = math.radians(a0 + (a1 - a0) * i / na)
-            k = 1 + amp * t * math.sin(folds * a * 2 + 2.0 * t)
+            k = 1 + amp * t * math.sin(nfold * a * 2 + 2.0 * t)
             row.append(bm.verts.new((math.cos(a) * r * k, cy + math.sin(a) * r * k * 0.8, z)))
         rows.append(row)
     for r0_, r1_ in zip(rows, rows[1:]):
@@ -599,7 +635,8 @@ def cape(mat, z0=1.48, z1=0.3, r0=0.27, r1=0.5, a0=15, a1=165, cy=0.04, folds=7,
             bm.faces.new((r0_[i], r0_[i + 1], r1_[i + 1], r1_[i]))
     o = _obj("cape", bm, mat)
     solidify(o, 0.015, 0.0, inner=inner)
-    subsurf(o, 1)
+    subsurf(o, 2)
+    folds(o, 0.02)
     return o
 
 
@@ -638,7 +675,7 @@ def belt(z, mat, buckle=None, rx=0.25, ry=0.18, h=0.03):
 
 # ------------------------------------------------------------------ scene
 
-def lights(col, key=95.0, rim=300.0, warm=(1.0, 0.92, 0.82)):
+def lights(col, key=150.0, rim=520.0, warm=(1.0, 0.92, 0.82)):
     sc = bpy.context.scene
 
     def area(name, loc, target, size, energy, color, sy=None):
@@ -654,14 +691,14 @@ def lights(col, key=95.0, rim=300.0, warm=(1.0, 0.92, 0.82)):
         o.location = loc
         o.rotation_euler = (Vector(target) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
         return o
-    area("key", (-1.9, -2.3, 2.7), (0, 0, 1.55), 1.4, key, warm)
-    area("fill", (2.2, -2.0, 1.1), (0, 0, 1.4), 2.5, key * 0.12, (0.75, 0.82, 1.0))
-    C.rims.append(area("rimL", (-1.6, 1.4, 2.1), (0, 0, 1.6), 0.9, rim, lighten(col, 0.35), sy=2.5))
-    C.rims.append(area("rimR", (1.7, 1.3, 1.9), (0, 0, 1.55), 0.9, rim * 1.2, col, sy=2.5))
-    area("top", (0.3, 0.8, 3.4), (0, 0, 1.7), 0.8, key * 0.5, lighten(col, 0.6))
+    area("key", (-2.3, -1.9, 2.7), (0, 0, 1.55), 0.7, key, warm)
+    area("fill", (2.2, -2.2, 1.1), (0, 0, 1.4), 2.5, key * 0.07, (0.7, 0.78, 1.0))
+    C.rims.append(area("rimL", (-1.5, 1.5, 2.0), (0, 0, 1.6), 0.4, rim, lighten(col, 0.25), sy=2.4))
+    C.rims.append(area("rimR", (1.6, 1.4, 1.9), (0, 0, 1.55), 0.4, rim * 1.25, col, sy=2.4))
+    area("top", (0.3, 0.8, 3.4), (0, 0, 1.7), 0.6, key * 0.3, lighten(col, 0.6))
 
 
-def backdrop(col, seed, haze=0.012, motes=260, mote_col=None, floor=None):
+def backdrop(col, seed, haze=0.005, motes=260, mote_col=None, floor=None):
     """Nebula wall, haze volume and drifting motes (all hidden for the mask
     and HUD passes)."""
     rnd = random.Random(seed)
@@ -670,7 +707,7 @@ def backdrop(col, seed, haze=0.012, motes=260, mote_col=None, floor=None):
     w.use_nodes = True
     bg = w.node_tree.nodes.get("Background")
     if bg:
-        setin(bg, (*darken(col, 0.93), 1), 'Color')
+        setin(bg, (*darken(col, 0.975), 1), 'Color')
         setin(bg, 1.0, 'Strength')
     # the wall: a dark gradient with a soft nebula in the origin's colour
     m, nt, out = kit.new_mat("wall")
@@ -869,7 +906,7 @@ def m_steel(base=(0.62, 0.64, 0.68), name="steel", rough=0.28):
 
 
 def m_cloth(base, name="cloth", sheen=0.6):
-    return pbr(name, base, rough=0.75, sheen=sheen, var=0.3, vscale=3, weave=0.05, bump=0.05, bscale=20)
+    return pbr(name, base, rough=0.72, sheen=sheen * 0.3, var=0.3, vscale=3, weave=0.05, bump=0.05, bscale=20)
 
 
 def b_arcane():
@@ -1165,7 +1202,7 @@ def b_lucky():
     for z in (1.18, 1.08, 0.98):
         ell("button", V(-0.06, -0.205, z), (0.012, 0.008, 0.012), gold)
         ell("button", V(0.06, -0.205, z), (0.012, 0.008, 0.012), gold)
-    ell("cravat", V(0, -0.15, 1.5), (0.05, 0.035, 0.06), silk)
+    ell("cravat", V(0, -0.16, 1.47), (0.035, 0.022, 0.05), silk)
     ell("pin", V(0, -0.19, 1.49), (0.012,) * 3, glow("emerald", (0.2, 1.0, 0.5), 8.0))
     shoulder_caps(coat, 0.1)
     # face in the brim's shadow
@@ -1178,7 +1215,6 @@ def b_lucky():
     C.anchor("glint", V(0.0, hb.y - 0.13, hb.z + 0.03), (1, 0.95, 0.7), 0.6)
     tube("feather", [V(0.1, hb.y + 0.02, hb.z + 0.03), V(0.16, hb.y + 0.06, hb.z + 0.12), V(0.2, hb.y + 0.1, hb.z + 0.2)], [0.012, 0.018, 0.004],
          pbr("feather", (0.1, 0.5, 0.3), rough=0.5, sheen=1.0, fiber=0.6, film=300), flat=0.25, n=12, head=True)
-    ell("scarfL", C.eye_c + V(0, -0.06, -0.12), (0.1, 0.07, 0.07), silk, head=True)
     eyes((0.3, 1.0, 0.6), 26, sep=0.032)
     # card fan in the right hand (screen left)
     w = arm("L", (-0.38, -0.08, 1.14), (-0.33, -0.27, 1.3), coat, r=(0.08, 0.066, 0.055), cuff=silk)
@@ -1210,7 +1246,7 @@ def b_lucky():
 
 def b_pyro():
     col = (1.0, 0.42, 0.1)
-    robe = m_cloth((0.06, 0.04, 0.035), "char", sheen=0.3)
+    robe = m_cloth((0.035, 0.028, 0.026), "char", sheen=0.5)
     sash = m_cloth((0.45, 0.04, 0.02), "sash", sheen=0.6)
     metal = m_steel((0.3, 0.27, 0.25), "mask", rough=0.3)
     hem = pbr("hem", (0.1, 0.05, 0.03), rough=0.6, emit=(1.0, 0.35, 0.05), es=0.0)
@@ -1256,8 +1292,18 @@ def b_pyro():
     w = arm("R", (0.38, -0.02, 1.2), (0.38, -0.18, 1.45), robe, bell=0.05)
     hand("handR", w, m_leather((0.08, 0.04, 0.02), "glove"), toward=(0, -0.3, 1), open_=True)
     fc = V(0.39, -0.24, 1.66)
-    ell("firecore", fc, (0.055, 0.055, 0.07), glow("firecore", (1.0, 0.75, 0.35), 45.0))
-    fv = ell("flame", fc + V(0, 0, 0.07), (0.15, 0.15, 0.24), fire_volume("flame", (1.0, 0.4, 0.06), 30.0))
+    ell("firecore", fc, (0.035, 0.035, 0.045), glow("firecore", (1.0, 0.8, 0.45), 12.0))
+    fv = ell("flame", fc + V(0, 0, 0.08), (0.16, 0.16, 0.26), fire_volume("flame", (1.0, 0.38, 0.05), 140.0))
+    tongue_o = glow("tongue", (1.0, 0.42, 0.06), 9.0)
+    tongue_y = glow("tongue2", (1.0, 0.75, 0.25), 14.0)
+    rnd2 = random.Random(21)
+    for k in range(9):
+        a = 2 * math.pi * k / 9 + rnd2.uniform(-0.3, 0.3)
+        rr = rnd2.uniform(0.02, 0.06)
+        b0 = fc + V(math.cos(a) * rr, math.sin(a) * rr * 0.6, -0.01)
+        h = rnd2.uniform(0.14, 0.28)
+        pts = [b0, b0 + V(rnd2.uniform(-0.03, 0.03), 0, h * 0.35), b0 + V(rnd2.uniform(-0.05, 0.05), 0, h * 0.7), b0 + V(rnd2.uniform(-0.04, 0.04), 0, h)]
+        tube("tongue", pts, [0.03, 0.026, 0.014, 0.002], tongue_y if k % 3 == 0 else tongue_o, n=10)
     pt = bpy.data.lights.new("firelight", 'POINT')
     pt.energy = 140
     pt.color = (1.0, 0.45, 0.12)
@@ -1284,7 +1330,7 @@ def b_storm():
     silver = pbr("silver", (0.85, 0.88, 0.92), rough=0.18, metal=1.0, scratch=0.08)
     torso(cloak, fold=(0.05, 9, 5, 0.85), neck=False)
     capelet(cloak, inner=m_cloth((0.03, 0.05, 0.1), "capin"), amp=0.1)
-    cape(cloak, r1=0.6, folds=9, amp=0.09, a0=-10, a1=190, inner=m_cloth((0.03, 0.05, 0.1), "cloakin"))
+    cape(cloak, r1=0.6, nfold=9, amp=0.09, a0=-10, a1=190, inner=m_cloth((0.03, 0.05, 0.1), "cloakin"))
     hood(cloak, r=(0.17, 0.185, 0.21), peak=0.1, drape=1.35, trim=silver)
     torus("clasp", V(0, -0.17, 1.47), 0.03, 0.008, silver, rot=(90, 0, 0))
     ell("claspgem", V(0, -0.175, 1.47), (0.018, 0.01, 0.018), glow("claspgem", (0.5, 0.85, 1.0), 10.0))
@@ -1305,11 +1351,11 @@ def b_storm():
     for k in range(6):
         end = orb + V(rnd.uniform(-0.5, 0.4), rnd.uniform(-0.2, 0.4), rnd.uniform(0.15, 0.9))
         pts = bolt_pts(orb, end, k, jag=0.09, steps=12)
-        tube("bolt", pts, [0.006 - 0.004 * i / 12 for i in range(13)], boltm, n=6, sub=0)
+        tube("bolt", pts, [0.011 - 0.007 * i / 12 for i in range(13)], boltm, n=6, sub=0)
         # a branch
         mid = pts[5]
         b_end = mid + V(rnd.uniform(-0.2, 0.2), rnd.uniform(-0.1, 0.1), rnd.uniform(0.05, 0.25))
-        tube("branch", bolt_pts(mid, b_end, k + 50, jag=0.04, steps=6), 0.0025, boltm, n=6, sub=0)
+        tube("branch", bolt_pts(mid, b_end, k + 50, jag=0.04, steps=6), 0.005, boltm, n=6, sub=0)
     pt = bpy.data.lights.new("boltlight", 'POINT')
     pt.energy = 120
     pt.color = (0.6, 0.85, 1.0)

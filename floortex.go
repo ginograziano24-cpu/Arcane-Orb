@@ -267,7 +267,12 @@ func drawTexBrick(B *Batch, t *bakedTex, x0, y0, z0, x1, y1, z1 float64, col col
 	ix0, ix1, iz0, iz1, iy := x0+c, x1-c, z0+c, z1-c, y1-c
 	// the baked tiles already carry their lighting: the world's light only
 	// nudges the colour
-	lc := func(n V3) color.RGBA { return mixc(col, B.lit(col, n), 0.3) }
+	cx, cy, cz := (x0+x1)/2, (y0+y1)/2, (z0+z1)/2
+	hx, hy, hz := (x1-x0)/2, (y1-y0)/2, (z1-z0)/2
+	lc := func(n V3) color.RGBA {
+		p := V3{cx + n.X*hx, cy + n.Y*hy, cz + n.Z*hz}
+		return B.litPt(mixc(col, B.lit(col, n), 0.3), p, n)
+	}
 	sh := func(a, b, cc, d float32) [4]float32 { return [4]float32{a + emis, b + emis, cc + emis, d + emis} }
 	// every face is drawn twice when the sheet has a specular layer: its
 	// colour, then its highlights screened on top

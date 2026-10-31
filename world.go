@@ -101,6 +101,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	B.fogColor = [3]float32{float32(bio.Fog.R) / 255, float32(bio.Fog.G) / 255, float32(bio.Fog.B) / 255}
 	B.fogNear, B.fogFar = bio.FogNear, bio.FogFar
 	B.SetLight(bio.LightDir, bio.LightCol, bio.AmbCol)
+	if !classic {
+		g.collectLights(B, L)
+	}
 
 	if !classic {
 		g.drawScenery(B, L)
@@ -302,20 +305,15 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	// balls
 	fire := L.Timers[PFire] > 0
 	for _, b := range L.Balls {
-		glow := color.RGBA{160, 130, 255, 255}
+		glow := g.orbGlow(L, b)
 		core := color.RGBA{240, 235, 255, 255}
-		if tc, ok := g.run.orbTrail(); ok {
-			glow = tc
-		}
 		if fire {
-			glow, core = color.RGBA{255, 130, 40, 255}, color.RGBA{255, 230, 170, 255}
+			core = color.RGBA{255, 230, 170, 255}
 		} else if g.run.Stats.MeteorHeart {
-			glow, core = color.RGBA{255, 90, 60, 255}, color.RGBA{255, 200, 170, 255}
+			core = color.RGBA{255, 200, 170, 255}
 		}
 		if b.Storm > 0 {
-			glow, core = color.RGBA{120, 190, 255, 255}, color.RGBA{225, 240, 255, 255}
-		} else if g.run.Stats.ClassAttune && !fire {
-			glow = attuneCols[L.cls.attuneEl]
+			core = color.RGBA{225, 240, 255, 255}
 		}
 		a := 1.0
 		if b.Phantom > 0 {
@@ -740,4 +738,56 @@ func (g *Game) drawClassicBackdrop(screen *ebiten.Image, L *Level) {
 	op.ColorScale.Scale(0.86, 0.86, 0.9, 1) // keep the play field readable
 	screen.DrawImage(g.sky, op)
 	vignette(screen, sw, sh, 210)
+}
+
+// orbGlow is the colour an orb glows (and lights the bricks) with.
+func (g *Game) orbGlow(L *Level, b *Ball) color.RGBA {
+	glow := color.RGBA{160, 130, 255, 255}
+	if tc, ok := g.run.orbTrail(); ok {
+		glow = tc
+	}
+	fire := L.Timers[PFire] > 0
+	if fire {
+		glow = color.RGBA{255, 130, 40, 255}
+	} else if g.run.Stats.MeteorHeart {
+		glow = color.RGBA{255, 90, 60, 255}
+	}
+	if b.Storm > 0 {
+		glow = color.RGBA{120, 190, 255, 255}
+	} else if g.run.Stats.ClassAttune && !fire {
+		glow = attuneCols[L.cls.attuneEl]
+	}
+	return glow
+}
+
+// collectLights gathers this frame's point lights: orbs, shockwaves,
+// laser bolts and the special bricks' own glow, so nearby bricks catch
+// coloured light as things move past them.
+func (g *Game) collectLights(B *Batch, L *Level) {
+	t := L.T
+	for _, b := range L.Balls {
+		s := 0.75
+		if L.Timers[PFire] > 0 || b.Storm > 0 {
+			s = 1.1
+		}
+		B.AddLight(V3{b.X, b.R + 0.5, b.Z}, g.orbGlow(L, b), 4.2*effCell/2, s)
+	}
+	for _, r := range L.Rings {
+		k := clamp01(r.Life / r.Max)
+		B.AddLight(V3{r.X, 0.9, r.Z}, r.Col, math.Max(2.5, r.MaxR*1.4), 1.4*k)
+	}
+	for _, bl := range L.Bolts {
+		B.AddLight(V3{bl.X, 0.6, bl.Z}, color.RGBA{255, 80, 70, 255}, 2.6, 0.7)
+	}
+	for _, b := range L.Bricks {
+		if !b.Alive || b.Up != nil || b.BossPart || b.Appear < 1 {
+			continue
+		}
+		gc, ok := specialGlow[b.Kind]
+		if !ok {
+			continue
+		}
+		p := 0.6 + 0.4*math.Sin(t*2.6+float64(b.C)*0.5+float64(b.R)*0.3)
+		B.AddLight(V3{b.X() + b.OffX, float64(b.Layer+1)*LayerH + 0.3, b.Z() + b.OffZ}, gc, CellW*1.5, 0.45*p)
+	}
 }

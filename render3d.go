@@ -525,6 +525,69 @@ type Batch struct {
 	light    V3
 	lightCol [3]float32
 	ambCol   [3]float32
+	pts      []ptLight
+}
+
+// ptLight is a coloured point light (an orb, a blast, a glowing brick)
+// that brightens the brick faces near it.
+type ptLight struct {
+	p    V3
+	c    [3]float32
+	r, s float64
+}
+
+const maxPtLights = 48
+
+// AddLight adds a point light for this frame: radius r, strength s.
+func (b *Batch) AddLight(p V3, c color.RGBA, r, s float64) {
+	if len(b.pts) >= maxPtLights || s <= 0.01 {
+		return
+	}
+	b.pts = append(b.pts, ptLight{p, [3]float32{float32(c.R) / 255, float32(c.G) / 255, float32(c.B) / 255}, r, s})
+}
+
+// ptGlow sums the point lights reaching p on a face facing n.
+func (b *Batch) ptGlow(p, n V3) (g [3]float32) {
+	for i := range b.pts {
+		l := &b.pts[i]
+		d := l.p.Sub(p)
+		d2 := d.Dot(d)
+		if d2 >= l.r*l.r {
+			continue
+		}
+		dist := math.Sqrt(d2)
+		k := 1 - dist/l.r
+		k = k * k * l.s
+		ndl := 0.3
+		if dist > 1e-4 {
+			ndl += 0.7 * math.Max(0, n.Dot(d)/dist)
+		}
+		w := float32(k * ndl)
+		g[0] += l.c[0] * w
+		g[1] += l.c[1] * w
+		g[2] += l.c[2] * w
+	}
+	return
+}
+
+// litPt applies the point lights to a face colour: they brighten what is
+// there and add a little of their own colour so dark bricks catch it too.
+func (b *Batch) litPt(col color.RGBA, p, n V3) color.RGBA {
+	if len(b.pts) == 0 {
+		return col
+	}
+	g := b.ptGlow(p, n)
+	f := func(v uint8, k float32) uint8 {
+		if k > 1.6 {
+			k = 1.6
+		}
+		x := float32(v)*(1+k) + 70*k
+		if x > 255 {
+			x = 255
+		}
+		return uint8(x)
+	}
+	return color.RGBA{f(col.R, g[0]), f(col.G, g[1]), f(col.B, g[2]), col.A}
 }
 
 func newBatch(cam *Camera) *Batch {
@@ -535,6 +598,7 @@ func newBatch(cam *Camera) *Batch {
 func (b *Batch) Reset() {
 	b.quads = b.quads[:0]
 	b.glow = b.glow[:0]
+	b.pts = b.pts[:0]
 }
 
 func cf(c color.RGBA) [4]float32 {
