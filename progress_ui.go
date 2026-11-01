@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 	"strings"
 
@@ -93,7 +94,7 @@ func (g *Game) drawSanctum(s *ebiten.Image) {
 func (g *Game) drawCodex(s *ebiten.Image) {
 	u := g.ui
 	u.heading(s, "THE CODEX", 72, 40, cGold, 1)
-	tabs := []string{"Upgrades", "Relics", "Fusions", "Achievements", "Endless", "Run History"}
+	tabs := []string{"Upgrades", "Relics", "Fusions", "Achievements", "Endless", "Run History", "Origins"}
 	// Q/E or the shoulder buttons flip tabs
 	if g.navLatch.pageL {
 		g.codexTab = (g.codexTab + len(tabs) - 1) % len(tabs)
@@ -112,13 +113,20 @@ func (g *Game) drawCodex(s *ebiten.Image) {
 		if g.codexTab == i {
 			acc = cGold
 		}
-		tx := 960 - 635 + float64(i)*214
-		if u.button(s, "ctab"+itoa(i), t, tx, 140, 200, 50, acc, true) {
+		tx := 960 - (float64(len(tabs))*186-8)/2 + float64(i)*186
+		if u.button(s, "ctab"+itoa(i), t, tx, 140, 178, 50, acc, true) {
 			g.codexTab = i
 		}
 		if g.codexTab == i {
-			u.glowLine(s, tx+20, tx+180, 198, 3, cGold, 1)
+			u.glowLine(s, tx+18, tx+160, 198, 3, cGold, 1)
 		}
+	}
+	if g.codexTab == 6 {
+		g.drawOriginsTab(s, 236)
+		if u.button(s, "cback", "Back", 60, 990, 200, 56, cAcc, true) {
+			g.setState(StMenu)
+		}
+		return
 	}
 	if g.codexTab == 3 {
 		g.drawAchievementsTab(s, 236)
@@ -350,6 +358,81 @@ func (g *Game) drawRecords(s *ebiten.Image, y float64) {
 				f = fBold
 			}
 			u.text(s, vals[j], f, 22, c.x, ry, col, c.al)
+		}
+	}
+}
+
+// drawOriginsTab lays out every origin as a card: its portrait, how it
+// plays, its passive and active, and how far you have mastered it.
+func (g *Game) drawOriginsTab(s *ebiten.Image, y0 float64) {
+	u := g.ui
+	S := u.S
+	n := len(archetypes)
+	cw, gap := 250.0, 12.0
+	x0 := 960 - (float64(n)*cw+float64(n-1)*gap)/2
+	ch := 700.0
+	for i := range archetypes {
+		a := &archetypes[i]
+		ci := classInfo[a.ID]
+		cs := classStyle[a.ID]
+		x := x0 + float64(i)*(cw+gap)
+		y := y0
+		locked := a.Cost > 0 && !g.save.Unlocked[a.ID]
+		hv, _ := u.hit("corig"+a.ID, x, y, cw, ch)
+		k := u.anim("corig"+a.ID, hv, 10)
+		y -= 8 * k
+		body := boxPath(u.X(x), u.Y(y), cw*S, ch*S, 16*S, false)
+		fillPath(s, body, mixc(rgba(28, 20, 46, 245), ci.Col, 0.12), rgba(10, 8, 20, 250), vgrad(u.Y(y), u.Y(y+ch)), false)
+		if k > 0.01 {
+			drawSprite(s, sprSoft, u.X(x-40), u.Y(y-40), (cw+80)*S, (ch+80)*S, ca(ci.Col, 0.25*k), true)
+		}
+		strokePath(s, body, 2*S, ca(mixc(ci.Col, cWhite, 0.2*k), 0.85), false)
+		// the portrait in a lit window
+		drawSprite(s, sprSoft, u.X(x+cw/2-140), u.Y(y+20), 280*S, 300*S, ca(ci.Col, 0.3), true)
+		if img := hudPortrait(a.ID, "rest"); img != nil {
+			b := img.Bounds()
+			pw := cw - 24
+			ph := pw * float64(b.Dy()) / float64(b.Dx())
+			clip := s.SubImage(image.Rect(int(u.X(x+12)), int(u.Y(y+12)), int(u.X(x+cw-12)), int(u.Y(y+12+ph)))).(*ebiten.Image)
+			op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+			op.GeoM.Scale(pw*S/float64(b.Dx()), ph*S/float64(b.Dy()))
+			op.GeoM.Translate(u.X(x+12), u.Y(y+12))
+			if locked {
+				op.ColorScale.Scale(0.35, 0.33, 0.4, 1)
+			}
+			clip.DrawImage(img, op)
+		}
+		ty := y + 12 + (cw-24)*340/268 + 10
+		u.text(s, a.Name, fRune, 26, x+cw/2, ty, lighten(ci.Col, 0.35), alignCenter)
+		ty += 40
+		for d := 0; d < 3; d++ {
+			c := ca(cDim, 0.35)
+			if d < cs.Diff {
+				c = lighten(ci.Col, 0.2)
+			}
+			fillPath(s, diamondPath(u.X(x+cw/2-20+float64(d)*20), u.Y(ty+6), 6*S, 8*S), c, darken(c, 0.3), grad{}, false)
+		}
+		ty += 22
+		u.text(s, strings.ToUpper(tr(cs.Tags[0])+"  ·  "+tr(cs.Tags[1])), fBold, 13, x+cw/2, ty, ca(cDim, 0.9), alignCenter)
+		ty += 30
+		u.glowLine(s, x+30, x+cw-30, ty, 1, ca(ci.Col, 0.7), 1)
+		ty += 12
+		u.text(s, "PASSIVE", fBold, 12, x+20, ty, ca(cGold, 0.9), alignLeft)
+		u.text(s, a.Passive, fBold, 18, x+20, ty+16, cWhite, alignLeft)
+		ty += 48
+		u.text(s, "ACTIVE", fBold, 12, x+20, ty, ca(cGold, 0.9), alignLeft)
+		u.text(s, a.Ability, fBold, 18, x+20, ty+16, cWhite, alignLeft)
+		u.text(s, fmt.Sprintf("%.0fs", a.Cooldown), fReg, 14, x+cw-20, ty+19, cDim, alignRight)
+		ty += 62
+		u.paragraph(s, "“"+tr(classQuote[a.ID])+"”", fSerif, 17, x+cw/2, ty, cw-40, ca(rgba(226, 214, 190, 255), 0.85), alignCenter)
+		if locked {
+			u.text(s, fmt.Sprintf("Locked · %d shards", a.Cost), fBold, 16, x+cw/2, y+ch-36, ca(rgba(200, 180, 255, 255), 0.9), alignCenter)
+		} else {
+			lv, _ := g.save.masteryOf(a.ID)
+			u.text(s, fmt.Sprintf("Mastery %d", lv), fBold, 16, x+cw/2, y+ch-36, lighten(ci.Col, 0.3), alignCenter)
+		}
+		if hv {
+			g.tooltip = a.Name + " — " + a.Desc + "  " + a.Ability + ": " + a.AbilityDesc
 		}
 	}
 }
