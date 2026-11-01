@@ -59,6 +59,9 @@ TASKS.update(portraits_bl.TASKS)
 import medals_bl
 importlib.reload(medals_bl)
 TASKS.update(medals_bl.TASKS)
+import scenes_bl
+importlib.reload(scenes_bl)
+TASKS.update(scenes_bl.TASKS)
 
 
 def main():

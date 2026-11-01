@@ -98,21 +98,28 @@ def brick_machine():
 
 @asset("paddle_body", "common", ao=0.4)
 def paddle_body():
-    """The paddle's middle, 1 unit long (the game stretches it), 0.7 tall."""
+    """The paddle's middle, 1 unit long (the game stretches it), 0.7 tall:
+    a softly rounded bar with a lit seam along its face."""
     body = M("pbody", (236, 236, 236), tint=True, var=0.03)
-    groove = M("pgroove", (36, 30, 46))
-    box((0, 0, 0.35), (1.0, 0.7, 0.7), body, bev=0.08, seg=1)
-    box((0, -0.36, 0.42), (1.0, 0.03, 0.08), groove)
-    box((0, -0.36, 0.2), (1.0, 0.03, 0.05), groove)
+    seam = M("pseam", (255, 250, 240), tint=True, emit=0.9)
+    dark = M("pgroove", (30, 26, 40))
+    box((0, 0, 0.35), (1.0, 0.7, 0.7), body, bev=0.09, seg=3)
+    box((0, -0.352, 0.34), (1.0, 0.02, 0.16), dark)
+    box((0, -0.36, 0.34), (1.0, 0.02, 0.07), seam)
 
 
 @asset("paddle_cap", "common", ao=0.4)
 def paddle_cap():
-    """An end cap 0.6 wide with a glowing gem facing the arena."""
+    """A domed end cap 0.6 wide: a polished shell banded in gold with a
+    glowing gem facing the arena and a small crest on top."""
     cap = M("pcap", (236, 236, 236), tint=True)
-    gem = M("pgem", (255, 240, 210), emit=0.7)
-    box((0, 0, 0.41), (0.6, 0.8, 0.82), cap, bev=0.12, seg=2)
-    sphere((0, -0.4, 0.42), 0.13, gem, sub=1, scale=(1, 0.55, 1))
+    gold = M("pgold", (255, 206, 110))
+    gem = M("pgem", (255, 240, 210), emit=0.9)
+    sphere((0, 0, 0.42), 0.42, cap, sub=3, scale=(0.78, 1.0, 1.02))
+    place(cyl((0, 0, 0), 0.44, 0.1, gold, n=24, rot=(0, 90, 0)), loc=(0, 0, 0.42))
+    sphere((0, -0.4, 0.44), 0.12, gold, sub=2, scale=(1, 0.5, 1))
+    sphere((0, -0.44, 0.44), 0.085, gem, sub=2, scale=(1, 0.6, 1))
+    cyl((0, 0, 0.8), 0.07, 0.16, gold, n=10, r2=0.0)
 
 
 @asset("capsule", "common", ao=0.3)

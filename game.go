@@ -1500,10 +1500,24 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 	u.text(s, kind+"   ·   "+strings.ToUpper(rarityNames[m.Rarity]), fBold, 16, x+w/2, y+24, lighten(rc, 0.15), alignCenter)
 	// emblem medallion (compact on short cards)
 	ey0, er, nameTop := 130.0, 1.0, 212.0
-	if h < 400 {
+	switch {
+	case h < 400:
 		ey0, er, nameTop = 88, 0.68, 148
+	case h >= 520:
+		// tall reward cards: a big hero emblem fills the art window
+		ey0, er, nameTop = 168, 1.42, 292
+	case h >= 420:
+		ey0, er, nameTop = 140, 1.12, 236
 	}
 	ex, ey := u.X(x+w/2), u.Y(y+ey0)
+	if m.Rarity >= Rare {
+		// a slow fan of rarity light behind the emblem
+		for i := 0; i < 14; i++ {
+			a := g.stateT*0.25 + float64(i)/14*2*math.Pi
+			r0, r1 := 60*er, 128*er
+			strokeLine(s, ex+math.Cos(a)*r0*S, ey+math.Sin(a)*r0*S, ex+math.Cos(a)*r1*S, ey+math.Sin(a)*r1*S, 7*er*S, prem(rc, 0.12))
+		}
+	}
 	drawSprite(s, sprSoft, ex-90*er*S, ey-90*er*S, 180*er*S, 180*er*S, ca(tagc, 0.35), true)
 	fillPath(s, circlePath(ex, ey+4*S, 66*er*S), ca(cBlack, 0.4), ca(cBlack, 0.4), grad{}, false)
 	fillPath(s, circlePath(ex, ey, 66*er*S), lighten(th.Edge, 0.3), darken(th.Edge, 0.45), vgrad(ey-66*er*S, ey+66*er*S), false)
@@ -1589,6 +1603,9 @@ func (g *Game) drawReward(s *ebiten.Image) {
 		return
 	}
 	rs := g.rewards[0]
+	if strings.HasPrefix(rs.Title, "Treasure") {
+		g.drawScene(s, "treasure", 0.4)
+	}
 	u.heading(s, strings.TrimSpace(rs.Title), 56, 90, cGold, 1)
 	g.statLine(s, 960, 172)
 	if g.pick.on {
@@ -1683,6 +1700,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
 	defer g.drawBuyFX(s)
+	g.drawScene(s, "shop", 0.35)
 	g.drawShopStall(s)
 	g.runPanel(s)
 	u.heading(s, "THE WANDERING SHOP", 56, 40, cGold, 1)
@@ -1729,7 +1747,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		if it.Sold {
 			label = "Healed"
 		}
-		if u.button(s, "heal", label, 1160, 770, 330, 52, cGreen, !it.Sold && r.Gold >= it.Price && r.HP < r.Stats.MaxHP) {
+		if u.button(s, "heal", label, 1160, 794, 330, 52, cGreen, !it.Sold && r.Gold >= it.Price && r.HP < r.Stats.MaxHP) {
 			r.Gold -= it.Price
 			r.HP = math.Min(r.Stats.MaxHP, r.HP+30)
 			g.shop[i].Sold = true
@@ -1743,7 +1761,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		cost = 0
 	}
 	// scrolls
-	sy := 650.0
+	sy := 674.0
 	for i, it := range g.shop {
 		if it.Kind != "scroll" {
 			continue
@@ -1769,7 +1787,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		}
 		sy += 60
 	}
-	if u.button(s, "reroll", label, 1160, 830, 330, 52, cGold, r.Gold >= cost) {
+	if u.button(s, "reroll", label, 1160, 854, 330, 52, cGold, r.Gold >= cost) {
 		switch {
 		case g.shopFree > 0:
 			g.shopFree--
@@ -1784,7 +1802,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		g.rerollCost, g.shopFree = rc, sf
 		g.snd.Play("buy")
 	}
-	if u.button(s, "leave", "Leave shop", 1160, 900, 330, 60, cAcc, true) {
+	if u.button(s, "leave", "Leave shop", 1160, 924, 330, 60, cAcc, true) {
 		g.setState(StMap)
 	}
 }
@@ -1792,6 +1810,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 func (g *Game) drawEvent(s *ebiten.Image) {
 	u := g.ui
 	ev := g.event
+	g.drawScene(s, "event", 0.3)
 	g.runPanel(s)
 	u.panel(s, 460, 160, 1000, 760, 0.9)
 	u.heading(s, ev.Title, 52, 192, cGold, 1)
@@ -1867,9 +1886,15 @@ func (g *Game) drawCampfire(s *ebiten.Image, cx, cy float64) {
 func (g *Game) drawRest(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
+	if g.drawScene(s, "rest", 0.18) {
+		// the painted fire still flickers: a glow breathing over it
+		p := 0.7 + 0.3*math.Sin(g.stateT*7) + 0.1*math.Sin(g.stateT*13)
+		drawSprite(s, sprSoft, u.X(960-260), u.Y(760-200), 520*u.S, 400*u.S, ca(rgba(255, 130, 40, 255), 0.22*p), true)
+	} else {
+		g.drawCampfire(s, 960, 840)
+	}
 	g.runPanel(s)
 	u.heading(s, "A QUIET CAMPFIRE", 60, 200, cGold, 1)
-	g.drawCampfire(s, 960, 840)
 	u.text(s, "Rest your hands, or train your craft.", fReg, 26, 960, 300, cDim, alignCenter)
 	healPct := 0.35
 	if r.Asc >= 6 {
