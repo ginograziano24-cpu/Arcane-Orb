@@ -1812,7 +1812,7 @@ func (g *Game) drawEvent(s *ebiten.Image) {
 	ev := g.event
 	g.drawScene(s, "event", 0.3)
 	g.runPanel(s)
-	u.panel(s, 460, 160, 1000, 760, 0.9)
+	u.panel(s, 460, 160, 1000, 760, 0.72)
 	u.heading(s, ev.Title, 52, 192, cGold, 1)
 	y := u.paragraph(s, ev.Text, fReg, 26*g.textScale(), 960, 300, 860, cWhite, alignCenter)
 	if g.eventMsg != "" {
