@@ -52,6 +52,33 @@ func portrait(id string) *ebiten.Image {
 	return img
 }
 
+// classStyle is how an origin plays: two short tags and a difficulty (1-3).
+var classStyle = map[string]struct {
+	Tags [2]string
+	Diff int
+}{
+	"guardian":  {[2]string{"Defence", "Control"}, 1},
+	"berserker": {[2]string{"Aggression", "Momentum"}, 2},
+	"arcane":    {[2]string{"Elements", "Area"}, 2},
+	"engineer":  {[2]string{"Precision", "Patience"}, 2},
+	"lucky":     {[2]string{"Economy", "Chance"}, 3},
+	"pyro":      {[2]string{"Burning", "Area"}, 2},
+	"storm":     {[2]string{"Chains", "Movement"}, 3},
+}
+
+// classQuote is each origin's creed, shown when it steps into a new world.
+var classQuote = map[string]string{
+	"guardian":  "Hold the line. Let nothing through.",
+	"berserker": "Break it. Then break what stood behind it.",
+	"arcane":    "Every element answers, if you ask it properly.",
+	"engineer":  "A still hand and a clear shot. That's all it takes.",
+	"lucky":     "The house always loses. Eventually.",
+	"pyro":      "Everything burns. Some things just need encouragement.",
+	"storm":     "The sky remembers me.",
+}
+
+var diffNames = []string{"", "Straightforward", "Rewards mastery", "For daring hands"}
+
 // classInfo is the presentation data for each archetype.
 var classInfo = map[string]struct {
 	Lore  string
@@ -286,7 +313,32 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	u.frame(s, rx, ry, rw, 820, 0.88)
 	cx := rx + 36
 	u.textOutlined(s, a.Name, fRune, 50, cx, ry+24, lighten(col, 0.35), alignLeft)
-	y := ry + 100
+	// playstyle chips and difficulty pips under the name
+	if cs, ok := classStyle[a.ID]; ok {
+		tx := cx
+		for _, tg := range cs.Tags {
+			lbl := strings.ToUpper(tr(tg))
+			tw := u.measure(lbl, fBold, 14) + 22
+			chip := boxPath(u.X(tx), u.Y(ry+86), tw*S, 26*S, 13*S, false)
+			fillPath(s, chip, ca(darken(col, 0.35), 0.75), ca(darken(col, 0.6), 0.75), vgrad(u.Y(ry+86), u.Y(ry+112)), false)
+			strokePath(s, chip, 1.2*S, ca(col, 0.8), false)
+			u.text(s, lbl, fBold, 14, tx+tw/2, ry+90, lighten(col, 0.55), alignCenter)
+			tx += tw + 8
+		}
+		dx := rx + rw - 36 - 3*20
+		for i := 0; i < 3; i++ {
+			on := i < cs.Diff
+			c := ca(cDim, 0.35)
+			if on {
+				c = lighten(col, 0.2)
+			}
+			fillPath(s, diamondPath(u.X(dx+float64(i)*20+8), u.Y(ry+99), 7*S, 9*S), c, darken(c, 0.3), grad{}, false)
+		}
+		if u.hover(dx-6, ry+86, 66, 28) {
+			g.tooltip = diffNames[cs.Diff]
+		}
+	}
+	y := ry + 126
 	y = u.paragraph(s, info.Lore, fReg, 19, cx, y, rw-72, rgba(214, 206, 228, 255), alignLeft) + 10
 	u.glowLine(s, cx, rx+rw-36, y, 1, ca(u.theme().Edge, 0.9), 1)
 	y += 20
@@ -324,13 +376,15 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	}
 	y += 4
 	if a.Ability != "" {
-		bx, bw, bh := cx, rw-72, 104.0
+		bx, bw := cx, rw-72
+		nl := float64(len(u.wrap(a.AbilityDesc, fReg, 16, bw-100)))
+		bh := math.Max(104, 48+nl*16*1.35+28)
 		fillPath(s, boxPath(u.X(bx), u.Y(y), bw*S, bh*S, 10*S, false), ca(darken(col, 0.3), 0.6), ca(darken(col, 0.12), 0.6), vgrad(u.Y(y), u.Y(y+bh)), false)
 		strokePath(s, boxPath(u.X(bx), u.Y(y), bw*S, bh*S, 10*S, false), 1.4*S, ca(col, 0.85), false)
 		u.drawEmblem(s, glyphImage(info.Glyph, col), bx+44, y+bh/2, 56, 1)
 		u.text(s, "ACTIVE  ·  "+strings.ToUpper(a.Ability), fBold, 18, bx+86, y+14, lighten(col, 0.45), alignLeft)
 		u.paragraph(s, a.AbilityDesc, fReg, 16, bx+86, y+40, bw-100, rgba(226, 220, 236, 255), alignLeft)
-		u.text(s, fmt.Sprintf("Right-click or E  ·  %.0fs cooldown", a.Cooldown), fReg, 14, bx+86, y+78, cDim, alignLeft)
+		u.text(s, fmt.Sprintf("Right-click or E  ·  %.0fs cooldown", a.Cooldown), fReg, 14, bx+86, y+bh-26, cDim, alignLeft)
 		y += bh
 	} else {
 		u.text(s, "No active ability", fReg, 17, cx, y, ca(cDim, 0.7), alignLeft)

@@ -1978,6 +1978,26 @@ func (g *Game) drawActIntro(s *ebiten.Image) {
 	} else if r.Act > 1 {
 		u.text(s, "A new world, a new build: you start again with your Sanctum gifts and starting gold.", fReg, 22, 960, 600, ca(rgba(200, 190, 230, 255), a3), alignCenter)
 	}
+	// your origin steps in from the left, with its creed
+	if r.Arch != nil {
+		if img := portrait(r.Arch.ID); img != nil {
+			k := ease(clamp01((t - 0.35) * 1.4))
+			ci := classInfo[r.Arch.ID]
+			ph := 560.0
+			pw := ph * 0.75
+			px := 40 - (1-k)*120
+			py := 1080 - ph + 10
+			drawSprite(s, sprSoft, u.X(px-60), u.Y(py+40), (pw+120)*S, (ph-20)*S, ca(ci.Col, 0.22*k), true)
+			op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+			op.GeoM.Scale(pw*S/float64(img.Bounds().Dx()), ph*S/float64(img.Bounds().Dy()))
+			op.GeoM.Translate(u.X(px), u.Y(py))
+			op.ColorScale.ScaleAlpha(float32(k))
+			s.DrawImage(img, op)
+			tx := px + pw - 10
+			u.text(s, strings.ToUpper(tr(r.Arch.Name)), fBold, 16, tx, 900, ca(lighten(ci.Col, 0.4), k), alignLeft)
+			u.textOutlined(s, "“"+tr(classQuote[r.Arch.ID])+"”", fSerif, 26, tx, 926, ca(rgba(236, 226, 206, 255), k), alignLeft)
+		}
+	}
 	if (u.Click || g.keyHit(ebiten.KeySpace) || g.keyHit(ebiten.KeyEnter)) && t < 0.8 && t > 0.05 {
 		g.stateT = 0.81 // first press finishes the reveal
 		g.consumeInput()

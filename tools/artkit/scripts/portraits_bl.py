@@ -163,7 +163,7 @@ def hollow():
     """The dark inside of a hood or helm: no specular, so it stays a void."""
     m, nt, out = kit.new_mat("hollow")
     d = nt.nodes.new('ShaderNodeBsdfDiffuse')
-    setin(d, (0.002, 0.002, 0.003, 1), 'Color')
+    setin(d, (0.018, 0.016, 0.02, 1), 'Color')
     nt.links.new(d.outputs[0], out.inputs['Surface'])
     return m
 
@@ -514,28 +514,40 @@ def arm(side, elbow, wrist, mat, r=(0.075, 0.062, 0.05), bell=0.0, cuff=None):
     return w
 
 
-def hand(name, at, mat, toward=(0, 0, 1), size=1.0, open_=False):
-    """A gloved hand: palm, four fingers and a thumb, pointing `toward`."""
+def hand(name, at, mat, toward=(0, 0, 1), size=1.0, open_=False, trim=None):
+    """A gauntleted hand pointing `toward`: a flared cuff, a bevelled back
+    plate, four jointed fingers with knuckle plates and a thumb. Open hands
+    splay gently upward; closed ones curl into a fist."""
+    s_ = size
     at, d = Vector(at), Vector(toward).normalized()
     q = d.to_track_quat('Z', 'Y')
-    ell(name + "palm", at + d * 0.045 * size, (0.042 * size, 0.026 * size, 0.05 * size), mat, rot=[math.degrees(a) for a in q.to_euler()])
-    side = (q @ Vector((1, 0, 0)))
-    fwd = (q @ Vector((0, -1, 0)))
+    rot = [math.degrees(a) for a in q.to_euler()]
+    side = q @ Vector((1, 0, 0))
+    palm = q @ Vector((0, -1, 0))          # the palm faces this way
+    cyl(name + "cuff", at - d * 0.03 * s_, at + d * 0.035 * s_, 0.05 * s_, trim or mat, r2=0.043 * s_)
+    rbox(name + "back", at + d * 0.08 * s_, (0.086 * s_, 0.034 * s_, 0.085 * s_), mat, bev=0.012 * s_, rot=rot)
+    km = trim or mat
     for i in range(4):
-        x = (i - 1.5) * 0.019 * size
-        base = at + d * 0.09 * size + side * x
+        x = (i - 1.5) * 0.021 * s_
+        ln = (1.0 - 0.12 * abs(i - 1.5)) * s_
+        base = at + d * 0.12 * s_ + side * x
         if open_:
-            continue
+            spread = side * x * 0.25
+            p1 = base + d * 0.03 * ln + spread + palm * 0.004 * s_
+            p2 = p1 + d * 0.028 * ln + spread + palm * 0.01 * s_
+            p3 = p2 + d * 0.022 * ln + palm * 0.012 * s_
         else:
-            k1 = base + d * 0.03 * size - fwd * 0.012 * size
-            pts = [base, k1, k1 - fwd * 0.03 * size - d * 0.015 * size]
-        tube(name + "f%d" % i, pts, [0.0105 * size, 0.0095 * size, 0.0085 * size], mat, n=10)
+            p1 = base + d * 0.026 * ln + palm * 0.006 * s_
+            p2 = p1 + palm * 0.03 * s_ + d * 0.008 * s_
+            p3 = p2 - d * 0.022 * s_ + palm * 0.006 * s_
+        tube(name + "f%d" % i, [base, p1, p2, p3], [0.0135 * s_, 0.0125 * s_, 0.0115 * s_, 0.0095 * s_], mat, n=10)
+        ell(name + "k%d" % i, base + d * 0.004 * s_ - palm * 0.008 * s_, (0.012 * s_, 0.009 * s_, 0.011 * s_), km, rot=rot, seg=12)
+    tb = at + d * 0.06 * s_ - side * 0.045 * s_ + palm * 0.012 * s_
     if open_:
-        ell(name + "mitt", at + d * 0.115 * size + fwd * 0.008 * size, (0.04 * size, 0.017 * size, 0.045 * size), mat,
-            rot=[math.degrees(a) for a in q.to_euler()])
-    tb = at + d * 0.04 * size - side * 0.04 * size
-    tube(name + "thumb", [tb, tb + d * 0.035 * size - side * 0.02 * size - fwd * 0.015 * size,
-                          tb + d * 0.06 * size - side * 0.012 * size - fwd * 0.03 * size], [0.013 * size, 0.011 * size, 0.009 * size], mat, n=10)
+        tp = [tb, tb + d * 0.03 * s_ - side * 0.025 * s_ + palm * 0.01 * s_, tb + d * 0.055 * s_ - side * 0.03 * s_ + palm * 0.018 * s_]
+    else:
+        tp = [tb, tb + d * 0.025 * s_ - side * 0.01 * s_ + palm * 0.025 * s_, tb + d * 0.04 * s_ + side * 0.012 * s_ + palm * 0.035 * s_]
+    tube(name + "thumb", tp, [0.015 * s_, 0.013 * s_, 0.01 * s_], mat, n=10)
 
 
 def head_ball(mat=None):
@@ -777,9 +789,9 @@ def look_at(o, target):
     o.rotation_euler = (Vector(target) - o.location).to_track_quat('-Z', 'Y').to_euler()
 
 
-def splash_camera(yaw=14.0, dist=2.6, target=(0, 0, 1.5), lens=58, fstop=2.2):
+def splash_camera(yaw=20.0, dist=2.7, target=(0, 0, 1.5), lens=58, fstop=1.4):
     a = math.radians(yaw)
-    loc = V(math.sin(a) * dist, -math.cos(a) * dist, target[2] + 0.06)
+    loc = V(math.sin(a) * dist, -math.cos(a) * dist, target[2] - 0.16)   # a touch low: heroic
     cam = kit.camera(tuple(loc), (0, 0, 0), lens=lens)
     look_at(cam, target)
     cam.data.sensor_fit = 'VERTICAL'
@@ -846,6 +858,7 @@ def render_origin(oid, build, col, seed=1):
         pass
     lights(col)
     build()
+    scenery(oid, col)
     backdrop(col, seed)
     for o in C.rims:
         o["e0"] = o.data.energy
@@ -1227,6 +1240,14 @@ def b_lucky():
     C.anchor("glint", V(0.0, hb.y - 0.13, hb.z + 0.03), (1, 0.95, 0.7), 0.6)
     tube("feather", [V(0.1, hb.y + 0.02, hb.z + 0.03), V(0.16, hb.y + 0.06, hb.z + 0.12), V(0.2, hb.y + 0.1, hb.z + 0.2)], [0.012, 0.018, 0.004],
          pbr("feather", (0.1, 0.5, 0.3), rough=0.5, sheen=1.0, fiber=0.6, film=300), flat=0.25, n=12, head=True)
+    loft("collar", [(1.5, 0.17, 0.15), (1.6, 0.15, 0.135, 0, 0.01), (1.7, 0.17, 0.15, 0, 0.03)], coat, n=48, sub=2, head=False)
+    cut = rbox("collarcut", V(0, -0.2, 1.62), (0.12, 0.12, 0.3), None, bev=0)
+    boolean(bpy.data.objects["collar"], cut)
+    solidify(bpy.data.objects["collar"], 0.012, 1.0, inner=pbr("collarin", (0.25, 0.04, 0.05), rough=0.5, sheen=0.5))
+    hcen = C.eye_c + V(0, 0.1, 0)
+    band = pbr("bandana", (0.32, 0.03, 0.05), rough=0.65, sheen=0.6, weave=0.04)
+    loft("bandana", [(hcen.z - 0.15, 0.1, 0.1, 0, hcen.y - 0.005), (hcen.z - 0.1, 0.108, 0.108, 0, hcen.y), (hcen.z - 0.035, 0.106, 0.106, 0, hcen.y)],
+         band, n=40, fold=(0.04, 7, 3, 0.0), sub=1, head=True)
     eyes((0.3, 1.0, 0.6), 26, sep=0.032)
     # card fan in the right hand (screen left)
     w = arm("L", (-0.38, -0.08, 1.14), (-0.33, -0.27, 1.3), coat, r=(0.08, 0.066, 0.055), cuff=silk)
@@ -1393,6 +1414,115 @@ def b_storm():
             v.co *= rnd.uniform(0.75, 1.2)
         o = _obj("rock", bm, stone, smooth=False)
         o.location = p
+
+
+# ------------------------------------------------------------------ set dressing
+# Soft, out-of-focus shapes behind each hero that say where they come from.
+
+def _bg(o):
+    C.backdrop.append(o)
+    return o
+
+
+def scenery(oid, col):
+    n0 = set(bpy.data.objects.keys())
+    rnd = random.Random(hash(oid) & 0xffff)
+    if oid == "guardian":
+        stone = pbr("bgstone", (0.14, 0.12, 0.1), rough=0.85, bump=0.3, bscale=6)
+        for x in (-1.5, 1.5):
+            cyl("pillar", (x, 1.8, 0.3), (x, 1.8, 3.2), 0.22, stone, n=20)
+            cyl("cap", (x, 1.8, 2.9), (x, 1.8, 3.05), 0.3, stone, n=20)
+        win = glow("window", (1.0, 0.75, 0.4), 0.5)
+        rbox("window", (0, 2.6, 2.3), (0.5, 0.05, 1.3), win, bev=0)
+        ban = m_cloth((0.05, 0.1, 0.4), "banner")
+        for x in (-0.95, 0.95):
+            rbox("banner", (x, 2.0, 2.2), (0.42, 0.02, 1.1), ban, bev=0.01)
+            rbox("bannergold", (x, 1.98, 2.0), (0.12, 0.02, 0.12), glow("sigil", (1.0, 0.8, 0.4), 4.0), bev=0)
+    elif oid == "berserker":
+        iron = m_steel((0.2, 0.19, 0.18), "bgiron", rough=0.5)
+        fire = glow("bgfire", (1.0, 0.4, 0.08), 12.0)
+        for x in (-1.3, 1.3):
+            cyl("brazier", (x, 1.6, 0.6), (x, 1.6, 1.2), 0.04, iron, n=10)
+            cyl("bowl", (x, 1.6, 1.2), (x, 1.6, 1.35), 0.12, iron, n=16, r2=0.24)
+            for k in range(6):
+                a = k / 6 * 2 * math.pi
+                cyl("flame", (x + math.cos(a) * 0.08, 1.6 + math.sin(a) * 0.08, 1.33), (x + math.cos(a) * 0.03, 1.6 + math.sin(a) * 0.03, 1.33 + rnd.uniform(0.25, 0.45)), 0.07, fire, n=8, r2=0.0)
+        for x in (-0.6, 0.7):
+            pts = [(x + 0.04 * math.sin(k), 2.2, 3.4 - k * 0.25) for k in range(8)]
+            tube("chain", pts, 0.025, iron, n=8)
+    elif oid == "arcane":
+        halo = glow("halo", lighten(col, 0.3), 3.0)
+        # a rune ring set behind the head, square to the camera
+        ya = math.radians(20)
+        cam = V(math.sin(ya) * 2.7, -math.cos(ya) * 2.7, 1.34)
+        hc = C.eye_c + V(0, 0.05, 0.04)
+        away = (hc - cam).normalized()
+        hp = hc + away * 0.45
+        qq = (-away).to_track_quat('Z', 'Y')
+        rr = [math.degrees(a) for a in qq.to_euler()]
+        torus("halo", tuple(hp), 0.33, 0.006, halo, rot=rr)
+        torus("halo2", tuple(hp), 0.39, 0.003, halo, rot=rr)
+        ax, ay = qq @ V(1, 0, 0), qq @ V(0, 1, 0)
+        for k in range(12):
+            a = k / 12 * 2 * math.pi
+            p = hp + ax * math.cos(a) * 0.36 + ay * math.sin(a) * 0.36
+            rbox("rune", tuple(p), (0.022, 0.022, 0.004), halo, bev=0, rot=rr)
+        book = pbr("book", (0.3, 0.08, 0.1), rough=0.6)
+        page = pbr("page", (0.9, 0.85, 0.7), rough=0.7)
+        for k in range(6):
+            p = (rnd.uniform(-1.4, 1.4), rnd.uniform(1.0, 2.2), rnd.uniform(1.0, 2.8))
+            if abs(p[0]) < 0.6:
+                continue
+            r = (rnd.uniform(-30, 30), rnd.uniform(-30, 30), rnd.uniform(0, 360))
+            rbox("book", p, (0.22, 0.16, 0.05), book, bev=0.01, rot=r)
+            rbox("pages", (p[0], p[1], p[2] + 0.004), (0.2, 0.14, 0.04), page, bev=0, rot=r)
+    elif oid == "engineer":
+        brass = pbr("bgbrass", (0.7, 0.45, 0.2), rough=0.35, metal=1.0)
+        for (x, z, R) in ((-1.2, 2.4, 0.55), (1.3, 1.6, 0.42), (-0.9, 1.0, 0.3)):
+            torus("bggear", (x, 2.0, z), R, 0.06, brass, rot=(90, 0, 0))
+            for k in range(14):
+                a = k / 14 * 2 * math.pi
+                rbox("tooth", (x + math.cos(a) * (R + 0.07), 2.0, z + math.sin(a) * (R + 0.07)), (0.07, 0.06, 0.06), brass, bev=0.01, rot=(0, -math.degrees(a), 0))
+            cyl("hub", (x, 2.03, z), (x, 1.97, z), R * 0.25, brass)
+        tube("pipe", [(1.6, 2.2, 0.3), (1.6, 2.2, 2.6), (0.9, 2.2, 3.0)], 0.06, brass, n=12)
+        rbox("gauge", (1.6, 2.13, 1.4), (0.18, 0.03, 0.18), glow("gauge", (1.0, 0.7, 0.3), 3.0), bev=0.02)
+    elif oid == "lucky":
+        face = pbr("bgcard", (0.92, 0.9, 0.84), rough=0.4)
+        red = glow("bgsuit", (1.0, 0.2, 0.25), 3.0)
+        for k in range(7):
+            p = (rnd.uniform(-1.5, 1.5), rnd.uniform(1.0, 2.2), rnd.uniform(0.8, 2.9))
+            if abs(p[0]) < 0.55:
+                continue
+            r = (rnd.uniform(60, 120), rnd.uniform(-40, 40), rnd.uniform(-40, 40))
+            rbox("bgcard", p, (0.2, 0.3, 0.004), face, bev=0.01, rot=r)
+            ell("bgpip", p, (0.03, 0.03, 0.006), red, rot=r, seg=10)
+        gold = pbr("bgcoin", (1.0, 0.75, 0.3), rough=0.2, metal=1.0)
+        for x in (-1.2, 1.1):
+            for k in range(rnd.randint(5, 9)):
+                cyl("stack", (x, 1.4, 0.55 + k * 0.03), (x, 1.4, 0.575 + k * 0.03), 0.07, gold, n=20)
+    elif oid == "pyro":
+        fire = glow("bgfire2", (1.0, 0.35, 0.05), 10.0)
+        rock = pbr("bgrock", (0.12, 0.08, 0.07), rough=0.8, bump=0.5, bscale=5)
+        for x in (-1.4, 1.4):
+            o = ell("crag", (x, 2.2, 1.2), (0.5, 0.4, 1.4), rock)
+            for k in range(5):
+                a = k / 5 * 2 * math.pi
+                cyl("vent", (x + math.cos(a) * 0.1, 2.0, 2.5), (x + math.cos(a) * 0.04, 2.0, 2.5 + rnd.uniform(0.2, 0.5)), 0.08, fire, n=8, r2=0.0)
+        tube("lavariver", [(-2, 2.6, 0.4), (-0.5, 2.5, 0.5), (0.8, 2.6, 0.45), (2, 2.5, 0.5)], 0.05, fire, n=8)
+    elif oid == "storm":
+        rock = pbr("bgcliff", (0.12, 0.14, 0.18), rough=0.8, bump=0.6, bscale=4)
+        for (x, h) in ((-1.5, 3.0), (-1.0, 2.0), (1.2, 2.6), (1.7, 3.4)):
+            bm = bmesh.new()
+            bmesh.ops.create_cone(bm, cap_ends=True, segments=7, radius1=0.35, radius2=0.12, depth=h)
+            o = _obj("spire", bm, rock, smooth=False)
+            o.location = (x, 2.3, h / 2)
+        bolt = glow("bgbolt", (0.7, 0.9, 1.0), 20.0)
+        for k, (a, b) in enumerate((((-1.2, 2.6, 3.6), (-1.0, 2.6, 1.9)), ((1.4, 2.6, 3.7), (1.25, 2.6, 2.4)))):
+            tube("bgbolt", bolt_pts(a, b, 70 + k, jag=0.12, steps=9), 0.012, bolt, n=6, sub=0)
+    for name in set(bpy.data.objects.keys()) - n0:
+        o = bpy.data.objects[name]
+        if o.type in ('MESH', 'EMPTY'):
+            _bg(o)
 
 
 ORIGINS = [

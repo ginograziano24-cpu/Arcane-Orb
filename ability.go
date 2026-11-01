@@ -274,7 +274,7 @@ func (L *Level) overload() bool {
 func (L *Level) jackpot() bool {
 	r := L.g.run
 	if r.Gold < jackpotCost {
-		L.text(V3{L.PaddleX, 1.6, PaddleZ + 1.6}, fmtGoldNeed(jackpotCost), color.RGBA{255, 200, 90, 255}, false)
+		L.text(V3{L.PaddleX, 1.6, PaddleZ + 1.6}, "NEED 15 GOLD", color.RGBA{255, 200, 90, 255}, false)
 		return false
 	}
 	r.Gold -= jackpotCost
@@ -292,4 +292,3 @@ func (L *Level) jackpot() bool {
 
 const jackpotCost = 15
 
-func fmtGoldNeed(n int) string { return "NEED " + itoa(n) + " GOLD" }

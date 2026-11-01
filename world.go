@@ -760,6 +760,12 @@ func (g *Game) drawClassicBackdrop(screen *ebiten.Image, L *Level) {
 // orbGlow is the colour an orb glows (and lights the bricks) with.
 func (g *Game) orbGlow(L *Level, b *Ball) color.RGBA {
 	glow := color.RGBA{160, 130, 255, 255}
+	if g.run.Arch != nil {
+		// each origin's orb burns in its own colour
+		if ci, ok := classInfo[g.run.Arch.ID]; ok {
+			glow = lighten(ci.Col, 0.15)
+		}
+	}
 	if tc, ok := g.run.orbTrail(); ok {
 		glow = tc
 	}
