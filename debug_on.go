@@ -78,6 +78,11 @@ func debugPre(g *Game) {
 			g.save.Hints = map[string]bool{"level": true, "waves": true, "critter": true, "map": true, "reward": true, "cache": true}
 			continue
 		}
+		if a == "reward" && g.run != nil {
+			g.rewards = []rewardSet{{Title: "Choose an upgrade", Mods: []*Mod{modByID["blast"], modByID["excalibur"], modByID["hive"]}, Skip: 15}}
+			g.setState(StReward)
+			continue
+		}
 		if a == "tomap" && g.run != nil && g.run.Map != nil {
 			g.setState(StMap)
 			continue

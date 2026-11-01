@@ -99,6 +99,7 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		g.archFade = 0
 	}
 	g.archFade = math.Min(1, g.archFade+u.DT*3.5)
+	g.archLockT = math.Max(0, g.archLockT-u.DT*1.8)
 	ph := 1010.0
 	pw := ph * 0.75
 	px, py := 960-pw/2, 1080-ph+6
@@ -111,7 +112,12 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		if img == nil || alpha <= 0 {
 			return
 		}
-		xf := portraitXform{px, py, pw, ph, 1 + 0.003*br, 1 + 0.009*br, g.archPar[0], g.archPar[1] + dy}
+		punch := 0.0
+		if id == a.ID {
+			lt := g.archLockT
+			punch = 0.035 * lt * lt
+		}
+		xf := portraitXform{px, py, pw, ph, 1 + 0.003*br + punch, 1 + 0.009*br + punch, g.archPar[0], g.archPar[1] + dy}
 		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		op.GeoM.Scale(pw*S/float64(img.Bounds().Dx()), ph*S/float64(img.Bounds().Dy()))
 		op.GeoM.Translate(-pw*S/2, -ph*S)
@@ -130,6 +136,24 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		drawP(archetypes[g.archPrev].ID, 1-ease(g.archFade), 0)
 	}
 	drawP(a.ID, ease(g.archFade), (1-ease(g.archFade))*14)
+	if lt := g.archLockT; lt > 0 {
+		// lock-in: a flash through the figure and a ring of light at its feet
+		e := 1 - lt
+		drawSprite(s, sprSoft, u.X(960-420), u.Y(140), 840*S, 900*S, ca(lighten(col, 0.4), 0.35*lt*lt), true)
+		rr := 120 + 520*e
+		drawSprite(s, sprRing, u.X(960-rr), u.Y(1000-rr*0.28), 2*rr*S, 2*rr*0.28*S, ca(lighten(col, 0.3), 0.9*lt), true)
+		rr2 := 80 + 360*e
+		drawSprite(s, sprRing, u.X(960-rr2), u.Y(1000-rr2*0.28), 2*rr2*S, 2*rr2*0.28*S, ca(cWhite, 0.6*lt), true)
+		for i := 0; i < 18; i++ {
+			f := float64(i)
+			an := f / 18 * 2 * math.Pi
+			d := 60 + 420*e
+			x := 960 + math.Cos(an)*d
+			y := 980 - math.Abs(math.Sin(an))*d*0.9 - 120*e
+			sz := (6 + 6*math.Mod(f*0.37, 1)) * S
+			drawSprite(s, sprSoft, u.X(x)-sz, u.Y(y)-sz, 2*sz, 2*sz, ca(lighten(col, 0.5), lt), true)
+		}
+	}
 	// live embers drifting up through the portrait
 	for i := 0; i < 46; i++ {
 		f := float64(i)
@@ -165,20 +189,56 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		c := &archetypes[i]
 		ci := classInfo[c.ID]
 		y := ly + float64(i)*86
-		// pointer: hovering selects; pad/keys: focus selects, A begins
+		// pointer: hovering only highlights, a click locks the origin in;
+		// pad/keys: focus selects, A begins
 		f, clk := u.navReg("arch"+c.ID, 60, y, 470, 78, false)
-		hv := f || (!u.nav.mode && u.hover(60, y, 470, 78))
-		if hv && !u.nav.mode && u.lastHover != "arch"+c.ID {
+		mh := !u.nav.mode && u.hover(60, y, 470, 78)
+		if mh && u.lastHover != "arch"+c.ID {
 			g.snd.Play("hover")
 		}
-		if hv {
+		if mh || f {
 			u.hoverID = "arch" + c.ID
+		}
+		if f && g.archSel != i {
 			g.archSel = i
+			g.archLockT = 1
+			g.archLockRow = i
+		}
+		if mh && u.Click {
+			if g.archSel != i {
+				g.archSel = i
+				g.snd.Play("pick.2." + itoa(g.snd.Key))
+			} else {
+				g.snd.Play("click")
+			}
+			g.archLockT = 1
+			g.archLockRow = i
 		}
 		if clk {
 			g.archActivate = true
 		}
+		hk := u.anim("archhov"+c.ID, mh && g.archSel != i, 14)
+		if hk > 0.01 {
+			fillPath(s, boxPath(u.X(60), u.Y(y), 470*S, 78*S, 6*S, false), ca(ci.Col, 0.09*hk), ca(ci.Col, 0.0), hgrad(u.X(60), u.X(530)), false)
+			strokePath(s, boxPath(u.X(60), u.Y(y), 470*S, 78*S, 6*S, false), 1.2*S, ca(ci.Col, 0.35*hk), false)
+		}
 		k := u.anim("archrow"+c.ID, g.archSel == i, 12)
+		if g.archLockRow == i && g.archLockT > 0 {
+			// the row flashes and a sweep of light runs across it
+			lt := g.archLockT
+			fillPath(s, boxPath(u.X(60), u.Y(y), 470*S, 78*S, 6*S, false), ca(lighten(ci.Col, 0.5), 0.5*lt*lt), ca(ci.Col, 0.1*lt), hgrad(u.X(60), u.X(530)), true)
+			sx := 60 + 470*(1-lt)
+			drawSprite(s, sprSoft, u.X(sx-60), u.Y(y-10), 120*S, 98*S, ca(cWhite, 0.5*lt), true)
+		}
+		if g.archSel == i {
+			// a lit check seal marks the locked origin
+			cx2, cy2 := 506.0, y+39
+			p := 1 + 0.35*g.archLockT*g.archLockT
+			drawSprite(s, sprSoft, u.X(cx2-22*p), u.Y(cy2-22*p), 44*p*S, 44*p*S, ca(ci.Col, 0.55), true)
+			fillPath(s, circlePath(u.X(cx2), u.Y(cy2), 12*p*S), lighten(ci.Col, 0.35), darken(ci.Col, 0.2), vgrad(u.Y(cy2-12), u.Y(cy2+12)), false)
+			strokeLine(s, u.X(cx2-5*p), u.Y(cy2), u.X(cx2-1*p), u.Y(cy2+4*p), 2.4*S, cWhite)
+			strokeLine(s, u.X(cx2-1*p), u.Y(cy2+4*p), u.X(cx2+6*p), u.Y(cy2-4*p), 2.4*S, cWhite)
+		}
 		if k > 0.01 {
 			fillPath(s, boxPath(u.X(60), u.Y(y), 470*S, 78*S, 6*S, false), ca(ci.Col, 0.2*k), ca(ci.Col, 0.02*k), hgrad(u.X(60), u.X(530)), false)
 			fillRectA(s, u.X(60), u.Y(y+8), 4*S, 62*S, lighten(ci.Col, 0.3), k)

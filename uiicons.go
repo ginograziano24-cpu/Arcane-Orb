@@ -35,6 +35,26 @@ var nodeIconFile = map[NodeType]string{
 	NEvent: "node_event", NRest: "node_rest", NBoss: "node_boss",
 }
 
+// nodeKind names each room type's rendered medal (assets/icons/medal_<kind>.png).
+var nodeKind = map[NodeType]string{
+	NCombat: "combat", NElite: "elite", NShop: "shop", NTreasure: "treasure",
+	NEvent: "event", NRest: "rest", NBoss: "boss",
+}
+
+// drawUIIconTint is drawUIIcon with a colour multiplier.
+func (g *Game) drawUIIconTint(s *ebiten.Image, img *ebiten.Image, x, y, size, r, gr, b, alpha float64) {
+	u := g.ui
+	bd := img.Bounds()
+	sc := size * u.S / float64(bd.Dx())
+	op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+	op.GeoM.Translate(-float64(bd.Dx())/2, -float64(bd.Dy())/2)
+	op.GeoM.Scale(sc, sc)
+	op.GeoM.Translate(u.X(x), u.Y(y))
+	op.ColorScale.Scale(float32(r), float32(gr), float32(b), 1)
+	op.ColorScale.ScaleAlpha(float32(alpha))
+	s.DrawImage(img, op)
+}
+
 // drawUIIcon draws a rendered icon centred on (x, y) in design units.
 func (g *Game) drawUIIcon(s *ebiten.Image, img *ebiten.Image, x, y, size, alpha float64) {
 	u := g.ui

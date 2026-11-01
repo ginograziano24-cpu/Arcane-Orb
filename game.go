@@ -99,6 +99,11 @@ type Game struct {
 	stickT       float64
 	stickHeld    bool
 	archActivate bool
+	archLockT    float64 // lock-in flash after choosing an origin
+	pick         pickAnim
+	buys         []buyFX
+	fadeBuf      *ebiten.Image
+	archLockRow  int
 	padActive    bool // last input came from a gamepad: show pad glyphs
 	helpPage     int
 	helpShown    int
@@ -1326,11 +1331,41 @@ func (g *Game) drawMap(s *ebiten.Image) {
 				strokeLine(s, u.X(x+math.Cos(an)*r0), u.Y(y+math.Sin(an)*r0), u.X(x+math.Cos(an)*r1), u.Y(y+math.Sin(an)*r1), 2*u.S, prem(lighten(c, 0.4), 0.8))
 			}
 		}
-		u.medallion(s, x, y, rad, c)
-		if i == r.Cur {
-			strokePath(s, circlePath(u.X(x), u.Y(y), (rad+13)*u.S), 3*u.S, ca(cWhite, 0.9), false)
+		if medal := uiIcon("medal_" + nodeKind[n.Type]); medal != nil {
+			// the rendered medal: lit when you can go there, dimmed once
+			// visited, sunk in shadow further along the path
+			hk := u.anim("nodehv"+itoa(i), reach[i] && math.Hypot(u.MX-x, u.MY-y) < rad*1.1, 10)
+			sc := 1.0 + 0.16*hk
+			bob := 0.0
+			br := 1.0
+			switch {
+			case reach[i]:
+				bob = 3 * math.Sin(g.stateT*2.4+float64(i))
+				drawSprite(s, sprSoft, u.X(x-rad*1.6), u.Y(y-rad*1.6), rad*3.2*u.S, rad*3.2*u.S, ca(lighten(c, 0.3), 0.35*hk), true)
+			case n.Visited:
+				br = 0.7
+			default:
+				br = 0.64
+			}
+			drawSprite(s, sprSoft, u.X(x-rad*1.1), u.Y(y-rad*0.6+rad*0.9), rad*2.2*u.S, rad*0.9*u.S, rgba(0, 0, 0, 120), false)
+			g.drawUIIconTint(s, medal, x, y+bob, rad*2.55*sc, br, br, br*1.05, 1)
+			if n.Visited && i != r.Cur {
+				// a struck-through seal: this room is behind you
+				bx, by := x+rad*0.72, y+rad*0.62
+				fillPath(s, circlePath(u.X(bx), u.Y(by), 11*u.S), rgba(255, 214, 120, 255), rgba(170, 120, 40, 255), vgrad(u.Y(by-11), u.Y(by+11)), false)
+				strokeLine(s, u.X(bx-5), u.Y(by), u.X(bx-1), u.Y(by+4), 2.4*u.S, rgba(40, 24, 10, 255))
+				strokeLine(s, u.X(bx-1), u.Y(by+4), u.X(bx+6), u.Y(by-4), 2.4*u.S, rgba(40, 24, 10, 255))
+			}
+			if i == r.Cur {
+				strokePath(s, circlePath(u.X(x), u.Y(y+bob), (rad+14)*u.S), 3*u.S, ca(cWhite, 0.9), false)
+			}
+		} else {
+			u.medallion(s, x, y, rad, c)
+			if i == r.Cur {
+				strokePath(s, circlePath(u.X(x), u.Y(y), (rad+13)*u.S), 3*u.S, ca(cWhite, 0.9), false)
+			}
+			g.nodeIcon(s, n.Type, x, y, rad*1.1)
 		}
-		g.nodeIcon(s, n.Type, x, y, rad*1.1)
 		if o := omenByID[n.Omen]; o != nil && !n.Visited {
 			bx, by := x+rad*0.8, y-rad*0.8
 			fillPath(s, circlePath(u.X(bx), u.Y(by), 15*u.S), rgba(24, 16, 40, 255), rgba(10, 6, 18, 255), vgrad(u.Y(by-15), u.Y(by+15)), false)
@@ -1367,8 +1402,12 @@ func (g *Game) drawMap(s *ebiten.Image) {
 	u.text(s, "Legend", fBold, 24, 50, ly+16, cGold, alignLeft)
 	for i, nm := range nodeNames {
 		yy := ly + 60 + float64(i)*36
-		u.medallion(s, 68, yy+12, 12, nodeColors[i])
-		g.nodeIcon(s, NodeType(i), 68, yy+12, 15)
+		if medal := uiIcon("medal_" + nodeKind[NodeType(i)]); medal != nil {
+			g.drawUIIconTint(s, medal, 68, yy+12, 34, 1, 1, 1, 1)
+		} else {
+			u.medallion(s, 68, yy+12, 12, nodeColors[i])
+			g.nodeIcon(s, NodeType(i), 68, yy+12, 15)
+		}
 		u.text(s, nm, fReg, 21, 94, yy, cWhite, alignLeft)
 	}
 	if u.button(s, "mapsave", "Save & quit", 60, 920, 300, 56, cAcc, true) {
@@ -1413,6 +1452,9 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 	th := u.theme()
 	S := u.S
 	hv, clk := u.hit("card"+m.ID, x, y, w, h)
+	if g.pick.on {
+		hv, clk = false, false // mid pick animation: the cards are just pictures
+	}
 	if hv && u.nav.mode {
 		u.focusRing(s, x, y-14, w, h, 20)
 	}
@@ -1549,6 +1591,14 @@ func (g *Game) drawReward(s *ebiten.Image) {
 	rs := g.rewards[0]
 	u.heading(s, strings.TrimSpace(rs.Title), 56, 90, cGold, 1)
 	g.statLine(s, 960, 172)
+	if g.pick.on {
+		if g.drawPick(s) {
+			g.pick.on = false
+			g.rewards = g.rewards[1:]
+			g.stateT = 0
+		}
+		return
+	}
 	n := len(rs.Mods)
 	w, h := 400.0, 560.0
 	if n > 3 {
@@ -1559,8 +1609,7 @@ func (g *Game) drawReward(s *ebiten.Image) {
 		if g.drawCard(s, m, x0+float64(i)*(w+40), 250, w, h, 0, true) && g.stateT > 0.3 {
 			g.take(m)
 			g.snd.Pick(m.Rarity)
-			g.rewards = g.rewards[1:]
-			g.stateT = 0
+			g.startPick(rs.Mods, i, x0, 250, w, h, 40)
 			return
 		}
 	}
@@ -1633,6 +1682,7 @@ func (g *Game) drawShopStall(s *ebiten.Image) {
 func (g *Game) drawShop(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
+	defer g.drawBuyFX(s)
 	g.drawShopStall(s)
 	g.runPanel(s)
 	u.heading(s, "THE WANDERING SHOP", 56, 40, cGold, 1)
@@ -1663,6 +1713,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		if clicked && afford {
 			r.Gold -= it.Price
 			g.take(it.Mod)
+			g.addBuyFX(it.Mod, x, y, w, h)
 			g.shop[i].Sold = true
 			g.snd.Play("buy")
 			g.snd.Pick(it.Mod.Rarity)
