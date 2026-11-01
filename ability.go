@@ -230,7 +230,7 @@ func (L *Level) prismNova() bool {
 		return false
 	}
 	dmg := L.abilityDmg() * 1.6
-	const rad = 4.2
+	const rad = 2.5
 	for _, ball := range L.Balls {
 		hit := 0
 		for _, b := range L.Bricks {
@@ -294,4 +294,3 @@ func (L *Level) jackpot() bool {
 }
 
 const jackpotCost = 15
-

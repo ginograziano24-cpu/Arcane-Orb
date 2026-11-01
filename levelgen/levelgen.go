@@ -16,6 +16,15 @@ const (
 // DesignChance is how often a level uses a hand-drawn showcase design.
 var DesignChance = 0.38
 
+// Combo pockets: how often a generated chamber gets an attic (open rows
+// behind it), a vault (a hollow room inside it) and a breach channel (a
+// lane cut from the front through to the attic).
+var (
+	AtticChance   = 0.5
+	VaultChance   = 0.4
+	ChannelChance = 0.4
+)
+
 type Kind uint8
 
 const (
@@ -257,6 +266,13 @@ func genOnce(r *rand.Rand, p Params) *coarse {
 		}
 	}
 	top := r.Intn(3)
+	// an attic: open rows behind the formation. Tunnel through and the orb
+	// rattles around up there for a long combo; reinforcements march in
+	// behind it, so it stays a pocket between two walls.
+	attic := r.Float64() < AtticChance
+	if attic {
+		top = 2 + r.Intn(2)
+	}
 	lv.Rows = min(lRows, rows+top)
 	if p.Depth <= 1 {
 		lv.Shape = ShapeHall
@@ -355,6 +371,14 @@ func genOnce(r *rand.Rand, p Params) *coarse {
 	// ---- steel features ----
 	if r.Float64() < 0.1+0.55*d {
 		addSteel(r, lv, top, rows, d, sym)
+	}
+
+	// ---- combo pockets ----
+	if r.Float64() < VaultChance {
+		carveVault(r, lv, top, min(rows, lRows-top), sym)
+	}
+	if attic && r.Float64() < ChannelChance {
+		carveChannel(r, lv, top, min(rows, lRows-top), sym)
 	}
 
 	// ---- special bricks, unlocked gradually ----
@@ -927,5 +951,96 @@ func ensureReachable(lv *coarse) {
 			return
 		}
 		lv.Cells[best[0]][best[1]] = Cell{Kind: Basic, HP: 3, Stack: 1}
+	}
+}
+
+// carveVault hollows out a room inside the formation: sturdier walls, a
+// steel peg in the middle to keep the orb bouncing and a crystal or two at
+// the back as the prize for breaking in.
+func carveVault(r *rand.Rand, lv *coarse, top, rows int, sym bool) bool {
+	for try := 0; try < 40; try++ {
+		w := 5 + r.Intn(2) // outer size, walls included
+		h := 4 + r.Intn(2)
+		c0 := r.Intn(lCols - w + 1)
+		if sym {
+			w = 6
+			c0 = 4
+		}
+		if rows < h+1 {
+			return false
+		}
+		r0 := top + r.Intn(rows-h)
+		ok := true
+		for rr := r0; rr < r0+h && ok; rr++ {
+			for cc := c0; cc < c0+w; cc++ {
+				if rr >= lRows || lv.Outside[rr][cc] || lv.Cells[rr][cc].Kind != Basic {
+					ok = false
+					break
+				}
+			}
+		}
+		if !ok {
+			continue
+		}
+		for rr := r0; rr < r0+h; rr++ {
+			for cc := c0; cc < c0+w; cc++ {
+				cell := &lv.Cells[rr][cc]
+				inner := rr > r0 && rr < r0+h-1 && cc > c0 && cc < c0+w-1
+				switch {
+				case inner:
+					*cell = Cell{}
+				case rr < r0+h-1: // back and side walls hold a little longer
+					cell.HP = max(cell.HP, 2)
+					cell.Stack = 1
+				}
+			}
+		}
+		iw, ih := w-2, h-2
+		if iw >= 3 {
+			lv.Cells[r0+1+ih/2][c0+w/2] = Cell{Kind: Steel, HP: 1, Stack: 1}
+			if sym {
+				lv.Cells[r0+1+ih/2][c0+w/2-1] = Cell{Kind: Steel, HP: 1, Stack: 1}
+			}
+		}
+		col := lv.Cells[r0][c0].Color
+		lv.Cells[r0+1][c0+1] = Cell{Kind: Crystal, HP: 1, Color: col, Stack: 1}
+		lv.Cells[r0+1][c0+w-2] = Cell{Kind: Crystal, HP: 1, Color: col, Stack: 1}
+		return true
+	}
+	return false
+}
+
+// carveChannel cuts a two-wide lane from the formation's front through to
+// the attic behind it: thread the orb up it for a long combo.
+func carveChannel(r *rand.Rand, lv *coarse, top, rows int, sym bool) {
+	c := 1 + r.Intn(lCols-3)
+	if sym {
+		c = 2 + r.Intn(3)
+	}
+	// only through solid walls: in a sparse formation it would just
+	// delete bricks
+	n := 0
+	for rr := top; rr < top+rows && rr < lRows; rr++ {
+		for _, cc := range []int{c, c + 1} {
+			if lv.Cells[rr][cc].Kind.Required() {
+				n++
+			}
+		}
+	}
+	if n < rows {
+		return
+	}
+	cut := func(c int) {
+		for rr := top; rr < top+rows && rr < lRows; rr++ {
+			for _, cc := range []int{c, c + 1} {
+				if lv.Cells[rr][cc].Kind != Steel {
+					lv.Cells[rr][cc] = Cell{}
+				}
+			}
+		}
+	}
+	cut(c)
+	if sym {
+		cut(lCols - 2 - c)
 	}
 }

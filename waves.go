@@ -25,6 +25,14 @@ const (
 	dangerZ      = PaddleZ + 4.6 // bricks that reach this line smash into the paddle's side of the arena
 	advanceSlide = 0.45          // seconds an advance takes
 	advanceStep  = 1.1           // how far the formation creeps each advance (world units)
+	advanceRows  = 2             // advanceStep in rows (CellD 0.55)
+	// GridRows is the level grid's depth: the generated formation fills the
+	// first levelgen.MaxRows, and as the wall advances (with reinforcements
+	// marching in behind it) its rows are renumbered further down.
+	GridRows = 48
+	// reserveRows is how many rows of reinforcements wait behind an
+	// ordinary chamber: two march in at every advance until they run out.
+	reserveRows = 10
 )
 
 // ---------------------------------------------------------------- heat
@@ -127,7 +135,7 @@ func (L *Level) crumbleRest() {
 			g.run.Bricks++
 			L.breakPop(b, b.X(), b.Z())
 			L.debris(V3{b.X(), 0.5, b.Z()}, 6, b.Col)
-			if b.R >= 0 && b.R < levelgen.MaxRows && b.C >= 0 && b.C < levelgen.Cols && L.Grid[b.R][b.C] == b {
+			if b.R >= 0 && b.R < GridRows && b.C >= 0 && b.C < levelgen.Cols && L.Grid[b.R][b.C] == b {
 				L.Grid[b.R][b.C] = nil
 			}
 		}
@@ -151,7 +159,7 @@ func (L *Level) nextWave() {
 		}
 	}
 	L.Bricks = nil
-	L.Grid = [levelgen.MaxRows][levelgen.Cols]*Brick{}
+	L.Grid = [GridRows][levelgen.Cols]*Brick{}
 	L.Left, L.Crystals = 0, 0
 	L.shift, L.shiftTarget, gridShift = 0, 0, 0
 
@@ -207,6 +215,7 @@ func (L *Level) nextWave() {
 	L.heatArmour()
 	L.startLeft = L.Left
 	L.planCache()
+	L.planReserve()
 	L.advT = L.advInterval()
 	L.advWarned = false
 	// the orbs come home and the player serves again
@@ -244,6 +253,10 @@ func (L *Level) updateAdvance(dt float64) {
 		L.shift = math.Min(L.shiftTarget, L.shift+dt*advanceStep/advanceSlide)
 		gridShift = L.shift
 		L.crushCheck()
+		if L.shift >= L.shiftTarget && L.canReinforce() {
+			L.renumberRows()
+			L.reinforce()
+		}
 	}
 	inPlay := false
 	for _, b := range L.Balls {
@@ -270,6 +283,105 @@ func (L *Level) updateAdvance(dt float64) {
 	}
 }
 
+// ---------------------------------------------------------------- reinforcements
+
+// canReinforce: ordinary chambers renumber their rows after each advance so
+// fresh rows can march in behind. Bosses and duel rounds (whose grids are
+// mirrored to the other player) keep the plain advance.
+func (L *Level) canReinforce() bool {
+	return L.Boss == nil && L.Node != NBoss && !L.g.run.Duel
+}
+
+// planReserve lines up the rows that will march in behind the formation:
+// the formation's own rows from the front back, so the wall behind repeats
+// the one in front and, once all have arrived, stands the right way round.
+func (L *Level) planReserve() {
+	L.reserve = nil
+	if !L.canReinforce() {
+		return
+	}
+	n := reserveRows
+	if L.waves > 1 {
+		n = 6 // per wave
+	}
+	for rr := levelgen.MaxRows - 1; rr >= 0 && len(L.reserve) < n; rr-- {
+		var row [levelgen.Cols]levelgen.Cell
+		any := false
+		for c := 0; c < levelgen.Cols; c++ {
+			cell := L.Data.Cells[rr][c]
+			if cell.Kind == levelgen.Empty {
+				continue
+			}
+			switch cell.Kind {
+			case levelgen.Elite, levelgen.Spawner, levelgen.Teleport, levelgen.Moving, levelgen.Shield:
+				// the set pieces stay unique to the formation itself
+				cell.Kind = levelgen.Basic
+				cell.HP = min(max(1, cell.HP), 2)
+			}
+			row[c] = cell
+			any = true
+		}
+		if any {
+			L.reserve = append(L.reserve, row)
+		}
+	}
+}
+
+// renumberRows moves every brick advanceRows rows down the grid and takes
+// the same distance off the shift, so nothing moves on screen but rows 0
+// and 1 at the back are free again.
+func (L *Level) renumberRows() {
+	var ng [GridRows][levelgen.Cols]*Brick
+	for r := 0; r < GridRows-advanceRows; r++ {
+		ng[r+advanceRows] = L.Grid[r]
+	}
+	L.Grid = ng
+	for _, b := range L.Bricks {
+		b.R += advanceRows
+	}
+	for _, c := range L.Critters {
+		if c.Kind == critMason {
+			c.tr += advanceRows
+		}
+	}
+	L.shift -= advanceStep
+	L.shiftTarget -= advanceStep
+	gridShift = L.shift
+}
+
+// reinforce marches the next two reserve rows in at the back.
+func (L *Level) reinforce() {
+	if len(L.reserve) == 0 {
+		return
+	}
+	hpMul := L.hpMul()
+	before, nb := L.Left, len(L.Bricks)
+	for k := 0; k < advanceRows && len(L.reserve) > 0; k++ {
+		row := L.reserve[0]
+		L.reserve = L.reserve[1:]
+		gr := advanceRows - 1 - k // the front of the pair first
+		for c := 0; c < levelgen.Cols; c++ {
+			cell := row[c]
+			if cell.Kind == levelgen.Empty || L.Data.Outside[gr][c] || L.Grid[gr][c] != nil {
+				continue
+			}
+			hp := float64(cell.HP)
+			if cell.Kind != levelgen.Steel {
+				hp = math.Ceil(hp * hpMul)
+			}
+			L.addColumn(gr, c, cell, hp, hpMul)
+		}
+	}
+	for _, b := range L.Bricks[nb:] {
+		b.Appear = 0
+		b.FallY = 5 + 0.4*float64(advanceRows-b.R) + 0.25*L.rng.Float64()
+	}
+	L.startLeft += L.Left - before
+	L.reinforced += L.Left - before
+	L.text(V3{0, 2.4, GridTopZ - 1.2}, "REINFORCEMENTS", color.RGBA{255, 200, 140, 255}, false)
+	L.g.snd.PlayVol("thump", 0.6)
+}
+
 // frontZ is the nearest brick's z (the formation's front line).
 func (L *Level) frontZ() float64 {
 	z := FarZ
@@ -286,7 +398,7 @@ func (L *Level) frontZ() float64 {
 func (L *Level) crushCheck() {
 	poly := L.Walls
 	smashed := 0
-	for r := levelgen.MaxRows - 1; r >= 0; r-- {
+	for r := GridRows - 1; r >= 0; r-- {
 		for c := 0; c < levelgen.Cols; c++ {
 			b := L.Grid[r][c]
 			if b == nil || !b.Alive {
@@ -480,9 +592,11 @@ func (g *Game) drawWaveStrip(s *ebiten.Image, L *Level, y float64) float64 {
 	u.text(s, "ADVANCE", fBold, 13, bx, y+6, ca(cDim, 0.95), alignLeft)
 	if L.advT < 5 {
 		u.text(s, fmt.Sprintf("%.0fs", math.Ceil(L.advT)), fBold, 13, bx+bw, y+6, c, alignRight)
+	} else if n := len(L.reserve); n > 0 {
+		u.text(s, fmt.Sprintf("RESERVE %d", n), fBold, 13, bx+bw, y+6, rgba(255, 200, 140, 230), alignRight)
 	}
 	if u.hover(x, y, w, h) {
-		g.tooltip = fmt.Sprintf("Heat %d: your build's strength this world. Each point adds %.0f%% brick health, more armoured bricks and a quicker advance. The formation creeps one row closer when the gauge fills; bricks that reach the red line smash for damage.", L.heat, heatHP*100)
+		g.tooltip = fmt.Sprintf("Heat %d: your build's strength this world. Each point adds %.0f%% brick health, more armoured bricks and a quicker advance. The formation creeps one row closer when the gauge fills; bricks that reach the red line smash for damage. Reserve rows march in behind the formation at each advance.", L.heat, heatHP*100)
 	}
 	return y + h + 8
 }

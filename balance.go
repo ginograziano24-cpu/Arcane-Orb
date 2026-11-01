@@ -46,6 +46,7 @@ type balResult struct {
 	DPS, Combo       float64
 	Caches, Waves    float64
 	Taken, Crushes   float64
+	Reinf            float64
 }
 
 // sloppy is the autopilot with human limits: it re-reads the play only
@@ -212,6 +213,7 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScena
 				res.Combo += float64(L.peakCombo)
 				res.Waves += float64(L.waves)
 				res.Crushes += float64(L.crushes)
+				res.Reinf += float64(L.reinforced)
 				res.Time += t
 				res.HPLost += hp0 - r.HP
 				res.Orbs += float64(lost)
@@ -233,6 +235,7 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScena
 			res.Caches /= n
 			res.Taken /= n
 			res.Crushes /= n
+			res.Reinf /= n
 			res.Waves /= n
 			out = append(out, res)
 		}

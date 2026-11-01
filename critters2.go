@@ -118,7 +118,7 @@ func (L *Level) masonTarget(c *Critter) bool {
 	type cell struct{ r, c int }
 	var opts []cell
 	for col := 0; col < levelgen.Cols; col++ {
-		for r := levelgen.MaxRows - 1; r >= 1; r-- {
+		for r := GridRows - 1; r >= 1; r-- {
 			if b := L.Grid[r][col]; b != nil && (b.Alive || b.Up != nil) {
 				break // this column reaches further forward than any gap
 			}
@@ -150,7 +150,7 @@ func (L *Level) spawnBomber() bool {
 	best, bestN, bestS := front, -1, -1e9
 	for z := front; z < FarZ-1; z += CellD {
 		r := rowAt(z)
-		if r < 0 || r >= levelgen.MaxRows {
+		if r < 0 || r >= GridRows {
 			continue
 		}
 		n := 0
@@ -334,7 +334,7 @@ func (L *Level) popMischief(c *Critter) {
 		g.snd.Play("coinbig")
 	case critBomber:
 		// the bomb drops right where it was struck
-		L.explode(c.X, c.Z, 1.8, math.Max(3, 3*L.hpMul()), true)
+		L.explode(c.X, c.Z, 1.3, math.Max(3, 3*L.hpMul()), true)
 		L.gainGold(2, c.X, c.Z, true)
 		L.text(V3{c.X, 1.8, c.Z}, "BOMBS AWAY!", color.RGBA{255, 170, 80, 255}, true)
 		g.snd.Play("boom")
@@ -439,7 +439,7 @@ func (g *Game) drawMischief(B *Batch, L *Level, c *Critter, s float64, rot Mat3,
 		}
 		B.DecalBelow(c.X, c.Z, 0.02, 1.6, 1.0, sprShadow, color.RGBA{0, 0, 0, 110})
 		// a target ring hints where the bomb would land
-		rr := 1.8 * effCell * 1.9
+		rr := 1.3 * blastCell * 2
 		B.Decal(c.X, c.Z, 0.04, rr, rr, sprRing, alpha(color.RGBA{255, 170, 80, 255}, 0.35+0.15*math.Sin(c.T*6)), true)
 	}
 }

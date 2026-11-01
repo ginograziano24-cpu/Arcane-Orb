@@ -230,7 +230,7 @@ type Level struct {
 	Data                  *levelgen.Level
 	Biome                 *Biome
 	Node                  NodeType
-	Grid                  [levelgen.MaxRows][levelgen.Cols]*Brick
+	Grid                  [GridRows][levelgen.Cols]*Brick
 	Bricks                []*Brick
 	Left                  int
 	Crystals              int
@@ -257,6 +257,9 @@ type Level struct {
 	T, Shake, Flash float64
 	Combo           int
 	comboT          float64
+	fuses           []fuse                         // powder kegs about to go off
+	reserve         [][levelgen.Cols]levelgen.Cell // rows waiting to march in behind the formation
+	reinforced      int                            // required bricks that have marched in so far
 	Frenzy          float64
 	impacts         int
 	killsSinceHeal  int
@@ -335,6 +338,7 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 	L.heatArmour()
 	L.startLeft = L.Left
 	L.planCache()
+	L.planReserve()
 	if r.hasAbility() && node != NBoss {
 		// abilities come in partly charged, so they shape a chamber
 		// rather than open it
@@ -439,7 +443,7 @@ func (L *Level) top(b *Brick) *Brick {
 }
 
 func (L *Level) cellFree(r, c int) bool {
-	return r >= 0 && r < levelgen.MaxRows && c >= 0 && c < levelgen.Cols && L.Grid[r][c] == nil && !L.Data.Outside[r][c]
+	return r >= 0 && r < GridRows && c >= 0 && c < levelgen.Cols && L.Grid[r][c] == nil && !(r < levelgen.MaxRows && L.Data.Outside[r][c])
 }
 
 func (L *Level) spawnServe() {
@@ -558,6 +562,7 @@ func (L *Level) Update(dt float64, in Input) {
 	L.midasT = math.Max(0, L.midasT-dt)
 	L.titanT = math.Max(0, L.titanT-dt)
 	L.magnetT = math.Max(0, L.magnetT-dt)
+	L.updateFuses(dt)
 	L.comboT -= dt
 	if L.comboT <= 0 && L.Combo > 0 {
 		overdrive := false
@@ -933,7 +938,7 @@ func (L *Level) collideBricks(b *Ball) {
 	bestPen := -1.0
 	var nx, nz float64
 	var hits []*Brick
-	for rr := max(r0, 0); rr <= min(r1, levelgen.MaxRows-1); rr++ {
+	for rr := max(r0, 0); rr <= min(r1, GridRows-1); rr++ {
 		for cc := max(c0, 0); cc <= min(c1, levelgen.Cols-1); cc++ {
 			br := L.Grid[rr][cc]
 			if br == nil || !br.Alive {
@@ -1105,7 +1110,7 @@ func (L *Level) shielded(b *Brick) bool {
 	for dr := -levelgen.GridSplit; dr <= levelgen.GridSplit; dr++ {
 		for dc := -levelgen.GridSplit; dc <= levelgen.GridSplit; dc++ {
 			r, c := b.R+dr, b.C+dc
-			if r < 0 || r >= levelgen.MaxRows || c < 0 || c >= levelgen.Cols || (dr == 0 && dc == 0) {
+			if r < 0 || r >= GridRows || c < 0 || c >= levelgen.Cols || (dr == 0 && dc == 0) {
 				continue
 			}
 			if n := L.Grid[r][c]; n != nil && n.Alive && n.Kind == levelgen.Shield {
@@ -1343,6 +1348,11 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	if L.Combo%10 == 0 {
 		L.text(V3{bx, 2.2, bz}, fmt.Sprintf("COMBO ×%d", L.Combo), color.RGBA{255, 230, 120, 255}, true)
 		L.g.snd.ComboMilestone(L.Combo)
+		// long rallies pay on their own, no items needed: coins at every
+		// tenth hit, more as it climbs (up to four)
+		for i := 0; i < min(4, 1+L.Combo/25); i++ {
+			L.gainGold(1, bx, bz, true)
+		}
 	}
 	// procs
 	if b.Alive && (L.rng.Float64() < s.BurnChance || fire || L.classIgnite()) {
@@ -1364,7 +1374,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	if crit && s.EagleEye {
 		for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
 			rr, cc := b.R+d[0], b.C+d[1]
-			if rr >= 0 && rr < levelgen.MaxRows && cc >= 0 && cc < levelgen.Cols {
+			if rr >= 0 && rr < GridRows && cc >= 0 && cc < levelgen.Cols {
 				if n := L.Grid[rr][cc]; n != nil && n.Alive {
 					L.damage(n, Hit{Src: "Eagle Eye", Dmg: dmg * 0.5, Silent: true})
 				}
@@ -1507,7 +1517,14 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	// kind effects
 	switch b.Kind {
 	case levelgen.Explosive:
-		L.explode(x, z, 1.6+s.ExplodeRadius*0.4, 4, false)
+		// a powder keg pops its direct neighbours; set off by another
+		// blast it waits a short fuse, so chains ripple instead of wiping
+		rad := brickBlastR + math.Max(0, s.ExplodeRadius-baseExplodeR)*0.4
+		if h.Blast {
+			L.fuses = append(L.fuses, fuse{x: x, z: z, t: 0.16, rad: rad, dmg: brickBlastDmg})
+		} else {
+			L.explode(x, z, rad, brickBlastDmg, false)
+		}
 	case levelgen.Chain:
 		L.lightning(x, z, 4, 2, b, s.StormCaller)
 	case levelgen.Split:
@@ -1541,7 +1558,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	if b.Burn > 0 && s.Wildfire {
 		for _, d := range [][2]int{{0, -1}, {0, 1}, {1, 0}, {-1, 0}} {
 			rr, cc := b.R+d[0], b.C+d[1]
-			if rr >= 0 && rr < levelgen.MaxRows && cc >= 0 && cc < levelgen.Cols {
+			if rr >= 0 && rr < GridRows && cc >= 0 && cc < levelgen.Cols {
 				if n := L.Grid[rr][cc]; n != nil && n.Alive && n.Kind != levelgen.Steel {
 					n.Burn = 3.5
 				}
@@ -1598,11 +1615,46 @@ func (L *Level) near(x, z, rad float64) []*Brick {
 	return out
 }
 
+// Blast tuning. Radii are in blast cells (blastCell world units each):
+// a plain powder-keg brick reaches only its eight neighbours, item blasts
+// a little further. Before this, radii used the old double-size cell and a
+// single keg flattened most of the board.
+const (
+	blastCell     = 1.35
+	baseExplodeR  = 1.4  // Stats.ExplodeRadius before any item
+	brickBlastR   = 0.85 // 1.15 world units: the 3 x 3 around the brick
+	brickBlastDmg = 2.0
+)
+
+// fuse is a powder keg lit by another blast, about to go off.
+type fuse struct{ x, z, t, rad, dmg float64 }
+
+// updateFuses sets off kegs whose fuse has burned down.
+func (L *Level) updateFuses(dt float64) {
+	if len(L.fuses) == 0 {
+		return
+	}
+	var due []fuse
+	keep := L.fuses[:0]
+	for _, f := range L.fuses {
+		f.t -= dt
+		if f.t <= 0 {
+			due = append(due, f)
+		} else {
+			keep = append(keep, f)
+		}
+	}
+	L.fuses = keep
+	for _, f := range due {
+		L.explode(f.x, f.z, f.rad, f.dmg, false)
+	}
+}
+
 func (L *Level) explode(x, z, radiusCells, dmg float64, big bool) {
 	g := L.g
 	st := &g.run.Stats
 	dmg *= 1 + st.BlastMult
-	rad := radiusCells * effCell * 0.95
+	rad := radiusCells * blastCell
 	rc := color.RGBA{255, 170, 60, 255}
 	if st.CryoCharge {
 		rc = color.RGBA{150, 225, 255, 255}
@@ -1707,7 +1759,7 @@ func (L *Level) mystery(x, z float64, b *Brick) {
 		}
 		L.text(V3{x, 2, z}, "GOLD SHOWER!", color.RGBA{255, 210, 70, 255}, true)
 	case 2:
-		L.explode(x, z, 2, 3, false)
+		L.explode(x, z, brickBlastR, brickBlastDmg, false)
 	case 3:
 		if len(L.Balls) < 14 {
 			sp := L.speed()
@@ -2144,7 +2196,7 @@ func (L *Level) updateDrops(dt float64) {
 		hit := bl.Z > FarZ
 		c := int(math.Floor((bl.X + HalfW) / CellW))
 		rr := rowAt(bl.Z)
-		if !hit && rr >= 0 && rr < levelgen.MaxRows && c >= 0 && c < levelgen.Cols {
+		if !hit && rr >= 0 && rr < GridRows && c >= 0 && c < levelgen.Cols {
 			if b := L.Grid[rr][c]; b != nil && b.Alive && b != bl.last {
 				st := &L.g.run.Stats
 				bm := bl.Mult
@@ -2406,7 +2458,7 @@ func (L *Level) moveCore() {
 	for _, br := range L.Bricks {
 		if br.Alive && br.BossPart {
 			cands = append(cands, br)
-			if br.R+1 >= levelgen.MaxRows || L.Grid[br.R+1][br.C] == nil {
+			if br.R+1 >= GridRows || L.Grid[br.R+1][br.C] == nil {
 				open = append(open, br)
 			}
 		}

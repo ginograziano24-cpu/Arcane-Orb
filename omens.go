@@ -31,7 +31,7 @@ var omens = []omen{
 	{ID: "fortified", Name: "Fortified", Desc: "Bricks have 40% more health. The reward is one rarity better.", Glyph: "shield", Col: rgba(180, 190, 220, 255)},
 	{ID: "bountiful", Name: "Bountiful", Desc: "Power-ups drop twice as often.", Glyph: "clover", Col: rgba(120, 230, 140, 255)},
 	{ID: "volatile", Name: "Volatile", Desc: "Many bricks are packed with blasting powder.", Glyph: "bomb", Col: rgba(255, 150, 60, 255),
-		Setup: func(L *Level) { L.convertBricks(levelgen.Explosive, 0.14) }},
+		Setup: func(L *Level) { L.convertBricks(levelgen.Explosive, 0.08) }},
 	{ID: "seam", Name: "Crystal Seam", Desc: "Gold-rich crystals grow among the bricks.", Glyph: "gem", Col: rgba(140, 220, 255, 255),
 		Setup: func(L *Level) { L.convertBricks(levelgen.Crystal, 0.08) }},
 	{ID: "twin", Name: "Twin Moons", Desc: "You serve with an extra orb.", Glyph: "twinorb", Col: rgba(220, 200, 255, 255)},

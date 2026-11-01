@@ -175,7 +175,7 @@ func debugKeys(g *Game) {
 		g.settings.NoTips = true
 	}
 	if want("advance") && g.level != nil {
-		g.level.shiftTarget += CellD * 10
+		g.level.shiftTarget += advanceStep
 	}
 	if want("cache") && g.level != nil {
 		g.level.Drops = append(g.level.Drops, &Drop{X: g.level.PaddleX, Z: PaddleZ + 4, P: PCache})

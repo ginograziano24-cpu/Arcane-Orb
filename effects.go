@@ -27,7 +27,7 @@ func (L *Level) neighbours(row, col int) []*Brick {
 	var out []*Brick
 	for _, d := range [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
 		rr, cc := row+d[0], col+d[1]
-		if rr >= 0 && rr < levelgen.MaxRows && cc >= 0 && cc < levelgen.Cols {
+		if rr >= 0 && rr < GridRows && cc >= 0 && cc < levelgen.Cols {
 			if n := L.Grid[rr][cc]; n != nil && n.Alive && n.Kind != levelgen.Steel {
 				out = append(out, n)
 			}
@@ -127,7 +127,7 @@ func (L *Level) barrierSaved(x float64) {
 	if r.Stats.ThornWard {
 		// strike the lowest brick in every column
 		for c := 0; c < levelgen.Cols; c++ {
-			for row := levelgen.MaxRows - 1; row >= 0; row-- {
+			for row := GridRows - 1; row >= 0; row-- {
 				if b := L.Grid[row][c]; b != nil && b.Alive && b.Kind != levelgen.Steel {
 					L.Rings = append(L.Rings, &Ring{X: b.X(), Z: b.Z(), MaxR: 1.6, Life: 0.3, Max: 0.3, Col: color.RGBA{190, 120, 255, 255}})
 					L.damage(b, Hit{Src: "Crown of Thorns", Dmg: 2 * r.Stats.Damage * r.Stats.DmgMult, Blast: true, Silent: true})

@@ -208,7 +208,7 @@ func (L *Level) holyWave(x float64) {
 	s := &L.g.run.Stats
 	dmg := math.Max(1, s.Damage*s.DmgMult)
 	hits := 0
-	for r := levelgen.MaxRows - 1; r >= 0 && hits < s.parryHits(); r-- {
+	for r := GridRows - 1; r >= 0 && hits < s.parryHits(); r-- {
 		for c := 0; c < levelgen.Cols; c++ {
 			b := L.Grid[r][c]
 			if b == nil || !b.Alive || math.Abs(b.X()-x) > effCell*0.6 {
