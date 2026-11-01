@@ -1316,7 +1316,7 @@ def b_pyro():
     loft("robehem", [(0.5, 0.31, 0.24), (0.7, 0.29, 0.22), (0.95, 0.262, 0.192)], m, fold=(0.05, 8, 4, 0.9))
     belt(1.02, sash, metal, rx=0.25, ry=0.175, h=0.05)
     tube("sashtail", [V(0.12, -0.18, 1.0), V(0.16, -0.21, 0.85), V(0.15, -0.22, 0.6)], 0.035, sash, flat=0.2, n=12)
-    hood(robe, r=(0.165, 0.18, 0.2), peak=0.12, trim=sash)
+    hood(robe, r=(0.165, 0.18, 0.2), peak=0.12, trim=glow("embertrim", (1.0, 0.38, 0.06), 4.0))
     ell("halfmask", C.eye_c + V(0, -0.095, -0.08), (0.085, 0.05, 0.06), metal, head=True)
     for k in range(3):
         rbox("vent", C.eye_c + V(-0.03 + 0.03 * k, -0.142, -0.09), (0.008, 0.004, 0.03), glow("vent", (1.0, 0.4, 0.05), 6.0), bev=0.002, head=True)
@@ -1370,6 +1370,18 @@ def b_storm():
     for x in (-0.06, 0.06):
         ribbon("trim", x, 0.012, 0.55, 1.46, silver, depth=0.004)
     eyes((0.75, 0.92, 1.0), 34)
+    # a crown of living lightning above the cowl
+    cm = glow("crown", (0.7, 0.9, 1.0), 25.0)
+    cc = C.eye_c + V(0, 0.07, 0.24)
+    for k in range(9):
+        a0 = k / 9 * 2 * math.pi
+        a1 = (k + 1) / 9 * 2 * math.pi
+        p0 = cc + V(math.cos(a0) * 0.16, math.sin(a0) * 0.16, 0.02 * math.sin(k * 2.1))
+        p1 = cc + V(math.cos(a1) * 0.16, math.sin(a1) * 0.16, 0.02 * math.sin((k + 1) * 2.1))
+        tube("crown", bolt_pts(p0, p1, 300 + k, jag=0.03, steps=3), 0.004, cm, n=6, sub=0, head=True)
+        if k % 3 == 0:
+            tube("crownspike", bolt_pts(p0, p0 + V(0, 0, 0.1), 400 + k, jag=0.02, steps=3), 0.0035, cm, n=6, sub=0, head=True)
+    C.anchor("spark", cc, (0.7, 0.9, 1.0), 0.5)
     # staff with a forked head crackling with lightning (screen left)
     w = arm("L", (-0.37, -0.03, 1.12), (-0.42, -0.12, 1.26), cloak, bell=0.05, cuff=silver)
     staff((-0.43, -0.14, 0.45), (-0.43, -0.14, 2.15), pbr("darkwood", (0.05, 0.05, 0.07), rough=0.4, fiber=0.3, coat=0.4), silver)

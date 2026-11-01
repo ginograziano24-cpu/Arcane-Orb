@@ -66,6 +66,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	}
 	u := g.ui
 	r := g.run
+	g.drawAbilityAura(screen, L)
 	dt := u.DT
 	th := u.theme()
 	S := u.S
@@ -504,5 +505,34 @@ func (g *Game) drawBossIntro(screen *ebiten.Image, L *Level) {
 		if !hideHUD {
 			u.text(screen, "Click to skip", fSerif, 18, 1880, 1080-bh+(bh-30)/2, ca(cDim, 0.6*out), alignRight)
 		}
+	}
+}
+
+// drawAbilityAura tints the screen's edges while an active ability runs, so
+// you can feel it without looking at the HUD.
+func (g *Game) drawAbilityAura(screen *ebiten.Image, L *Level) {
+	u := g.ui
+	S := u.S
+	c := &L.cls
+	edge := func(col color.RGBA, a float64, bottomOnly bool) {
+		if a <= 0.01 {
+			return
+		}
+		drawSprite(screen, sprSoft, u.X(-300), u.Y(820), 2520*S, 560*S, ca(col, a), true)
+		if bottomOnly {
+			return
+		}
+		drawSprite(screen, sprSoft, u.X(-420), u.Y(-200), 640*S, 1480*S, ca(col, a*0.8), true)
+		drawSprite(screen, sprSoft, u.X(1700), u.Y(-200), 640*S, 1480*S, ca(col, a*0.8), true)
+	}
+	if c.bloodT > 0 {
+		p := 0.7 + 0.3*math.Sin(L.T*9)
+		edge(color.RGBA{255, 30, 30, 255}, 0.28*p*math.Min(1, c.bloodT), false)
+	}
+	if c.aegisT > 0 {
+		edge(color.RGBA{255, 210, 120, 255}, 0.3*math.Min(1, c.aegisT), true)
+	}
+	if c.overloadN > 0 {
+		edge(color.RGBA{255, 150, 50, 255}, 0.25, true)
 	}
 }

@@ -59,6 +59,9 @@ func (L *Level) updateAbility(dt float64, in Input) {
 	if used {
 		r.AbilT = r.Arch.Cooldown
 		L.abilFlash = 1
+		if L == L.g.level {
+			L.g.react(reactCombo) // the portrait steels itself
+		}
 	}
 }
 
