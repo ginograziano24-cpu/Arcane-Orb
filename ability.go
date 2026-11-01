@@ -45,6 +45,16 @@ func (L *Level) updateAbility(dt float64, in Input) {
 		used = L.firestorm()
 	case "storm":
 		used = L.thunderstrike()
+	case "guardian":
+		used = L.aegis()
+	case "berserker":
+		used = L.bloodlust()
+	case "arcane":
+		used = L.prismNova()
+	case "engineer":
+		used = L.overload()
+	case "lucky":
+		used = L.jackpot()
 	}
 	if used {
 		r.AbilT = r.Arch.Cooldown
@@ -159,3 +169,127 @@ func (L *Level) classIgnite() bool {
 	L.igniteN++
 	return L.igniteN%n == 0
 }
+
+// ---------------------------------------------------------------- the other five
+
+// aegis raises a wall of holy light along the paddle line: orbs that would
+// slip past rebound off it, and every rebound looses a holy wave.
+func (L *Level) aegis() bool {
+	L.cls.aegisT = aegisDur
+	L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: BarrierZ, MaxR: HalfW, Life: 0.5, Max: 0.5, Col: color.RGBA{255, 220, 140, 255}})
+	for x := -HalfW + 0.5; x < HalfW; x += 1.2 {
+		L.sparks(V3{x, 0.4, BarrierZ}, 2, color.RGBA{255, 230, 160, 255}, 5)
+	}
+	L.text(V3{L.PaddleX, 2.2, PaddleZ + 2.5}, "AEGIS", color.RGBA{255, 225, 150, 255}, true)
+	L.Flash = math.Max(L.Flash, 0.2)
+	L.g.snd.Play("shield")
+	L.g.snd.PlayVol("parry", 0.9)
+	return true
+}
+
+const aegisDur = 6.0
+
+// aegisCatch bounces a falling orb off the Aegis wall.
+func (L *Level) aegisCatch(b *Ball) bool {
+	if L.cls.aegisT <= 0 || b.VZ >= 0 || b.Z-b.R > BarrierZ || b.Z < BarrierZ-1 {
+		return false
+	}
+	b.Z = BarrierZ + b.R
+	b.VZ = math.Abs(b.VZ)
+	L.sparks(V3{b.X, 0.3, BarrierZ}, 14, color.RGBA{255, 225, 150, 255}, 6)
+	L.holyWave(b.X)
+	return true
+}
+
+// bloodlust fills Rage at once; for a few seconds it cannot fade and every
+// hit lands half again as hard.
+func (L *Level) bloodlust() bool {
+	s := &L.g.run.Stats
+	c := &L.cls
+	c.rage = s.rageMax()
+	c.rageT = s.rageTime() + bloodDur
+	c.bloodT = bloodDur
+	L.text(V3{L.PaddleX, 2.2, PaddleZ + 2.5}, "BLOODLUST", color.RGBA{255, 60, 50, 255}, true)
+	L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: PaddleZ + 1, MaxR: 5, Life: 0.45, Max: 0.45, Col: color.RGBA{255, 60, 40, 255}})
+	L.Shake = math.Max(L.Shake, 0.35)
+	L.Flash = math.Max(L.Flash, 0.2)
+	L.g.snd.Play("roar")
+	L.g.snd.Duck(0.5, 0.6)
+	return true
+}
+
+const bloodDur = 5.0
+
+// prismNova bursts every element at once around each orb: bricks nearby
+// burn, freeze, take void damage and a bolt chains out from the centre.
+func (L *Level) prismNova() bool {
+	if len(L.Balls) == 0 {
+		return false
+	}
+	dmg := L.abilityDmg() * 1.6
+	const rad = 4.2
+	for _, ball := range L.Balls {
+		hit := 0
+		for _, b := range L.Bricks {
+			if !b.Alive || (b.BossPart && !b.Core) {
+				continue
+			}
+			if math.Hypot(b.X()-ball.X, b.Z()-ball.Z) > rad {
+				continue
+			}
+			if b.Kind != levelgen.Steel {
+				b.Burn = 3.5
+				b.Frozen = 3
+			}
+			L.damage(b, Hit{Src: "Prismatic Nova", Dmg: dmg, Void: true, Elemental: true, Silent: true})
+			hit++
+		}
+		L.lightning(ball.X, ball.Z, 4, dmg*0.6, nil, false)
+		for i, col := range attuneCols {
+			L.Rings = append(L.Rings, &Ring{X: ball.X, Z: ball.Z, MaxR: rad * (0.6 + 0.15*float64(i)), Life: 0.35 + 0.08*float64(i), Max: 0.35 + 0.08*float64(i), Col: col})
+			L.sparks(V3{ball.X, 0.8, ball.Z}, 8, col, 9)
+		}
+	}
+	L.text(V3{L.Balls[0].X, 2.4, L.Balls[0].Z}, "PRISMATIC NOVA", color.RGBA{210, 170, 255, 255}, true)
+	L.Shake = math.Max(L.Shake, 0.4)
+	L.Flash = math.Max(L.Flash, 0.3)
+	L.g.snd.Play("warp")
+	L.g.snd.PlayVol("zap", 0.7)
+	return true
+}
+
+// overload dumps the reactor: three piercing beam volleys in quick
+// succession.
+func (L *Level) overload() bool {
+	L.cls.overloadN = 3
+	L.cls.overloadT = 0
+	L.text(V3{L.PaddleX, 2.0, PaddleZ + 2.2}, "OVERLOAD", color.RGBA{255, 170, 70, 255}, true)
+	L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: PaddleZ, MaxR: 3.5, Life: 0.35, Max: 0.35, Col: color.RGBA{255, 170, 70, 255}})
+	L.g.snd.PlayVol("zap", 0.9)
+	return true
+}
+
+// jackpot stakes a little gold on fortune: three good power-ups rain down
+// and a few coins come back with them.
+func (L *Level) jackpot() bool {
+	r := L.g.run
+	if r.Gold < jackpotCost {
+		L.text(V3{L.PaddleX, 1.6, PaddleZ + 1.6}, fmtGoldNeed(jackpotCost), color.RGBA{255, 200, 90, 255}, false)
+		return false
+	}
+	r.Gold -= jackpotCost
+	for i := 0; i < 3; i++ {
+		x := (L.rng.Float64()*2 - 1) * (HalfW - 2)
+		L.dropPower(x, 9+L.rng.Float64()*5, true)
+	}
+	L.gainGold(6, L.PaddleX, PaddleZ+4, true)
+	L.text(V3{L.PaddleX, 2.2, PaddleZ + 2.5}, "JACKPOT!", color.RGBA{255, 214, 90, 255}, true)
+	L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: PaddleZ + 1, MaxR: 4, Life: 0.45, Max: 0.45, Col: color.RGBA{255, 214, 90, 255}})
+	L.g.snd.Play("coinbig")
+	L.g.snd.PlayKeyed("good")
+	return true
+}
+
+const jackpotCost = 15
+
+func fmtGoldNeed(n int) string { return "NEED " + itoa(n) + " GOLD" }

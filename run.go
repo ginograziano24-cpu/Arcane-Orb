@@ -32,7 +32,7 @@ var archetypes = []Archetype{
 			s.BarrierPerLevel++
 			s.DmgMult *= 0.9
 			s.ClassParry = true
-		}},
+		}, Ability: "Aegis", AbilityDesc: "Raise a wall of light behind the paddle for 6 seconds: orbs rebound off it, each rebound a holy wave.", Cooldown: 30},
 	{ID: "berserker", Name: "Berserker", Passive: "Rampage",
 		Desc: "Every brick you break adds Rage: +5% damage each, up to +100%. Rage fades after 5 seconds without a break, or when you drop the orb. Narrow paddle, +0.2 damage, +10% crit.",
 		Apply: func(s *Stats) {
@@ -41,19 +41,19 @@ var archetypes = []Archetype{
 			s.CritChance += 0.1
 			s.CritMult += 0.5
 			s.ClassRage = true
-		}},
+		}, Ability: "Bloodlust", AbilityDesc: "Fill your Rage at once. For 5 seconds it cannot fade and every hit lands 50% harder.", Cooldown: 30},
 	{ID: "arcane", Name: "Arcanist", Passive: "Attunement",
 		Desc: "Your orb cycles Fire, Frost, Storm and Void every 8 seconds; each hit has a 50% chance to unleash the current element. +0.15 damage.",
 		Apply: func(s *Stats) {
 			s.ClassAttune = true
 			s.Damage += 0.15
-		}},
+		}, Ability: "Prismatic Nova", AbilityDesc: "Every orb bursts with all four elements: nearby bricks burn, freeze and take void damage, and a bolt chains out.", Cooldown: 28},
 	{ID: "engineer", Name: "Engineer", Passive: "Overclock", Cost: 60,
 		Desc: "Paddle lasers fire every 2 seconds. Hold the paddle still for 1.5 seconds to overclock: the next volley is a piercing beam for double damage.",
 		Apply: func(s *Stats) {
 			s.LaserInterval = 2.0
 			s.ClassOverclock = true
-		}},
+		}, Ability: "Overload", AbilityDesc: "Dump the reactor: three piercing beam volleys in quick succession.", Cooldown: 26},
 	{ID: "lucky", Name: "Gambler", Passive: "High Roller", Cost: 90,
 		Desc: "Gold is power: +1% damage for every 6 gold you carry, up to +60%. Starts with 25 extra gold. Spend or hoard? +40% gold, +30% power-ups, +8% crit and a free shop reroll.",
 		Apply: func(s *Stats) {
@@ -63,7 +63,7 @@ var archetypes = []Archetype{
 			s.FreeRerolls++
 			s.ClassHighRoller = true
 			s.StartGold += 25
-		}},
+		}, Ability: "Jackpot", AbilityDesc: "Stake 15 gold: three good power-ups rain down and a few coins come back.", Cooldown: 30},
 	{ID: "pyro", Name: "Pyromancer", Passive: "Stoke", Cost: 120,
 		Desc: "Every 5th hit ignites. Hitting a burning brick stokes it: +50% damage and the fire is renewed. Fire burns 50% hotter.",
 		Apply: func(s *Stats) {

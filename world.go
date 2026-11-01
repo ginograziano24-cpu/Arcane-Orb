@@ -219,6 +219,21 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		B.Decal(0, BarrierZ, 0.06, HalfW*2, 0.08, sprWhite, alpha(color.RGBA{220, 200, 255, 255}, a), true)
 	}
 
+	// the Guardian's Aegis: a wall of holy light behind the paddle
+	if at := L.cls.aegisT; at > 0 {
+		f := math.Min(1, at/0.6) * math.Min(1, (aegisDur-at)/0.2+0.2)
+		p := 0.75 + 0.25*math.Sin(L.T*9)
+		gold := color.RGBA{255, 220, 140, 255}
+		B.Decal(0, BarrierZ, 0.05, HalfW*2, 1.0, sprSoft, alpha(gold, 0.8*f*p), true)
+		B.Decal(0, BarrierZ, 0.06, HalfW*2, 0.16, sprWhite, alpha(color.RGBA{255, 250, 225, 255}, f), true)
+		// a curtain of light rising off the line
+		for x := -HalfW + 0.4; x < HalfW; x += 0.8 {
+			h := 1.3 + 0.4*math.Sin(L.T*4+x*1.7)
+			B.Billboard(V3{x, h * 0.55, BarrierZ}, 1.1*h, sprSoft, alpha(gold, 0.5*f), true)
+			B.Billboard(V3{x, h * 0.3, BarrierZ}, 0.35, sprSoft, alpha(color.RGBA{255, 250, 230, 255}, 0.7*f), true)
+		}
+	}
+
 	// bricks
 	t := L.T + g.stateT
 	for _, b := range L.Bricks {
@@ -753,6 +768,9 @@ func (g *Game) orbGlow(L *Level, b *Ball) color.RGBA {
 		glow = color.RGBA{255, 130, 40, 255}
 	} else if g.run.Stats.MeteorHeart {
 		glow = color.RGBA{255, 90, 60, 255}
+	}
+	if L.cls.bloodT > 0 {
+		return color.RGBA{255, 50, 40, 255}
 	}
 	if b.Storm > 0 {
 		glow = color.RGBA{120, 190, 255, 255}

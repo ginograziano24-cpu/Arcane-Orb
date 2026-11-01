@@ -103,7 +103,7 @@ func (a *sloppy) input(L *Level, dt float64) Input {
 			in.Fire, a.stuckT = true, 0
 		}
 	}
-	if L.g.run.hasAbility() && L.g.run.AbilT == 0 {
+	if r := L.g.run; r.hasAbility() && r.AbilT == 0 && (r.Arch.ID != "lucky" || r.Gold >= jackpotCost) {
 		in.Ability = true
 	}
 	return in

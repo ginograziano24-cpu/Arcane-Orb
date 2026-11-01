@@ -358,10 +358,8 @@ func (g *Game) drawAbility(screen *ebiten.Image, L *Level) {
 	S := u.S
 	th := u.theme()
 	a := r.Arch
-	col, gl := rgba(255, 140, 60, 255), "flame"
-	if a.ID == "storm" {
-		col, gl = rgba(140, 200, 255, 255), "bolt"
-	}
+	ci := classInfo[a.ID]
+	col, gl := ci.Col, ci.Glyph
 	frac := r.abilityFrac()
 	ready := frac == 0
 	cx, cy, rad := 74.0, 934.0, 40.0

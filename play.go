@@ -669,7 +669,9 @@ func (L *Level) Update(dt float64, in Input) {
 			L.collidePaddle(b)
 			L.collideRocks(b)
 			L.collideCritters(b)
-			if L.Barrier > 0 && b.VZ < 0 && b.Z-b.R <= BarrierZ && b.Z > BarrierZ-1 {
+			if L.aegisCatch(b) {
+				g.snd.PlayVol("shield", 0.7)
+			} else if L.Barrier > 0 && b.VZ < 0 && b.Z-b.R <= BarrierZ && b.Z > BarrierZ-1 {
 				b.Z = BarrierZ + b.R
 				b.VZ = math.Abs(b.VZ)
 				L.Barrier--

@@ -24,6 +24,12 @@ type classState struct {
 	overclock bool
 
 	static float64
+
+	// active abilities
+	aegisT    float64
+	bloodT    float64
+	overloadN int
+	overloadT float64
 }
 
 var attuneNames = []string{"FIRE", "FROST", "STORM", "VOID"}
@@ -34,6 +40,24 @@ func (L *Level) updatePassives(dt float64) {
 	s := &L.g.run.Stats
 	c := &L.cls
 	c.parryCD -= dt
+	c.aegisT = math.Max(0, c.aegisT-dt)
+	if c.bloodT > 0 {
+		c.bloodT = math.Max(0, c.bloodT-dt)
+		c.rageT = math.Max(c.rageT, 0.5) // rage cannot fade while the bloodlust lasts
+		if L.rng.Float64() < dt*30 && len(L.Balls) > 0 {
+			b := L.Balls[L.rng.Intn(len(L.Balls))]
+			L.sparks(V3{b.X, 0.6, b.Z}, 1, color.RGBA{255, 60, 40, 255}, 3)
+		}
+	}
+	if c.overloadN > 0 {
+		c.overloadT -= dt
+		if c.overloadT <= 0 {
+			c.overloadN--
+			c.overloadT = 0.35
+			c.overclock = true
+			L.fireLaser()
+		}
+	}
 	if s.ClassRage && c.rage > 0 {
 		c.rageT -= dt
 		if c.rageT <= 0 {
@@ -91,6 +115,9 @@ func (L *Level) passiveDamage(b *Brick, dmg float64) float64 {
 	}
 	if s.ClassRage {
 		dmg *= 1 + s.ragePer()*float64(L.cls.rage)
+	}
+	if L.cls.bloodT > 0 {
+		dmg *= 1.5
 	}
 	if s.ClassHighRoller {
 		dmg *= 1 + s.highRoller(L.g.run.Gold)
