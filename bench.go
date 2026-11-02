@@ -68,6 +68,8 @@ func benchParse() {
 			cpuProfile = strings.TrimPrefix(a, "-cpuprofile=")
 		case strings.HasPrefix(a, "-benchtag="):
 			benchTag = strings.TrimPrefix(a, "-benchtag=")
+		case a == "-noruns":
+			planRunsOn = false
 		case strings.HasPrefix(a, "-benchwin="):
 			_, _ = fmt.Sscanf(strings.TrimPrefix(a, "-benchwin="), "%dx%d", &benchWinW, &benchWinH)
 		}

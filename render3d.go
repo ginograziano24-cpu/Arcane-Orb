@@ -526,6 +526,14 @@ type Batch struct {
 	extQ     [][]quad    // side batches' quads drawn before b's own (drawFirst)
 	extG     [][]quad
 	runIdx   []int32
+	runCell  [runCols * runRows]int16
+	meta     []uint64 // per quad (submission order): cells and run key
+	switches [2]int   // texture switches in last frame's opaque and glow lists
+	planned  [2]bool
+	cellW    float32
+	cellH    float32
+	runBigB  [runBX * runBY]int16
+	runFineB [runBX * runBY]int16
 	joinQ    []quad // scratch for prepend
 	fogColor [3]float32
 	fogNear  float64
@@ -915,7 +923,7 @@ func (b *Batch) DecalBelow(x, z, h, w, d float64, spr Sprite, col color.RGBA) {
 	b.quads[len(b.quads)-1].depth += 1000
 }
 
-func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend) {
+func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend, list int) {
 	// the quads of every segment, in order, by pointer (no copying)
 	qs := b.qp[:0]
 	for _, s := range segs {
@@ -927,9 +935,15 @@ func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend) {
 	if len(qs) == 0 {
 		return
 	}
+	// plan runs only where texture switches are many enough to repay it
+	// (judged by the last frame, with a gap so the choice doesn't flicker)
+	sw := b.switches[list]
+	plan := planRunsOn && (sw > runPlanOn || (b.planned[list] && sw > runPlanOff))
+	b.planned[list] = plan
 	// sort indices rather than the (large) quads themselves: far first
-	order := b.sortFarFirst(qs)
-	runs := b.planRuns(qs, order)
+	order := b.sortFarFirst(qs, plan)
+	runs, switches := b.planRuns(qs, order, plan)
+	b.switches[list] = switches
 	if flushTrace != nil {
 		for i := 1; i < len(runs); i++ {
 			flushTrace(runs[i-1].tex, runs[i].tex, float64(len(runs[i].ids)))
@@ -962,33 +976,30 @@ func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend) {
 }
 
 // Runs: painter's order only matters where quads overlap on screen. A quad
-// may therefore join the most recent run of its own texture, ahead of the
-// runs that came after it, as long as it overlaps none of their quads;
-// disjoint quads blend the same in either order, so the picture is
-// unchanged while texture switches (each its own draw call) collapse.
-// Overlap is tested conservatively on a coarse screen grid, one bit per
-// cell, with a pixel of margin for the anti-aliased edges.
+// may therefore join the most recent run of its own texture (and mip
+// level), ahead of the runs that came after it, as long as it overlaps none
+// of their quads; disjoint quads blend the same in either order, so the
+// picture is unchanged while texture switches (each its own draw call)
+// collapse. Overlap is tested conservatively on a coarse screen grid that
+// remembers, per cell, the latest run that touched it, with a pixel of
+// margin for anti-aliased edges.
 
 const (
-	runWords = 2 // uint64s of columns per grid row
-	runCols  = 64 * runWords
+	runCols  = 128
 	runRows  = 72
+	runBlock = 8 // fine cells per block side; blocks hold the big quads
+	runBX    = runCols / runBlock
+	runBY    = runRows / runBlock
+	runBig   = 64 // a quad covering more fine cells than this is big
 )
 
 type quadRun struct {
 	tex         uint8
 	noMip       bool
 	first, last int // the run's quad indices are runIdx[first:last] once planned
-	cov         [runRows][runWords]uint64
 	ids         []int32
 }
 
-// quadMipLevel is the mipmap level Ebitengine would pick for this quad on
-// its own (a call samples one level: the sharpest any of its triangles
-// needs). Runs keep quads of one level together, so every textured quad is
-// drawn at its own level, whatever else shares its draw call. The edges
-// are measured at the anti-aliasing offscreen's 2x scale, where Ebitengine
-// measures them.
 // noMip marks a run drawn with mipmaps off: its quads tile their texture,
 // and Ebitengine's mip levels don't wrap correctly (the wrap region stays at
 // the full-size image), so these always sample the full-size texture.
@@ -1056,7 +1067,56 @@ func mipLevelFromDistance(dx0, dy0, dx1, dy1, sx0, sy0, sx1, sy1 float32) int {
 	return min(level, maxLevel)
 }
 
-func (b *Batch) planRuns(qs []*quad, order []int32) []quadRun {
+// planRunsOn enables run planning (-noruns turns it off, for benchmarks).
+var planRunsOn = true
+
+// A list is planned when its last frame had more texture switches than
+// runPlanOn, and stays planned until they fall below runPlanOff.
+const (
+	runPlanOn  = 60
+	runPlanOff = 30
+)
+
+// prepMeta readies quadMeta for this flush (grid cell size, texture sizes).
+func (b *Batch) prepMeta() {
+	for i := 1; i < len(texImages) && i < len(texSize); i++ {
+		if texSize[i] == ([2]float32{}) && texImages[i] != nil {
+			bd := texImages[i].Bounds()
+			texSize[i] = [2]float32{float32(bd.Dx()), float32(bd.Dy())}
+		}
+	}
+	b.cellW = float32(b.cam.W) / runCols
+	b.cellH = float32(b.cam.H) / runRows
+}
+
+// quadMeta packs what planRuns needs about a quad: its grid cells (with a
+// pixel of margin) and its run key (texture and mip level). It is computed
+// in the sort's sequential pass, so planning, which visits quads in depth
+// order, reads a small table instead of jumping around the quads.
+func (b *Batch) quadMeta(q *quad) uint64 {
+	x0, y0 := q.v[0].DstX, q.v[0].DstY
+	x1, y1 := x0, y0
+	for k := 1; k < 4; k++ {
+		x0, x1 = min(x0, q.v[k].DstX), max(x1, q.v[k].DstX)
+		y0, y1 = min(y0, q.v[k].DstY), max(y1, q.v[k].DstY)
+	}
+	cw, ch := b.cellW, b.cellH
+	c0 := uint64(max(0, min(runCols-1, (x0-1)/cw)))
+	c1 := uint64(max(0, min(runCols-1, (x1+1)/cw)))
+	r0 := uint64(max(0, min(runRows-1, (y0-1)/ch)))
+	r1 := uint64(max(0, min(runRows-1, (y1+1)/ch)))
+	key := uint64(q.tex) * 8
+	if q.tex != 0 {
+		if quadWraps(q, texSize[q.tex]) {
+			key += noMip
+		} else {
+			key += uint64(quadMipLevel(q))
+		}
+	}
+	return c0 | c1<<8 | r0<<16 | r1<<24 | key<<32
+}
+
+func (b *Batch) planRuns(qs []*quad, order []int32, plan bool) ([]quadRun, int) {
 	for i := range b.runs {
 		b.runs[i].ids = b.runs[i].ids[:0]
 	}
@@ -1065,57 +1125,70 @@ func (b *Batch) planRuns(qs []*quad, order []int32) []quadRun {
 	for i := range lastOf {
 		lastOf[i] = -1
 	}
-	for i := 1; i < len(texImages) && i < len(texSize); i++ {
-		if texSize[i] == ([2]float32{}) && texImages[i] != nil {
-			bd := texImages[i].Bounds()
-			texSize[i] = [2]float32{float32(bd.Dx()), float32(bd.Dy())}
-		}
+	cell := &b.runCell // latest run touching each fine cell (small quads)
+	for i := range cell {
+		cell[i] = -1
 	}
-	cw := float32(b.cam.W) / runCols
-	ch := float32(b.cam.H) / runRows
+	// per block: the latest run of a big quad covering it, and the latest
+	// run in any of its fine cells. Every overlapping pair shares a fine
+	// cell and so a block, which keeps the test conservative both ways.
+	big, fineMax := &b.runBigB, &b.runFineB
+	for i := range big {
+		big[i], fineMax[i] = -1, -1
+	}
+	meta := b.meta
+	switches := 0
+	prevTex := uint8(255)
+	if !plan {
+		// plain runs: a new draw call at every texture switch
+		for _, oi := range order {
+			tex := qs[oi].tex
+			if len(runs) > 0 && runs[len(runs)-1].tex != tex {
+				switches++
+			}
+			if len(runs) == 0 || runs[len(runs)-1].tex != tex {
+				if len(runs) < cap(runs) {
+					runs = runs[:len(runs)+1]
+					runs[len(runs)-1].tex, runs[len(runs)-1].ids = tex, runs[len(runs)-1].ids[:0]
+				} else {
+					runs = append(runs, quadRun{tex: tex})
+				}
+				runs[len(runs)-1].noMip = false
+			}
+			runs[len(runs)-1].ids = append(runs[len(runs)-1].ids, oi)
+		}
+		order = order[:0]
+	}
 	for _, oi := range order {
-		q := qs[oi]
-		// the quad's cells
-		x0, y0 := q.v[0].DstX, q.v[0].DstY
-		x1, y1 := x0, y0
-		for k := 1; k < 4; k++ {
-			x0, x1 = min(x0, q.v[k].DstX), max(x1, q.v[k].DstX)
-			y0, y1 = min(y0, q.v[k].DstY), max(y1, q.v[k].DstY)
+		m := meta[oi]
+		c0, c1, r0, r1 := int(m&0xff), int(m>>8&0xff), int(m>>16&0xff), int(m>>24&0xff)
+		key := int(m >> 32 & 0xffff)
+		tex := uint8(key / 8)
+		if tex != prevTex {
+			switches++
+			prevTex = tex
 		}
-		c0 := int(max(0, min(runCols-1, (x0-1)/cw)))
-		c1 := int(max(0, min(runCols-1, (x1+1)/cw)))
-		r0 := int(max(0, min(runRows-1, (y0-1)/ch)))
-		r1 := int(max(0, min(runRows-1, (y1+1)/ch)))
-		var mask [runWords]uint64
-		for w := 0; w < runWords; w++ {
-			lo, hi := max(c0, w*64), min(c1, w*64+63)
-			if lo > hi {
-				continue
+		// it can join its key's latest run if no later run touched its cells
+		isBig := (c1-c0+1)*(r1-r0+1) > runBig
+		bx0, bx1, by0, by1 := c0/runBlock, c1/runBlock, r0/runBlock, r1/runBlock
+		at := int(lastOf[key])
+		if at >= 0 && isBig {
+		scanB:
+			for y := by0; y <= by1; y++ {
+				for x := bx0; x <= bx1; x++ {
+					if i := y*runBX + x; int(big[i]) > at || int(fineMax[i]) > at {
+						at = -1
+						break scanB
+					}
+				}
 			}
-			n := hi - lo + 1
-			if n == 64 {
-				mask[w] = ^uint64(0)
-			} else {
-				mask[w] = (uint64(1)<<n - 1) << (lo - w*64)
-			}
-		}
-		// can it join its texture's latest run?
-		at := -1
-		key := int(q.tex) * 8
-		if q.tex != 0 {
-			if quadWraps(q, texSize[q.tex]) {
-				key += noMip
-			} else {
-				key += quadMipLevel(q)
-			}
-		}
-		if k := int(lastOf[key]); k >= 0 {
-			at = k
+		} else if at >= 0 {
 		scan:
-			for j := k + 1; j < len(runs); j++ {
-				cv := &runs[j].cov
-				for y := r0; y <= r1; y++ {
-					if cv[y][0]&mask[0] != 0 || cv[y][1]&mask[1] != 0 {
+			for y := r0; y <= r1; y++ {
+				row := cell[y*runCols : y*runCols+runCols]
+				brow := big[(y/runBlock)*runBX:]
+				for x := c0; x <= c1; x++ {
+					if int(row[x]) > at || int(brow[x/runBlock]) > at {
 						at = -1
 						break scan
 					}
@@ -1126,20 +1199,38 @@ func (b *Batch) planRuns(qs []*quad, order []int32) []quadRun {
 			if len(runs) < cap(runs) {
 				runs = runs[:len(runs)+1]
 				rn := &runs[len(runs)-1]
-				rn.tex, rn.cov, rn.ids = q.tex, [runRows][runWords]uint64{}, rn.ids[:0]
+				rn.tex, rn.ids = tex, rn.ids[:0]
 			} else {
-				runs = append(runs, quadRun{tex: q.tex})
+				runs = append(runs, quadRun{tex: tex})
 			}
-			runs[len(runs)-1].noMip = key%8 == noMip
 			at = len(runs) - 1
+			runs[at].noMip = key%8 == noMip
 			lastOf[key] = int16(at)
 		}
-		rn := &runs[at]
-		for y := r0; y <= r1; y++ {
-			rn.cov[y][0] |= mask[0]
-			rn.cov[y][1] |= mask[1]
+		a := int16(at)
+		if isBig {
+			for y := by0; y <= by1; y++ {
+				for x := bx0; x <= bx1; x++ {
+					if i := y*runBX + x; big[i] < a {
+						big[i] = a
+					}
+				}
+			}
+		} else {
+			for y := r0; y <= r1; y++ {
+				row := cell[y*runCols : y*runCols+runCols]
+				frow := fineMax[(y/runBlock)*runBX:]
+				for x := c0; x <= c1; x++ {
+					if row[x] < a {
+						row[x] = a
+					}
+					if frow[x/runBlock] < a {
+						frow[x/runBlock] = a
+					}
+				}
+			}
 		}
-		rn.ids = append(rn.ids, oi)
+		runs[at].ids = append(runs[at].ids, oi)
 	}
 	// flatten the runs' indices into one list
 	b.runIdx = b.runIdx[:0]
@@ -1149,7 +1240,7 @@ func (b *Batch) planRuns(qs []*quad, order []int32) []quadRun {
 		runs[i].last = len(b.runIdx)
 	}
 	b.runs = runs
-	return runs
+	return runs, switches
 }
 
 // flushTrace, when set (debug builds), sees every texture switch in a flush.
@@ -1173,7 +1264,7 @@ var quadIndices = func() []uint16 {
 // descending depth gives, but as an LSD radix sort on the depth's bits
 // (11 bits a pass, skipping passes where every key shares the digit), which
 // is several times faster for tens of thousands of quads.
-func (b *Batch) sortFarFirst(qs []*quad) []int32 {
+func (b *Batch) sortFarFirst(qs []*quad, withMeta bool) []int32 {
 	n := len(qs)
 	if cap(b.keys[0]) < n {
 		b.keys[0] = make([]uint64, n)
@@ -1185,7 +1276,15 @@ func (b *Batch) sortFarFirst(qs []*quad) []int32 {
 	o0, o1 := b.order[:n], b.idx2[:n]
 	const bits, passes = 11, 6
 	var hist [passes][1 << bits]int32
+	if cap(b.meta) < n {
+		b.meta = make([]uint64, n)
+	}
+	meta := b.meta[:n]
+	b.prepMeta()
 	for i := range qs {
+		if withMeta {
+			meta[i] = b.quadMeta(qs[i])
+		}
 		u := math.Float64bits(qs[i].depth)
 		if u>>63 != 0 {
 			u = ^u // negative: flip every bit
@@ -1234,8 +1333,8 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 	for i := range b.extQ {
 		lastQuads += len(b.extQ[i]) + len(b.extG[i])
 	}
-	b.flush(dst, append(b.extQ, b.quads), ebiten.BlendSourceOver)
-	b.flush(dst, append(b.extG, b.glow), ebiten.BlendLighter)
+	b.flush(dst, append(b.extQ, b.quads), ebiten.BlendSourceOver, 0)
+	b.flush(dst, append(b.extG, b.glow), ebiten.BlendLighter, 1)
 	b.extQ, b.extG = b.extQ[:0], b.extG[:0]
 }
 
