@@ -34,6 +34,7 @@ func makeIcon(size int) image.Image {
 }
 
 func main() {
+	benchParse()
 	if steamInit() {
 		return // Steam is relaunching the game through the client
 	}

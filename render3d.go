@@ -888,6 +888,7 @@ func (b *Batch) flush(dst *ebiten.Image, qs []quad, blend ebiten.Blend) {
 			op.Filter = ebiten.FilterLinear
 		}
 		dst.DrawTriangles(b.verts, b.idx, src, op)
+		perf.cur.world++
 		b.verts = b.verts[:0]
 		b.idx = b.idx[:0]
 	}
@@ -908,6 +909,8 @@ func (b *Batch) flush(dst *ebiten.Image, qs []quad, blend ebiten.Blend) {
 var lastQuads int
 
 func (b *Batch) Flush(dst *ebiten.Image) {
+	perfBegin(secFlush)
+	defer perfEnd(secFlush)
 	lastQuads = len(b.quads) + len(b.glow)
 	b.flush(dst, b.quads, ebiten.BlendSourceOver)
 	b.flush(dst, b.glow, ebiten.BlendLighter)
@@ -929,6 +932,7 @@ func unprem(c color.Color) color.RGBA {
 }
 
 func fillRect(dst *ebiten.Image, x, y, w, h float64, c color.Color) {
+	perf.cur.rect++
 	vector.DrawFilledRect(dst, float32(x), float32(y), float32(w), float32(h), c, false)
 }
 
@@ -956,6 +960,7 @@ func strokeRoundRect(dst *ebiten.Image, x, y, w, h, r, sw float64, c color.Color
 
 // drawSprite draws an atlas sprite in 2D.
 func drawSprite(dst *ebiten.Image, spr Sprite, x, y, w, h float64, c color.RGBA, additive bool) {
+	perf.cur.sprite++
 	cc := cf(c)
 	vs := []ebiten.Vertex{
 		{DstX: float32(x), DstY: float32(y), SrcX: spr.X0, SrcY: spr.Y0},
@@ -976,6 +981,7 @@ func drawSprite(dst *ebiten.Image, spr Sprite, x, y, w, h float64, c color.RGBA,
 // fillRectA fills with colour c at opacity a (straight alpha in, so the
 // premultiplication vector drawing expects is done here).
 func fillRectA(dst *ebiten.Image, x, y, w, h float64, c color.RGBA, a float64) {
+	perf.cur.rect++
 	a = clamp01(a) * float64(c.A) / 255
 	pm := color.RGBA{uint8(float64(c.R) * a), uint8(float64(c.G) * a), uint8(float64(c.B) * a), uint8(255 * a)}
 	vector.DrawFilledRect(dst, float32(x), float32(y), float32(w), float32(h), pm, false)

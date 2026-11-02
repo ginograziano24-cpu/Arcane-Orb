@@ -91,11 +91,17 @@ func captureUpdate(g *Game) bool {
 		capState.fps = capFPS()
 		ebiten.SetScreenClearedEveryFrame(false)
 		setupTrailerGame(g)
+		if name := goldenName(); name != "" {
+			goldenSetup(g, name)
+		}
 	}
 	capState.frame = req.Int() // the page may jump ahead to preview a shot
 	capState.t = float64(capState.frame-1) / capState.fps
 	capState.pending = true
 	capState.recording = true
+	if goldenName() != "" {
+		return false // a golden scene plays itself
+	}
 	directorStep(g, capState.t)
 	if v := js.Global().Get("__showHUD"); v.Type() == js.TypeBoolean {
 		hideHUD = !v.Bool()
@@ -118,6 +124,9 @@ func captureSkipDraw(g *Game, dst *ebiten.Image) bool {
 		js.Global().Set("__capDone", capState.frame)
 		return true
 	}
+	if goldenName() != "" {
+		return false
+	}
 	return directorDraw(g, dst, capState.t)
 }
 
@@ -125,7 +134,9 @@ func captureAfterDraw(g *Game, dst *ebiten.Image) {
 	if !capState.pending {
 		return
 	}
-	directorOverlay(g, dst, capState.t)
+	if goldenName() == "" {
+		directorOverlay(g, dst, capState.t)
+	}
 	capState.pending = false
 	js.Global().Set("__capDone", capState.frame)
 }
@@ -153,4 +164,26 @@ func setupTrailerGame(g *Game) {
 	g.snd.Music = 0
 	g.snd.SFX = 1
 	hideHUD = true
+}
+
+// Golden captures: with __golden set to a benchmark scene name the page
+// steps that scene deterministically instead of the trailer, so renderer
+// changes can be checked pixel for pixel against a reference.
+func goldenName() string {
+	if v := js.Global().Get("__golden"); v.Type() == js.TypeString {
+		return v.String()
+	}
+	return ""
+}
+
+func goldenSetup(g *Game, name string) {
+	benchConfig(g)
+	hideHUD = false
+	for _, sc := range benchScenes() {
+		if sc.name == name {
+			sc.setup(g)
+			g.fadeT = 0 // capture time doesn't run the screen transition down
+			return
+		}
+	}
 }

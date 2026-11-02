@@ -74,6 +74,9 @@ func runPath() string { return filepath.Join(filepath.Dir(savePath()), "run.json
 
 // saveRun snapshots the run at a safe point.
 func (g *Game) saveRun(phase string, node int) {
+	if noPersist {
+		return
+	}
 	b := g.snapRun(phase, node)
 	if b == nil {
 		return
@@ -119,7 +122,11 @@ func (g *Game) snapRun(phase string, node int) []byte {
 }
 
 // clearRun forgets the saved run (death, victory or abandoning).
-func clearRun() { _ = os.Remove(runPath()) }
+func clearRun() {
+	if !noPersist {
+		_ = os.Remove(runPath())
+	}
+}
 
 // loadSavedRun reads the saved run, if there is a usable one.
 func loadSavedRun() *savedRun {

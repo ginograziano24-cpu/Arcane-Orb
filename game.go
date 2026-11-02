@@ -317,9 +317,16 @@ func (g *Game) Layout(ow, oh int) (int, int) {
 func (g *Game) Update() error {
 	defer g.guard("update")
 	if g.quit {
+		stopProfile()
 		writeSave(&g.save)
 		steamShutdown()
 		return ebiten.Termination
+	}
+	perfBegin(secUpdate)
+	defer perfEnd(secUpdate)
+	perfToggle()
+	if benchUpdate(g) {
+		return nil
 	}
 	if captureUpdate(g) {
 		return nil // the trailer capture is waiting for its next frame
@@ -819,7 +826,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		return
 	}
 	defer g.guard("draw")
+	perfBegin(secDraw)
+	perfScreen = screen.Bounds().Size()
 	g.drawFiltered(screen, g.drawFrame)
+	perfEnd(secDraw)
+	g.drawPerf(screen)
+	perfFrameEnd()
 }
 
 func (g *Game) drawFrame(screen *ebiten.Image) {
@@ -859,16 +871,22 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 		rw, rh := max(64, int(sw*sc+0.5)), max(36, int(sh*sc+0.5))
 		tgt := g.post.Target(rw, rh)
 		g.deferOverlay = true
+		perfBegin(secWorld)
 		g.drawWorld(tgt, g.level)
+		perfEnd(secWorld)
 		g.deferOverlay = false
+		perfBegin(secPost)
 		g.post.Apply(screen, worldGrades[g.level.Biome.ID], !g.settings.NoBloom)
+		perfEnd(secPost)
 		k := sw / float64(rw)
 		if g.run != nil && g.run.is("lightsout") && g.level.introT <= 0 {
 			g.drawDarkness(screen, g.level, k)
 		}
 		g.drawWorldOverlay(screen, g.level, k)
 		if !hideHUD || g.level.introT > 0 {
+			perfBegin(secHUD)
 			g.drawHUD(screen, g.level)
+			perfEnd(secHUD)
 		}
 		if g.duel != nil && g.state == StLevel {
 			g.drawDuelHUD(screen, g.level)

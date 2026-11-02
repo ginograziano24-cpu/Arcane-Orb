@@ -152,6 +152,7 @@ func (u *UI) langName(dst *ebiten.Image, s string, x, y float64, c color.RGBA) {
 	op.GeoM.Translate(u.X(x), u.Y(y)-2*u.S)
 	op.ColorScale.ScaleWithColor(prem(c, 1))
 	text.Draw(dst, s, fc, op)
+	perf.cur.text++
 }
 
 // setScripts picks the fallback fonts a language needs and drops the
@@ -191,6 +192,7 @@ func (u *UI) drawText(dst *ebiten.Image, s string, f fontID, size, sx, sy float6
 	op.GeoM.Translate(sx, sy)
 	op.ColorScale.ScaleWithColor(prem(c, 1))
 	text.Draw(dst, s, u.face(f, size), op)
+	perf.cur.text++
 }
 
 // text draws at virtual coordinates (y = top of the line) with a soft shadow.
@@ -345,4 +347,13 @@ func (u *UI) drawRawText(dst *ebiten.Image, s string, face text.Face, cx, y floa
 	op.GeoM.Translate(cx, y)
 	op.ColorScale.ScaleWithColor(prem(c, 1))
 	text.Draw(dst, s, face, op)
+	perf.cur.text++
+}
+
+// textPx draws plain text at pixel coordinates, px pixels tall.
+func (u *UI) textPx(dst *ebiten.Image, s string, px, x, y float64, c color.RGBA) {
+	raw := u.rawText
+	u.rawText = true
+	u.drawText(dst, s, fReg, px/math.Max(0.01, u.S), x, y, c, alignLeft)
+	u.rawText = raw
 }

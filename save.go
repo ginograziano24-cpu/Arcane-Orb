@@ -119,7 +119,9 @@ func loadSave() SaveData {
 		return s
 	}
 	if err := json.Unmarshal(b, &s); err != nil {
-		_ = os.WriteFile(savePath()+".bak", b, 0o644)
+		if !noPersist {
+			_ = os.WriteFile(savePath()+".bak", b, 0o644)
+		}
 		return defaultSave()
 	}
 	if s.Upg == nil {
@@ -148,6 +150,9 @@ func loadSave() SaveData {
 }
 
 func writeSave(s *SaveData) {
+	if noPersist {
+		return // the benchmark never touches the player's files
+	}
 	p := savePath()
 	_ = os.MkdirAll(filepath.Dir(p), 0o755)
 	b, _ := json.MarshalIndent(s, "", "  ")

@@ -145,6 +145,7 @@ func sdfDraw(dst *ebiten.Image, s shp, kind int, w float64, c0, c1 color.RGBA, g
 		op.Blend = ebiten.BlendLighter
 	}
 	dst.DrawTrianglesShader(sdfVerts, sdfIdx, sdfShader, op)
+	perf.cur.sdf++
 }
 
 // ---------------------------------------------------------------- shape constructors
