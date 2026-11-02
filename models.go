@@ -32,10 +32,19 @@ func model(name string) *Mesh {
 	if modelsOff {
 		return nil
 	}
+	assetMu.RLock()
+	m, ok := modelCache[name]
+	assetMu.RUnlock()
+	if ok {
+		return m
+	}
+	assetMu.Lock()
+	defer assetMu.Unlock()
 	if m, ok := modelCache[name]; ok {
 		return m
 	}
-	m := loadModel(name)
+	m = loadModel(name)
+	m.topology()
 	modelCache[name] = m
 	return m
 }

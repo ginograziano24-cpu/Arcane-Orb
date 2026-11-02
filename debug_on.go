@@ -101,6 +101,16 @@ func debugPre(g *Game) {
 			}
 			continue
 		}
+		if strings.HasPrefix(a, "bench:") {
+			benchConfig(g)
+			inputHook = benchPilot
+			for _, sc := range benchScenes() {
+				if sc.name == a[6:] {
+					sc.setup(g)
+				}
+			}
+			continue
+		}
 		if a == "notips" {
 			g.settings.NoTips = true
 			g.coachQ = nil

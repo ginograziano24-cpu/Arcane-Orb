@@ -5,8 +5,6 @@ import (
 	"image/color"
 	"math"
 	"math/rand"
-	"os"
-	"runtime"
 	"strings"
 	"time"
 
@@ -193,9 +191,10 @@ func NewGame() *Game {
 	g := &Game{rng: rand.New(rand.NewSource(time.Now().UnixNano())), last: time.Now(), skyAct: -1}
 	g.save = loadSave()
 	g.settings = &g.save.Settings
-	if g.settings.DX12 && runtime.GOOS == "windows" && os.Getenv("EBITENGINE_DIRECTX") == "" {
-		os.Setenv("EBITENGINE_DIRECTX", "version=12") // read when the graphics driver starts
-	}
+	// DirectX 12 measured 10-40x slower than DirectX 11 for this renderer
+	// (bench, RTX 5090), so the old option is ignored; EBITENGINE_DIRECTX
+	// can still force it for testing
+	g.settings.DX12 = false
 	if steamOnDeck() && g.settings.TextScale == 0 {
 		g.settings.TextScale = 1.15 // a little larger on the Deck's 7" screen
 	}

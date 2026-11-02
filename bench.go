@@ -265,6 +265,10 @@ func benchRecord(f *perfFrame) {
 
 func benchFinish(g *Game) {
 	stopProfile()
+	if f, err := os.Create(benchPath("allocs", ".pprof")); err == nil {
+		_ = pprof.Lookup("allocs").WriteTo(f, 0) // where the per-frame garbage comes from
+		f.Close()
+	}
 	b := bench
 	var sb strings.Builder
 	w, h := ebiten.Monitor().Size()

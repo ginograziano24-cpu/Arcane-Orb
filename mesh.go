@@ -4,6 +4,9 @@ import (
 	"image/color"
 	"math"
 	"math/rand"
+	"sync"
+
+	"github.com/hajimehoshi/ebiten/v2"
 )
 
 // A tiny triangle-mesh toolkit for stylised low-poly scenery: faceted
@@ -17,7 +20,51 @@ type Tri struct {
 	Fixed bool // keeps its own colour when the mesh is drawn with a tint
 }
 
-type Mesh struct{ Tris []Tri }
+type Mesh struct {
+	Tris []Tri
+	topo *meshTopo // shared corners, built when a cached mesh is created
+}
+
+// meshTopo lists a mesh's distinct corner positions and, per triangle, which
+// of them it uses, so each corner is transformed and projected once per
+// draw instead of once per triangle that touches it.
+type meshTopo struct {
+	n   int // len(Tris) when built
+	pos []V3
+	tri [][3]int32
+}
+
+// topology builds the corner table; call it before the mesh is shared.
+func (m *Mesh) topology() *meshTopo {
+	if m == nil {
+		return nil
+	}
+	if m.topo != nil && m.topo.n == len(m.Tris) {
+		return m.topo
+	}
+	t := &meshTopo{n: len(m.Tris), tri: make([][3]int32, len(m.Tris))}
+	at := map[V3]int32{}
+	for i := range m.Tris {
+		for k, p := range m.Tris[i].P {
+			j, ok := at[p]
+			if !ok {
+				j = int32(len(t.pos))
+				t.pos = append(t.pos, p)
+				at[p] = j
+			}
+			t.tri[i][k] = j
+		}
+	}
+	m.topo = t
+	return t
+}
+
+// projected is a mesh corner in world space and on screen.
+type projected struct {
+	p         V3
+	sx, sy, d float64
+	fog       float32
+}
 
 type Mat3 [3]V3 // rows
 
@@ -39,6 +86,10 @@ func (m Mat3) Mul(v V3) V3 {
 
 // Draw renders the mesh with scale, rotation and translation.
 func (b *Batch) Draw(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emissive float32) {
+	if t := m.topo; t != nil && t.n == len(m.Tris) {
+		b.drawShared(m, pos, scale, rot, tint, emissive)
+		return
+	}
 	eye := b.cam.Eye
 	useTint := tint.A > 0
 	for _, t := range m.Tris {
@@ -65,16 +116,96 @@ func (b *Batch) Draw(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emiss
 	}
 }
 
+// drawShared is Draw with each distinct corner transformed and projected
+// once. It produces exactly the quads Draw does: the same positions, the
+// same normals from the transformed corners, the same colours and depths.
+func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emissive float32) {
+	t := m.topo
+	eye := b.cam.Eye
+	cam := b.cam
+	if cap(b.proj) < len(t.pos) {
+		b.proj = make([]projected, len(t.pos))
+	}
+	pr := b.proj[:len(t.pos)]
+	span := b.fogFar - b.fogNear
+	for i, lp := range t.pos {
+		q := V3{lp.X * scale.X, lp.Y * scale.Y, lp.Z * scale.Z}
+		p := rot.Mul(q).Add(pos)
+		sx, sy, d := cam.Project(p)
+		pr[i] = projected{p: p, sx: sx, sy: sy, d: d, fog: float32(math.Max(0, math.Min(1, (d-b.fogNear)/span)))}
+	}
+	useTint := tint.A > 0
+	fc := b.fogColor
+	for ti := range m.Tris {
+		tr := &m.Tris[ti]
+		ix := t.tri[ti]
+		a, bb, c := &pr[ix[0]], &pr[ix[1]], &pr[ix[2]]
+		n := bb.p.Sub(a.p).Cross(c.p.Sub(a.p))
+		if n.Len() < 1e-9 {
+			continue
+		}
+		n = n.Norm()
+		ctr := a.p.Add(bb.p).Add(c.p).Mul(1.0 / 3)
+		if n.Dot(eye.Sub(ctr)) <= 0 {
+			continue
+		}
+		col := tr.Col
+		if useTint && !tr.Fixed {
+			col = color.RGBA{uint8(int(col.R) * int(tint.R) / 255), uint8(int(col.G) * int(tint.G) / 255), uint8(int(col.B) * int(tint.B) / 255), col.A}
+		}
+		e := 1 + tr.Emi + emissive
+		cc := cf(b.lit(col, n))
+		var q quad
+		corner := func(k int, v *projected) {
+			fog := v.fog
+			r := cc[0]*e*(1-fog) + fc[0]*fog
+			g := cc[1]*e*(1-fog) + fc[1]*fog
+			bl := cc[2]*e*(1-fog) + fc[2]*fog
+			al := cc[3]
+			q.v[k] = ebiten.Vertex{DstX: float32(v.sx), DstY: float32(v.sy), SrcX: sprWhite.X0, SrcY: sprWhite.Y0,
+				ColorR: r * al, ColorG: g * al, ColorB: bl * al, ColorA: al}
+		}
+		corner(0, a)
+		corner(1, bb)
+		corner(2, c)
+		q.v[3] = q.v[2]
+		q.v[1].SrcX = sprWhite.X1
+		q.v[2].SrcX, q.v[2].SrcY = sprWhite.X1, sprWhite.Y1
+		q.v[3].SrcX, q.v[3].SrcY = sprWhite.X0, sprWhite.Y1
+		sum := 0.0
+		sum += a.d
+		sum += bb.d
+		sum += c.d
+		sum += c.d
+		q.depth = sum / 4
+		b.quads = append(b.quads, q)
+	}
+}
+
 // ---------------------------------------------------------------- builders
 
 var meshCache = map[string]*Mesh{}
 
+// assetMu guards the lazily filled asset caches (meshes, models, baked
+// textures): the 3D scene is built on several goroutines at once.
+var assetMu sync.RWMutex
+
 func cached(key string, build func() *Mesh) *Mesh {
-	if m, ok := meshCache[key]; ok {
+	assetMu.RLock()
+	m, ok := meshCache[key]
+	assetMu.RUnlock()
+	if ok {
 		return m
 	}
-	m := build()
-	meshCache[key] = m
+	m = build() // outside the lock: builders may call cached themselves
+	m.topology()
+	assetMu.Lock()
+	if old, ok := meshCache[key]; ok {
+		m = old // another goroutine got there first
+	} else {
+		meshCache[key] = m
+	}
+	assetMu.Unlock()
 	return m
 }
 

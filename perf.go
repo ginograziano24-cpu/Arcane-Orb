@@ -57,6 +57,12 @@ type perfState struct {
 
 var perf = &perfState{hist: make([]perfFrame, 240)}
 
+// perfMarks counts the 3D quads by part of drawWorld: scenery, scenery plus
+// arena (floor, walls, posts), and the rest (bricks, orbs, effects).
+var perfMarks [3]int
+
+func perfMark(i, n int) { perfMarks[i] = n }
+
 // perfScreen is the size of the last frame drawn, in device pixels.
 var perfScreen image.Point
 

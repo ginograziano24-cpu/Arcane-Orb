@@ -36,10 +36,18 @@ var bakedTexCache = map[string]*bakedTex{}
 
 // bakedTexture loads (once) an embedded texture; nil if it doesn't exist.
 func bakedTexture(name string) *bakedTex {
+	assetMu.RLock()
+	t, ok := bakedTexCache[name]
+	assetMu.RUnlock()
+	if ok {
+		return t
+	}
+	assetMu.Lock()
+	defer assetMu.Unlock()
 	if t, ok := bakedTexCache[name]; ok {
 		return t
 	}
-	var t *bakedTex
+	t = nil
 	if data, err := floorFS.ReadFile("assets/floor/" + name + ".jpg"); err == nil {
 		if src, _, err := image.Decode(bytes.NewReader(data)); err == nil {
 			img := ebiten.NewImageFromImage(src)
@@ -147,16 +155,24 @@ func drawBakedGround(B *Batch, t *bakedTex, tint color.RGBA, y float64) {
 		return [2]float32{float32(x / groundTile * float64(t.w)), float32(-z / groundTile * float64(t.h))}
 	}
 	far := mulc(t.avg, tint)
-	for i := 0; i+1 < len(xs); i++ {
-		for j := 0; j+1 < len(zs); j++ {
-			x0, x1, z0, z1 := xs[i], xs[i+1], zs[j], zs[j+1]
-			pts := [4]V3{{x0, y, z1}, {x1, y, z1}, {x1, y, z0}, {x0, y, z0}}
-			if math.Max(math.Abs(x0), math.Abs(x1)) <= 64 && z1 <= 96 {
-				B.QuadUV(pts, t.id, [4][2]float32{uv(x0, z1), uv(x1, z1), uv(x1, z0), uv(x0, z0)}, tint, [4]float32{1, 1, 1, 1}, false)
-			} else {
-				B.Quad(pts, sprWhite, far, [4]float32{1, 1, 1, 1}, false)
+	// the plain outer ring first, then the textured band: two runs of one
+	// texture each instead of a switch at every tile along the band's edge
+	for pass := 0; pass < 2; pass++ {
+		for i := 0; i+1 < len(xs); i++ {
+			for j := 0; j+1 < len(zs); j++ {
+				x0, x1, z0, z1 := xs[i], xs[i+1], zs[j], zs[j+1]
+				pts := [4]V3{{x0, y, z1}, {x1, y, z1}, {x1, y, z0}, {x0, y, z0}}
+				inner := math.Max(math.Abs(x0), math.Abs(x1)) <= 64 && z1 <= 96
+				switch {
+				case inner && pass == 1:
+					B.QuadUV(pts, t.id, [4][2]float32{uv(x0, z1), uv(x1, z1), uv(x1, z0), uv(x0, z0)}, tint, [4]float32{1, 1, 1, 1}, false)
+				case !inner && pass == 0:
+					B.Quad(pts, sprWhite, far, [4]float32{1, 1, 1, 1}, false)
+				default:
+					continue
+				}
+				B.quads[len(B.quads)-1].depth = 1e9
 			}
-			B.quads[len(B.quads)-1].depth = 1e9
 		}
 	}
 }
@@ -190,10 +206,18 @@ func brickCell(i, j int) sheetRect {
 // as premultiplied white over alpha), so a brick's shine draws right after
 // its colour without switching textures.
 func brickSheet() *bakedTex {
+	assetMu.RLock()
+	t, ok := bakedTexCache["#bricks"]
+	assetMu.RUnlock()
+	if ok {
+		return t
+	}
+	assetMu.Lock()
+	defer assetMu.Unlock()
 	if t, ok := bakedTexCache["#bricks"]; ok {
 		return t
 	}
-	var t *bakedTex
+	t = nil
 	dd, err := floorFS.ReadFile("assets/floor/bricks.jpg")
 	if err == nil {
 		if dimg, _, err := image.Decode(bytes.NewReader(dd)); err == nil {
@@ -269,9 +293,23 @@ func drawTexBrick(B *Batch, t *bakedTex, x0, y0, z0, x1, y1, z1 float64, col col
 	// nudges the colour
 	cx, cy, cz := (x0+x1)/2, (y0+y1)/2, (z0+z1)/2
 	hx, hy, hz := (x1-x0)/2, (y1-y0)/2, (z1-z0)/2
+	// only the point lights that can reach this brick at all: one whose
+	// reach ends short of the brick's bounding sphere can reach none of its
+	// faces, so leaving it out changes nothing but the time spent
+	var near [maxPtLights]int8
+	nn := 0
+	rb := math.Sqrt(hx*hx+hy*hy+hz*hz) + 1e-6
+	for i := range B.pts {
+		l := &B.pts[i]
+		dx, dy, dz := l.p.X-cx, l.p.Y-cy, l.p.Z-cz
+		if reach := l.r + rb; dx*dx+dy*dy+dz*dz < reach*reach {
+			near[nn] = int8(i)
+			nn++
+		}
+	}
 	lc := func(n V3) color.RGBA {
 		p := V3{cx + n.X*hx, cy + n.Y*hy, cz + n.Z*hz}
-		return B.litPt(mixc(col, B.lit(col, n), 0.3), p, n)
+		return B.litPtSome(mixc(col, B.lit(col, n), 0.3), p, n, near[:nn])
 	}
 	sh := func(a, b, cc, d float32) [4]float32 { return [4]float32{a + emis, b + emis, cc + emis, d + emis} }
 	// every face is drawn twice when the sheet has a specular layer: its

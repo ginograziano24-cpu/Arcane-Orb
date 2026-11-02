@@ -9,7 +9,6 @@ import (
 	"image"
 	"image/color"
 	"math"
-	"slices"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -517,8 +516,17 @@ type Batch struct {
 	quads    []quad
 	glow     []quad
 	verts    []ebiten.Vertex
-	idx      []uint16
 	order    []int32
+	keys     [2][]uint64 // radix sort scratch
+	idx2     []int32
+	proj     []projected // mesh corner scratch (drawShared)
+	sides    [2]*Batch   // side batches built on other goroutines (side)
+	runs     []quadRun   // flush: draw-call runs (planRuns)
+	qp       []*quad     // flush: every quad to draw, in submission order
+	extQ     [][]quad    // side batches' quads drawn before b's own (drawFirst)
+	extG     [][]quad
+	runIdx   []int32
+	joinQ    []quad // scratch for prepend
 	fogColor [3]float32
 	fogNear  float64
 	fogFar   float64
@@ -549,25 +557,29 @@ func (b *Batch) AddLight(p V3, c color.RGBA, r, s float64) {
 // ptGlow sums the point lights reaching p on a face facing n.
 func (b *Batch) ptGlow(p, n V3) (g [3]float32) {
 	for i := range b.pts {
-		l := &b.pts[i]
-		d := l.p.Sub(p)
-		d2 := d.Dot(d)
-		if d2 >= l.r*l.r {
-			continue
-		}
-		dist := math.Sqrt(d2)
-		k := 1 - dist/l.r
-		k = k * k * l.s
-		ndl := 0.3
-		if dist > 1e-4 {
-			ndl += 0.7 * math.Max(0, n.Dot(d)/dist)
-		}
-		w := float32(k * ndl)
-		g[0] += l.c[0] * w
-		g[1] += l.c[1] * w
-		g[2] += l.c[2] * w
+		b.addGlow(&g, &b.pts[i], p, n)
 	}
 	return
+}
+
+// addGlow adds one point light's contribution at p (facing n) to g.
+func (b *Batch) addGlow(g *[3]float32, l *ptLight, p, n V3) {
+	d := l.p.Sub(p)
+	d2 := d.Dot(d)
+	if d2 >= l.r*l.r {
+		return
+	}
+	dist := math.Sqrt(d2)
+	k := 1 - dist/l.r
+	k = k * k * l.s
+	ndl := 0.3
+	if dist > 1e-4 {
+		ndl += 0.7 * math.Max(0, n.Dot(d)/dist)
+	}
+	w := float32(k * ndl)
+	g[0] += l.c[0] * w
+	g[1] += l.c[1] * w
+	g[2] += l.c[2] * w
 }
 
 // litPt applies the point lights to a face colour: they brighten what is
@@ -576,7 +588,23 @@ func (b *Batch) litPt(col color.RGBA, p, n V3) color.RGBA {
 	if len(b.pts) == 0 {
 		return col
 	}
-	g := b.ptGlow(p, n)
+	return b.applyGlow(col, b.ptGlow(p, n))
+}
+
+// litPtSome is litPt over a subset of the lights (indices into b.pts, in
+// order), for callers that have already ruled the rest out.
+func (b *Batch) litPtSome(col color.RGBA, p, n V3, some []int8) color.RGBA {
+	if len(b.pts) == 0 {
+		return col
+	}
+	var g [3]float32
+	for _, i := range some {
+		b.addGlow(&g, &b.pts[i], p, n)
+	}
+	return b.applyGlow(col, g)
+}
+
+func (b *Batch) applyGlow(col color.RGBA, g [3]float32) color.RGBA {
 	f := func(v uint8, k float32) uint8 {
 		if k > 1.6 {
 			k = 1.6
@@ -595,7 +623,43 @@ func newBatch(cam *Camera) *Batch {
 		lightCol: [3]float32{0.75, 0.7, 0.85}, ambCol: [3]float32{0.45, 0.4, 0.6}}
 }
 
+// side returns side batch i, emptied and set up like b (camera, fog, key
+// light, point lights), for drawing on another goroutine. Only b's owner
+// may call it, and only between b's Reset and Flush.
+func (b *Batch) side(i int) *Batch {
+	s := b.sides[i]
+	if s == nil {
+		s = &Batch{}
+		b.sides[i] = s
+	}
+	s.cam = b.cam
+	s.fogColor, s.fogNear, s.fogFar = b.fogColor, b.fogNear, b.fogFar
+	s.light, s.lightCol, s.ambCol = b.light, b.lightCol, b.ambCol
+	s.pts = append(s.pts[:0], b.pts...)
+	s.quads = s.quads[:0]
+	s.glow = s.glow[:0]
+	return s
+}
+
+// insertSides puts the side batches' quads into b's lists at positions
+// nq (opaque) and ng (glow), in argument order: exactly where they would
+// have landed had they been drawn into b at that point.
+func (b *Batch) insertSides(nq, ng int, sides ...*Batch) {
+	join := func(own []quad, at int, get func(*Batch) []quad) []quad {
+		q := append(b.joinQ[:0], own[:at]...)
+		for _, s := range sides {
+			q = append(q, get(s)...)
+		}
+		q = append(q, own[at:]...)
+		b.joinQ = own[:0] // the old buffer becomes next frame's scratch
+		return q
+	}
+	b.quads = join(b.quads, nq, func(s *Batch) []quad { return s.quads })
+	b.glow = join(b.glow, ng, func(s *Batch) []quad { return s.glow })
+}
+
 func (b *Batch) Reset() {
+	b.extQ, b.extG = b.extQ[:0], b.extG[:0]
 	b.quads = b.quads[:0]
 	b.glow = b.glow[:0]
 	b.pts = b.pts[:0]
@@ -851,58 +915,313 @@ func (b *Batch) DecalBelow(x, z, h, w, d float64, spr Sprite, col color.RGBA) {
 	b.quads[len(b.quads)-1].depth += 1000
 }
 
-func (b *Batch) flush(dst *ebiten.Image, qs []quad, blend ebiten.Blend) {
+func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend) {
+	// the quads of every segment, in order, by pointer (no copying)
+	qs := b.qp[:0]
+	for _, s := range segs {
+		for i := range s {
+			qs = append(qs, &s[i])
+		}
+	}
+	b.qp = qs
 	if len(qs) == 0 {
 		return
 	}
 	// sort indices rather than the (large) quads themselves: far first
-	order := b.order[:0]
-	for i := range qs {
-		order = append(order, int32(i))
+	order := b.sortFarFirst(qs)
+	runs := b.planRuns(qs, order)
+	if flushTrace != nil {
+		for i := 1; i < len(runs); i++ {
+			flushTrace(runs[i-1].tex, runs[i].tex, float64(len(runs[i].ids)))
+		}
 	}
-	slices.SortStableFunc(order, func(x, y int32) int {
-		dx, dy := qs[x].depth, qs[y].depth
-		switch {
-		case dx > dy:
-			return -1
-		case dx < dy:
-			return 1
-		}
-		return 0
-	})
-	b.order = order
-	// draw in runs that share a texture, at most maxQ quads per call
-	const maxQ = 16000
+	// one DrawTriangles per run, at most maxQ quads each
 	b.verts = b.verts[:0]
-	b.idx = b.idx[:0]
-	cur := uint8(0)
-	emit := func() {
-		if len(b.idx) == 0 {
-			return
-		}
+	for ri := range runs {
+		rn := &runs[ri]
 		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: true}
 		src := atlas
-		if cur != 0 {
-			src = texImages[cur]
+		if rn.tex != 0 {
+			src = texImages[rn.tex]
 			op.Address = ebiten.AddressRepeat
 			op.Filter = ebiten.FilterLinear
+			op.DisableMipmaps = rn.noMip
 		}
-		dst.DrawTriangles(b.verts, b.idx, src, op)
-		perf.cur.world++
-		b.verts = b.verts[:0]
-		b.idx = b.idx[:0]
+		ids := b.runIdx[rn.first:rn.last]
+		for len(ids) > 0 {
+			n := min(len(ids), maxQ)
+			b.verts = b.verts[:0]
+			for _, oi := range ids[:n] {
+				b.verts = append(b.verts, qs[oi].v[:]...)
+			}
+			dst.DrawTriangles(b.verts, quadIndices[:n*6], src, op)
+			perf.cur.world++
+			ids = ids[n:]
+		}
 	}
+}
+
+// Runs: painter's order only matters where quads overlap on screen. A quad
+// may therefore join the most recent run of its own texture, ahead of the
+// runs that came after it, as long as it overlaps none of their quads;
+// disjoint quads blend the same in either order, so the picture is
+// unchanged while texture switches (each its own draw call) collapse.
+// Overlap is tested conservatively on a coarse screen grid, one bit per
+// cell, with a pixel of margin for the anti-aliased edges.
+
+const (
+	runWords = 2 // uint64s of columns per grid row
+	runCols  = 64 * runWords
+	runRows  = 72
+)
+
+type quadRun struct {
+	tex         uint8
+	noMip       bool
+	first, last int // the run's quad indices are runIdx[first:last] once planned
+	cov         [runRows][runWords]uint64
+	ids         []int32
+}
+
+// quadMipLevel is the mipmap level Ebitengine would pick for this quad on
+// its own (a call samples one level: the sharpest any of its triangles
+// needs). Runs keep quads of one level together, so every textured quad is
+// drawn at its own level, whatever else shares its draw call. The edges
+// are measured at the anti-aliasing offscreen's 2x scale, where Ebitengine
+// measures them.
+// noMip marks a run drawn with mipmaps off: its quads tile their texture,
+// and Ebitengine's mip levels don't wrap correctly (the wrap region stays at
+// the full-size image), so these always sample the full-size texture.
+const noMip = 7
+
+// texSize caches each registered texture's size in pixels.
+var texSize [256][2]float32
+
+// quadWraps reports whether a quad samples outside its texture (and so
+// relies on wrap-around addressing).
+func quadWraps(q *quad, sz [2]float32) bool {
+	for k := range q.v {
+		if q.v[k].SrcX < 0 || q.v[k].SrcY < 0 || q.v[k].SrcX > sz[0] || q.v[k].SrcY > sz[1] {
+			return true
+		}
+	}
+	return false
+}
+
+func quadMipLevel(q *quad) int {
+	v := &q.v
+	edge := func(a, b int) int {
+		return mipLevelFromDistance(2*v[a].DstX, 2*v[a].DstY, 2*v[b].DstX, 2*v[b].DstY, v[a].SrcX, v[a].SrcY, v[b].SrcX, v[b].SrcY)
+	}
+	// the two triangles (0 1 2) and (0 2 3), every edge of each
+	l := edge(0, 1)
+	for _, e := range [5][2]int{{1, 2}, {2, 0}, {0, 2}, {2, 3}, {3, 0}} {
+		l = min(l, edge(e[0], e[1]))
+	}
+	return l
+}
+
+// mipLevelFromDistance is Ebitengine's (internal/mipmap) level choice for
+// one edge.
+func mipLevelFromDistance(dx0, dy0, dx1, dy1, sx0, sy0, sx1, sy1 float32) int {
+	const maxLevel = 6
+	d := (dx1-dx0)*(dx1-dx0) + (dy1-dy0)*(dy1-dy0)
+	s := (sx1-sx0)*(sx1-sx0) + (sy1-sy0)*(sy1-sy0)
+	if s == 0 {
+		return 0
+	}
+	scale := d / s
+	if math.IsInf(float64(scale), 0) || scale == 0 {
+		return 0
+	}
+	level := 0
+	for scale < 0.25 {
+		level++
+		scale *= 4
+	}
+	if level > 0 {
+		w, h := int(sx1-sx0), int(sy1-sy0)
+		for level >= 0 {
+			s := 1 << uint(level)
+			if (w > 0 && w/s == 0) || (h > 0 && h/s == 0) {
+				level--
+				continue
+			}
+			break
+		}
+		if level < 0 {
+			return 0
+		}
+	}
+	return min(level, maxLevel)
+}
+
+func (b *Batch) planRuns(qs []*quad, order []int32) []quadRun {
+	for i := range b.runs {
+		b.runs[i].ids = b.runs[i].ids[:0]
+	}
+	runs := b.runs[:0]
+	var lastOf [256 * 8]int16 // latest run per texture and mip level
+	for i := range lastOf {
+		lastOf[i] = -1
+	}
+	for i := 1; i < len(texImages) && i < len(texSize); i++ {
+		if texSize[i] == ([2]float32{}) && texImages[i] != nil {
+			bd := texImages[i].Bounds()
+			texSize[i] = [2]float32{float32(bd.Dx()), float32(bd.Dy())}
+		}
+	}
+	cw := float32(b.cam.W) / runCols
+	ch := float32(b.cam.H) / runRows
 	for _, oi := range order {
-		q := &qs[oi]
-		if q.tex != cur || len(b.verts) >= maxQ*4 {
-			emit()
-			cur = q.tex
+		q := qs[oi]
+		// the quad's cells
+		x0, y0 := q.v[0].DstX, q.v[0].DstY
+		x1, y1 := x0, y0
+		for k := 1; k < 4; k++ {
+			x0, x1 = min(x0, q.v[k].DstX), max(x1, q.v[k].DstX)
+			y0, y1 = min(y0, q.v[k].DstY), max(y1, q.v[k].DstY)
 		}
-		base := uint16(len(b.verts))
-		b.verts = append(b.verts, q.v[:]...)
-		b.idx = append(b.idx, base, base+1, base+2, base, base+2, base+3)
+		c0 := int(max(0, min(runCols-1, (x0-1)/cw)))
+		c1 := int(max(0, min(runCols-1, (x1+1)/cw)))
+		r0 := int(max(0, min(runRows-1, (y0-1)/ch)))
+		r1 := int(max(0, min(runRows-1, (y1+1)/ch)))
+		var mask [runWords]uint64
+		for w := 0; w < runWords; w++ {
+			lo, hi := max(c0, w*64), min(c1, w*64+63)
+			if lo > hi {
+				continue
+			}
+			n := hi - lo + 1
+			if n == 64 {
+				mask[w] = ^uint64(0)
+			} else {
+				mask[w] = (uint64(1)<<n - 1) << (lo - w*64)
+			}
+		}
+		// can it join its texture's latest run?
+		at := -1
+		key := int(q.tex) * 8
+		if q.tex != 0 {
+			if quadWraps(q, texSize[q.tex]) {
+				key += noMip
+			} else {
+				key += quadMipLevel(q)
+			}
+		}
+		if k := int(lastOf[key]); k >= 0 {
+			at = k
+		scan:
+			for j := k + 1; j < len(runs); j++ {
+				cv := &runs[j].cov
+				for y := r0; y <= r1; y++ {
+					if cv[y][0]&mask[0] != 0 || cv[y][1]&mask[1] != 0 {
+						at = -1
+						break scan
+					}
+				}
+			}
+		}
+		if at < 0 {
+			if len(runs) < cap(runs) {
+				runs = runs[:len(runs)+1]
+				rn := &runs[len(runs)-1]
+				rn.tex, rn.cov, rn.ids = q.tex, [runRows][runWords]uint64{}, rn.ids[:0]
+			} else {
+				runs = append(runs, quadRun{tex: q.tex})
+			}
+			runs[len(runs)-1].noMip = key%8 == noMip
+			at = len(runs) - 1
+			lastOf[key] = int16(at)
+		}
+		rn := &runs[at]
+		for y := r0; y <= r1; y++ {
+			rn.cov[y][0] |= mask[0]
+			rn.cov[y][1] |= mask[1]
+		}
+		rn.ids = append(rn.ids, oi)
 	}
-	emit()
+	// flatten the runs' indices into one list
+	b.runIdx = b.runIdx[:0]
+	for i := range runs {
+		runs[i].first = len(b.runIdx)
+		b.runIdx = append(b.runIdx, runs[i].ids...)
+		runs[i].last = len(b.runIdx)
+	}
+	b.runs = runs
+	return runs
+}
+
+// flushTrace, when set (debug builds), sees every texture switch in a flush.
+var flushTrace func(from, to uint8, depth float64)
+
+// maxQ is the most quads one DrawTriangles call carries (uint16 indices).
+const maxQ = 16000
+
+// quadIndices is the index list for maxQ consecutive quads (0,1,2 0,2,3).
+var quadIndices = func() []uint16 {
+	ix := make([]uint16, 0, maxQ*6)
+	for i := 0; i < maxQ; i++ {
+		b := uint16(i * 4)
+		ix = append(ix, b, b+1, b+2, b, b+2, b+3)
+	}
+	return ix
+}()
+
+// sortFarFirst returns the quad indices ordered far to near, keeping the
+// submission order among equal depths: exactly what a stable sort on
+// descending depth gives, but as an LSD radix sort on the depth's bits
+// (11 bits a pass, skipping passes where every key shares the digit), which
+// is several times faster for tens of thousands of quads.
+func (b *Batch) sortFarFirst(qs []*quad) []int32 {
+	n := len(qs)
+	if cap(b.keys[0]) < n {
+		b.keys[0] = make([]uint64, n)
+		b.keys[1] = make([]uint64, n)
+		b.order = make([]int32, n)
+		b.idx2 = make([]int32, n)
+	}
+	k0, k1 := b.keys[0][:n], b.keys[1][:n]
+	o0, o1 := b.order[:n], b.idx2[:n]
+	const bits, passes = 11, 6
+	var hist [passes][1 << bits]int32
+	for i := range qs {
+		u := math.Float64bits(qs[i].depth)
+		if u>>63 != 0 {
+			u = ^u // negative: flip every bit
+		} else {
+			u |= 1 << 63 // positive: set the sign bit
+		}
+		u = ^u // ascending key = descending depth
+		k0[i] = u
+		o0[i] = int32(i)
+		for p := 0; p < passes; p++ {
+			hist[p][(u>>(p*bits))&(1<<bits-1)]++
+		}
+	}
+	for p := 0; p < passes; p++ {
+		h := &hist[p]
+		shift := uint(p * bits)
+		if h[(k0[0]>>shift)&(1<<bits-1)] == int32(n) {
+			continue // every key has this digit: the pass would change nothing
+		}
+		var sum int32
+		for d := range h {
+			c := h[d]
+			h[d] = sum
+			sum += c
+		}
+		for i := 0; i < n; i++ {
+			d := (k0[i] >> shift) & (1<<bits - 1)
+			j := h[d]
+			h[d]++
+			k1[j] = k0[i]
+			o1[j] = o0[i]
+		}
+		k0, k1 = k1, k0
+		o0, o1 = o1, o0
+	}
+	return o0
 }
 
 // lastQuads is how many quads the last world flush drew (for profiling).
@@ -912,8 +1231,22 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 	perfBegin(secFlush)
 	defer perfEnd(secFlush)
 	lastQuads = len(b.quads) + len(b.glow)
-	b.flush(dst, b.quads, ebiten.BlendSourceOver)
-	b.flush(dst, b.glow, ebiten.BlendLighter)
+	for i := range b.extQ {
+		lastQuads += len(b.extQ[i]) + len(b.extG[i])
+	}
+	b.flush(dst, append(b.extQ, b.quads), ebiten.BlendSourceOver)
+	b.flush(dst, append(b.extG, b.glow), ebiten.BlendLighter)
+	b.extQ, b.extG = b.extQ[:0], b.extG[:0]
+}
+
+// drawFirst queues the side batches' quads to be drawn ahead of b's own,
+// in argument order, as if they had been drawn into b before anything
+// else (b must not have quads of its own from before they were split off).
+func (b *Batch) drawFirst(sides ...*Batch) {
+	for _, s := range sides {
+		b.extQ = append(b.extQ, s.quads)
+		b.extG = append(b.extG, s.glow)
+	}
 }
 
 // ---------------------------------------------------------------- 2D helpers
@@ -962,21 +1295,27 @@ func strokeRoundRect(dst *ebiten.Image, x, y, w, h, r, sw float64, c color.Color
 func drawSprite(dst *ebiten.Image, spr Sprite, x, y, w, h float64, c color.RGBA, additive bool) {
 	perf.cur.sprite++
 	cc := cf(c)
-	vs := []ebiten.Vertex{
-		{DstX: float32(x), DstY: float32(y), SrcX: spr.X0, SrcY: spr.Y0},
-		{DstX: float32(x + w), DstY: float32(y), SrcX: spr.X1, SrcY: spr.Y0},
-		{DstX: float32(x + w), DstY: float32(y + h), SrcX: spr.X1, SrcY: spr.Y1},
-		{DstX: float32(x), DstY: float32(y + h), SrcX: spr.X0, SrcY: spr.Y1},
-	}
+	// package scratch: 2D drawing happens on the main goroutine only, and
+	// DrawTriangles copies the vertices before it returns
+	vs := spriteVerts[:]
+	vs[0] = ebiten.Vertex{DstX: float32(x), DstY: float32(y), SrcX: spr.X0, SrcY: spr.Y0}
+	vs[1] = ebiten.Vertex{DstX: float32(x + w), DstY: float32(y), SrcX: spr.X1, SrcY: spr.Y0}
+	vs[2] = ebiten.Vertex{DstX: float32(x + w), DstY: float32(y + h), SrcX: spr.X1, SrcY: spr.Y1}
+	vs[3] = ebiten.Vertex{DstX: float32(x), DstY: float32(y + h), SrcX: spr.X0, SrcY: spr.Y1}
 	for i := range vs {
 		vs[i].ColorR, vs[i].ColorG, vs[i].ColorB, vs[i].ColorA = cc[0]*cc[3], cc[1]*cc[3], cc[2]*cc[3], cc[3]
 	}
-	op := &ebiten.DrawTrianglesOptions{}
+	spriteOp = ebiten.DrawTrianglesOptions{}
 	if additive {
-		op.Blend = ebiten.BlendLighter
+		spriteOp.Blend = ebiten.BlendLighter
 	}
-	dst.DrawTriangles(vs, []uint16{0, 1, 2, 0, 2, 3}, atlas, op)
+	dst.DrawTriangles(vs, quadIndices[:6], atlas, &spriteOp)
 }
+
+var (
+	spriteVerts [4]ebiten.Vertex
+	spriteOp    ebiten.DrawTrianglesOptions
+)
 
 // fillRectA fills with colour c at opacity a (straight alpha in, so the
 // premultiplication vector drawing expects is done here).

@@ -3,6 +3,7 @@ package main
 import (
 	"image/color"
 	"math"
+	"sync"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -105,113 +106,56 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		g.collectLights(B, L)
 	}
 
-	if !classic {
-		g.drawScenery(B, L)
+	// the scenery and the arena (floor, walls, posts) don't depend on play,
+	// so they are built on their own goroutines into side batches while
+	// this one draws everything else; the three are then joined in the
+	// order they always had, so the frame is the same quad for quad
+	// load the shared textures up front, in the order a frame has always
+	// first asked for them (the ground under the scenery, the floor, the
+	// brick sheet): the order fixes where each lands in the texture atlas
+	if !classic && bio.ID != WClouds { // the cloud world has no ground (drawScenery)
+		groundTexture(bio.ID)
+	}
+	floorTexture(L)
+	brickSheet()
+	sScen, sArena := B.side(0), B.side(1)
+	nq0, ng0 := len(B.quads), len(B.glow) // what is already in B stays first
+	var wg sync.WaitGroup
+	var crash [2]any
+	part := func(i int, f func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { crash[i] = recover() }()
+			f()
+		}()
+	}
+	part(0, func() {
+		if !classic {
+			g.drawScenery(sScen, L)
+		}
+	})
+	part(1, func() { g.drawArena(sArena, L, classic) })
+	defer func() {
+		// joined before the flush below; also on a panic in this goroutine
+		wg.Wait()
+	}()
+	join := func() {
+		wg.Wait()
+		for _, c := range crash {
+			if c != nil {
+				panic(c)
+			}
+		}
+		perfMark(0, len(sScen.quads)+len(sScen.glow))
+		perfMark(1, len(sScen.quads)+len(sScen.glow)+len(sArena.quads)+len(sArena.glow))
+		if nq0 == 0 && ng0 == 0 {
+			B.drawFirst(sScen, sArena) // flushed in place, no copying
+		} else {
+			B.insertSides(nq0, ng0, sScen, sArena)
+		}
 	}
 
-	// platform under the arena
-	n0 := len(B.quads)
-	B.Box(-HalfW-1.6, -0.6, -4, HalfW+1.6, -0.02, FarZ+1.2, darken(bio.Wall, 0.6), sprWhite, 0)
-	for i := n0; i < len(B.quads); i++ {
-		B.quads[i].depth += 3000
-	}
-	// floor tiles, clipped to the arena shape
-	gp := 0.55 + 0.15*math.Sin(L.T*1.3)
-	fspr := matFloor[bio.FloorMat]
-	if bio.Neon {
-		fspr = floorSprites[L.Vis.FloorPattern%len(floorSprites)]
-	}
-	ft := floorTexture(L)
-	if classic {
-		ft = nil
-	}
-	if ft != nil {
-		drawBakedFloor(B, L, ft, gp)
-	}
-	for z := -3.0; z < FarZ+1 && ft == nil; z += 2 {
-		for x := -HalfW; x < HalfW; x += 2 {
-			if !levelgen.Inside(L.Walls, levelgen.Pt{X: x + 1, Z: math.Min(z+1, FarZ-0.2)}) {
-				continue
-			}
-			c := bio.Floor
-			if bio.Neon {
-				if int(math.Floor(z/2))%4 == 0 {
-					c = mixc(bio.Floor, bio.FloorAlt, 0.6)
-				}
-			} else if (int(math.Floor(z/2))+int(math.Floor(x/2)))%2 == 0 {
-				c = bio.FloorAlt
-			}
-			if bio.ID == WMachine && z < 1 {
-				c = color.RGBA{230, 170, 40, 255} // hazard strip near the paddle
-			}
-			pts := [4]V3{{x, 0, z + 2}, {x + 2, 0, z + 2}, {x + 2, 0, z}, {x, 0, z}}
-			B.Quad(pts, fspr, B.lit(c, V3{0, 1, 0}), [4]float32{1, 1, 1, 1}, false)
-			B.quads[len(B.quads)-1].depth += 2000
-			if bio.Neon {
-				B.Quad(pts, fspr, alpha(c, 0.3*gp), [4]float32{1, 1, 1, 1}, true)
-			}
-		}
-	}
-	// glowing lane line near the paddle
-	B.Decal(0, PaddleZ-1.3, 0.01, HalfW*2, 0.12, sprWhite, alpha(bio.Trim, 0.35), true)
-	g.drawArenaSigil(B, L)
-	// walls follow the arena outline
-	wallH := 1.4
-	wallTop, wallSide := matTop[bio.BrickMat], matSide[bio.BrickMat]
-	for i := 0; i+1 < len(L.Walls); i++ {
-		a, c := L.Walls[i], L.Walls[i+1]
-		ex, ez := c.X-a.X, c.Z-a.Z
-		ln := math.Hypot(ex, ez)
-		ux, uz := ex/ln, ez/ln
-		nx, nz := -uz, ux // inward normal
-		if nx*(0-a.X)+nz*(10-a.Z) < 0 {
-			nx, nz = -nx, -nz
-		}
-		steps := int(math.Ceil(ln / 2.2))
-		wm := wallModel(bio.ID)
-		for k := 0; k < steps; k++ {
-			t0, t1 := float64(k)/float64(steps)*ln, float64(k+1)/float64(steps)*ln
-			p0 := [2]float64{a.X + ux*t0, a.Z + uz*t0}
-			p1 := [2]float64{a.X + ux*t1, a.Z + uz*t1}
-			if wm != nil {
-				// the modelled wall section, turned to face the arena
-				mx, mz := (p0[0]+p1[0])/2, (p0[1]+p1[1])/2
-				B.Draw(wm, V3{mx, 0, mz}, V3{(t1 - t0) / 2 * 1.02, 1, 1}, rotXYZ(0, math.Atan2(-nx, -nz), 0), color.RGBA{}, 0)
-				if bio.Neon {
-					B.Quad([4]V3{{p0[0], wallH + 0.01, p0[1]}, {p1[0], wallH + 0.01, p1[1]},
-						{p1[0] - nx*0.2, wallH + 0.01, p1[1] - nz*0.2}, {p0[0] - nx*0.2, wallH + 0.01, p0[1] - nz*0.2}},
-						sprWhite, bio.Trim, [4]float32{1, 1, 1, 1}, true)
-				}
-				continue
-			}
-			fp := [4][2]float64{p0, p1, {p1[0] - nx*1.4, p1[1] - nz*1.4}, {p0[0] - nx*1.4, p0[1] - nz*1.4}}
-			if math.Abs(ux) < 0.01 || math.Abs(uz) < 0.01 {
-				// axis-aligned segments get the textured material
-				x0, x1 := math.Min(fp[0][0], fp[2][0]), math.Max(fp[0][0], fp[2][0])
-				z0, z1 := math.Min(fp[0][1], fp[2][1]), math.Max(fp[0][1], fp[2][1])
-				B.BoxTex(x0, 0, z0, x1, wallH, z1, bio.Wall, wallTop, wallSide, 0)
-			} else {
-				B.Prism(fp, 0, wallH, 1, bio.Wall, 0)
-			}
-			trimCol := bio.Trim
-			B.Quad([4]V3{{p0[0], wallH + 0.01, p0[1]}, {p1[0], wallH + 0.01, p1[1]},
-				{p1[0] - nx*0.2, wallH + 0.01, p1[1] - nz*0.2}, {p0[0] - nx*0.2, wallH + 0.01, p0[1] - nz*0.2}},
-				sprWhite, trimCol, [4]float32{1, 1, 1, 1}, bio.Neon)
-		}
-	}
-	// corner posts
-	posts := []levelgen.Pt{}
-	for i, v := range L.Walls {
-		if i > 0 && i < len(L.Walls)-1 {
-			posts = append(posts, v)
-		}
-	}
-	for z := 0.0; z <= 12; z += 6.5 {
-		posts = append(posts, levelgen.Pt{X: -HalfW - 0.7, Z: z}, levelgen.Pt{X: HalfW + 0.7, Z: z})
-	}
-	for _, v := range posts {
-		g.drawPost(B, L, v.X, v.Z, wallH)
-	}
 	// barrier
 	if L.Barrier > 0 {
 		a := 0.45 + 0.2*math.Sin(L.T*6)
@@ -376,10 +320,123 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		B.Decal(rg.X, rg.Z, 0.1, r, r, sprRing, alpha(rg.Col, 1-f), true)
 		B.Decal(rg.X, rg.Z, 0.1, r*0.8, r*0.8, sprSoft, alpha(rg.Col, (1-f)*0.6), true)
 	}
+	perfMark(2, len(B.quads)+len(B.glow)) // the main part, before scenery and arena join
+	join()
 	B.Flush(screen)
 
 	if !g.deferOverlay {
 		g.drawWorldOverlay(screen, L, 1)
+	}
+}
+
+// drawArena draws the platform, the floor, the lane line, the sigil, the
+// walls and the corner posts. It only reads the level, so it can run
+// alongside the rest of the frame.
+func (g *Game) drawArena(B *Batch, L *Level, classic bool) {
+	bio := L.Biome
+
+	// platform under the arena
+	n0 := len(B.quads)
+	B.Box(-HalfW-1.6, -0.6, -4, HalfW+1.6, -0.02, FarZ+1.2, darken(bio.Wall, 0.6), sprWhite, 0)
+	for i := n0; i < len(B.quads); i++ {
+		B.quads[i].depth += 3000
+	}
+	// floor tiles, clipped to the arena shape
+	gp := 0.55 + 0.15*math.Sin(L.T*1.3)
+	fspr := matFloor[bio.FloorMat]
+	if bio.Neon {
+		fspr = floorSprites[L.Vis.FloorPattern%len(floorSprites)]
+	}
+	ft := floorTexture(L)
+	if classic {
+		ft = nil
+	}
+	if ft != nil {
+		drawBakedFloor(B, L, ft, gp)
+	}
+	for z := -3.0; z < FarZ+1 && ft == nil; z += 2 {
+		for x := -HalfW; x < HalfW; x += 2 {
+			if !levelgen.Inside(L.Walls, levelgen.Pt{X: x + 1, Z: math.Min(z+1, FarZ-0.2)}) {
+				continue
+			}
+			c := bio.Floor
+			if bio.Neon {
+				if int(math.Floor(z/2))%4 == 0 {
+					c = mixc(bio.Floor, bio.FloorAlt, 0.6)
+				}
+			} else if (int(math.Floor(z/2))+int(math.Floor(x/2)))%2 == 0 {
+				c = bio.FloorAlt
+			}
+			if bio.ID == WMachine && z < 1 {
+				c = color.RGBA{230, 170, 40, 255} // hazard strip near the paddle
+			}
+			pts := [4]V3{{x, 0, z + 2}, {x + 2, 0, z + 2}, {x + 2, 0, z}, {x, 0, z}}
+			B.Quad(pts, fspr, B.lit(c, V3{0, 1, 0}), [4]float32{1, 1, 1, 1}, false)
+			B.quads[len(B.quads)-1].depth += 2000
+			if bio.Neon {
+				B.Quad(pts, fspr, alpha(c, 0.3*gp), [4]float32{1, 1, 1, 1}, true)
+			}
+		}
+	}
+	// glowing lane line near the paddle
+	B.Decal(0, PaddleZ-1.3, 0.01, HalfW*2, 0.12, sprWhite, alpha(bio.Trim, 0.35), true)
+	g.drawArenaSigil(B, L)
+	// walls follow the arena outline
+	wallH := 1.4
+	wallTop, wallSide := matTop[bio.BrickMat], matSide[bio.BrickMat]
+	for i := 0; i+1 < len(L.Walls); i++ {
+		a, c := L.Walls[i], L.Walls[i+1]
+		ex, ez := c.X-a.X, c.Z-a.Z
+		ln := math.Hypot(ex, ez)
+		ux, uz := ex/ln, ez/ln
+		nx, nz := -uz, ux // inward normal
+		if nx*(0-a.X)+nz*(10-a.Z) < 0 {
+			nx, nz = -nx, -nz
+		}
+		steps := int(math.Ceil(ln / 2.2))
+		wm := wallModel(bio.ID)
+		for k := 0; k < steps; k++ {
+			t0, t1 := float64(k)/float64(steps)*ln, float64(k+1)/float64(steps)*ln
+			p0 := [2]float64{a.X + ux*t0, a.Z + uz*t0}
+			p1 := [2]float64{a.X + ux*t1, a.Z + uz*t1}
+			if wm != nil {
+				// the modelled wall section, turned to face the arena
+				mx, mz := (p0[0]+p1[0])/2, (p0[1]+p1[1])/2
+				B.Draw(wm, V3{mx, 0, mz}, V3{(t1 - t0) / 2 * 1.02, 1, 1}, rotXYZ(0, math.Atan2(-nx, -nz), 0), color.RGBA{}, 0)
+				if bio.Neon {
+					B.Quad([4]V3{{p0[0], wallH + 0.01, p0[1]}, {p1[0], wallH + 0.01, p1[1]},
+						{p1[0] - nx*0.2, wallH + 0.01, p1[1] - nz*0.2}, {p0[0] - nx*0.2, wallH + 0.01, p0[1] - nz*0.2}},
+						sprWhite, bio.Trim, [4]float32{1, 1, 1, 1}, true)
+				}
+				continue
+			}
+			fp := [4][2]float64{p0, p1, {p1[0] - nx*1.4, p1[1] - nz*1.4}, {p0[0] - nx*1.4, p0[1] - nz*1.4}}
+			if math.Abs(ux) < 0.01 || math.Abs(uz) < 0.01 {
+				// axis-aligned segments get the textured material
+				x0, x1 := math.Min(fp[0][0], fp[2][0]), math.Max(fp[0][0], fp[2][0])
+				z0, z1 := math.Min(fp[0][1], fp[2][1]), math.Max(fp[0][1], fp[2][1])
+				B.BoxTex(x0, 0, z0, x1, wallH, z1, bio.Wall, wallTop, wallSide, 0)
+			} else {
+				B.Prism(fp, 0, wallH, 1, bio.Wall, 0)
+			}
+			trimCol := bio.Trim
+			B.Quad([4]V3{{p0[0], wallH + 0.01, p0[1]}, {p1[0], wallH + 0.01, p1[1]},
+				{p1[0] - nx*0.2, wallH + 0.01, p1[1] - nz*0.2}, {p0[0] - nx*0.2, wallH + 0.01, p0[1] - nz*0.2}},
+				sprWhite, trimCol, [4]float32{1, 1, 1, 1}, bio.Neon)
+		}
+	}
+	// corner posts
+	posts := []levelgen.Pt{}
+	for i, v := range L.Walls {
+		if i > 0 && i < len(L.Walls)-1 {
+			posts = append(posts, v)
+		}
+	}
+	for z := 0.0; z <= 12; z += 6.5 {
+		posts = append(posts, levelgen.Pt{X: -HalfW - 0.7, Z: z}, levelgen.Pt{X: HalfW + 0.7, Z: z})
+	}
+	for _, v := range posts {
+		g.drawPost(B, L, v.X, v.Z, wallH)
 	}
 }
 
