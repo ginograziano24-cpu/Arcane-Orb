@@ -218,7 +218,6 @@ func benchPilot(g *Game) Input {
 		L.release()
 	}
 	if g.run != nil {
-		g.run.HP = g.run.Stats.MaxHP
 		g.run.Lives = 3 // topped up every frame, so the tour never ends early
 	}
 	return in

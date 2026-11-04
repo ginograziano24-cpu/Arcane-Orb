@@ -254,34 +254,38 @@ type Level struct {
 	laserT           float64
 	stun             float64
 
-	T, Shake, Flash float64
-	Combo           int
-	comboT          float64
-	fuses           []fuse                         // powder kegs about to go off
-	reserve         [][levelgen.Cols]levelgen.Cell // rows waiting to march in behind the formation
-	reinforced      int                            // required bricks that have marched in so far
-	Frenzy          float64
-	impacts         int
-	killsSinceHeal  int
-	hydraCount      int
-	GoldEarned      int
-	Cleared, Done   bool
-	clearT          float64
-	propSeed        int64
-	ambientT        float64
-	propsX          []V3
-	paddleBounce    float64
-	hurtFlash       float64
-	Walls           []levelgen.Pt
-	Vis             Visuals
-	Designed        bool
-	rushBonus       float64 // Gold Rush damage bonus
-	bhCount         int     // bricks towards the next black hole
-	eruptDepth      int     // guards chained eruptions
-	Critters        []*Critter
-	critT           float64 // seconds to the next critter
-	dropsSeen       int     // capsules on the board last frame (thieves watch for new ones)
-	critters        int     // critters popped this chamber
+	T, Shake, Flash   float64
+	Combo             int
+	comboT            float64
+	fuses             []fuse                         // powder kegs about to go off
+	work, activeT     float64                        // brick health removed, and seconds of play (power.go)
+	powerUsed         float64                        // the carried run's scale this chamber was built with
+	reserve           [][levelgen.Cols]levelgen.Cell // rows waiting to march in behind the formation
+	reinforced        int                            // required bricks that have marched in so far
+	Frenzy            float64
+	impacts           int
+	killsSinceHeal    int
+	critsSinceBarrier int
+	slowServe         float64 // Iron Will: seconds of slowed orbs once the next serve flies
+	hydraCount        int
+	GoldEarned        int
+	Cleared, Done     bool
+	clearT            float64
+	propSeed          int64
+	ambientT          float64
+	propsX            []V3
+	paddleBounce      float64
+	hurtFlash         float64
+	Walls             []levelgen.Pt
+	Vis               Visuals
+	Designed          bool
+	rushBonus         float64 // Gold Rush damage bonus
+	bhCount           int     // bricks towards the next black hole
+	eruptDepth        int     // guards chained eruptions
+	Critters          []*Critter
+	critT             float64 // seconds to the next critter
+	dropsSeen         int     // capsules on the board last frame (thieves watch for new ones)
+	critters          int     // critters popped this chamber
 }
 
 func (g *Game) newLevel(node NodeType, seed int64) *Level {
@@ -347,7 +351,8 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 	L.Walls = levelgen.Arena(L.Data.Shape)
 	L.PaddleX = 0
 	L.PaddleW = baseW * r.Stats.PaddleWidth
-	L.Barrier = r.Stats.BarrierPerLevel
+	L.Barrier = min(5, r.Stats.BarrierPerLevel+r.NextBarrier)
+	r.NextBarrier = 0
 	L.propSeed = seed
 	pr := rand.New(rand.NewSource(seed))
 	for i := 0; i < 14; i++ {
@@ -717,6 +722,9 @@ func (L *Level) Update(dt float64, in Input) {
 		L.updateBoss(dt)
 	}
 	L.updateAdvance(dt)
+	if !L.Cleared && L.introT <= 0 && L.waveT <= 0 && L.ballsInPlay() {
+		L.activeT += dt // the time the build is actually at work (power.go)
+	}
 	L.updateDrops(dt)
 	L.updateEffects(dt)
 
@@ -786,6 +794,10 @@ func (L *Level) release() bool {
 		ang := t*50*math.Pi/180 + (L.rng.Float64()-0.5)*0.1
 		b.VX, b.VZ = sp*math.Sin(ang), sp*math.Cos(ang)
 		b.Stuck = false
+		if L.slowServe > 0 {
+			L.timeWarp = math.Max(L.timeWarp, L.slowServe) // Iron Will
+			L.slowServe = 0
+		}
 		if r.Stats.OpeningCrit > 0 {
 			b.Charged = true
 		}
@@ -1191,7 +1203,9 @@ func (L *Level) damage(b *Brick, h Hit) (bool, bool) {
 	if h.Void && r.Stats.VoidDouble {
 		dmg *= 3
 	}
-	r.recordDmg(h.Src, math.Min(dmg, math.Max(0, b.HP)))
+	removed := math.Min(dmg, math.Max(0, b.HP))
+	r.recordDmg(h.Src, removed)
+	L.work += removed
 	b.HP -= dmg
 	if b.HP > 0 && r.Stats.ExecuteBelow > 0 && !b.Core && b.HP <= b.MaxHP*r.Stats.ExecuteBelow {
 		b.HP = 0
@@ -1221,10 +1235,10 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	if s.Momentum {
 		dmg *= 1 + 0.04*math.Min(15, float64(ball.Momentum))
 	}
-	if s.BloodMoon && r.HP < s.MaxHP/2 {
+	if s.BloodMoon && r.Lives <= 1 {
 		dmg *= 1.75
 	}
-	if s.Berserker && r.HP < s.MaxHP/2 {
+	if s.Berserker && r.Lives <= 1 {
 		dmg *= 1.5
 	}
 	if s.Ricochet > 0 {
@@ -1302,8 +1316,12 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	}
 	if crit {
 		L.g.snd.Play("crit")
-		if s.CritHeal > 0 {
-			r.HP = math.Min(s.MaxHP, r.HP+s.CritHeal)
+		if s.CritBarrier > 0 {
+			L.critsSinceBarrier++
+			if L.critsSinceBarrier >= s.CritBarrier {
+				L.critsSinceBarrier = 0
+				L.raiseBarrier(1, 3, "Vampire Fang")
+			}
 		}
 		if s.CritCoin > 0 && L.rng.Float64() < s.CritCoin {
 			L.gainGold(1, bx, bz, true)
@@ -1467,12 +1485,12 @@ func (L *Level) destroy(b *Brick, h Hit) {
 	if s.GoldPerBrick {
 		L.gainGold(1, x, z, false)
 	}
-	// lifesteal / hydra
-	if s.Lifesteal > 0 {
+	// leech / hydra
+	if s.BarrierEvery > 0 {
 		L.killsSinceHeal++
-		if L.killsSinceHeal >= s.Lifesteal {
+		if L.killsSinceHeal >= s.BarrierEvery {
 			L.killsSinceHeal = 0
-			r.HP = math.Min(s.MaxHP, r.HP+1)
+			L.raiseBarrier(1, 3, "Leech Orb")
 		}
 	}
 	if s.Hydra {
@@ -1877,10 +1895,10 @@ func (L *Level) loseBall() {
 	g := L.g
 	r := g.run
 	L.lostOrbs++
-	if dmg := r.Stats.BallLossDmg; dmg > 0 {
-		// some curses and relics make a drop sting twice
-		r.HP = math.Max(1, r.HP-dmg)
-		L.text(V3{L.PaddleX, 1.2, PaddleZ + 1.4}, fmt.Sprintf("−%.0f", dmg), color.RGBA{255, 100, 100, 255}, false)
+	if lose := min(r.Gold, int(r.Stats.BallLossGold)); lose > 0 {
+		// some curses and relics make a lost life cost gold as well
+		r.Gold -= lose
+		L.text(V3{L.PaddleX, 1.2, PaddleZ + 1.4}, fmt.Sprintf("−%d GOLD", lose), color.RGBA{255, 190, 90, 255}, false)
 	}
 	L.loseLife("ORB LOST")
 	if g.state != StLevel || L.gameOverT > 0 {
@@ -1889,8 +1907,8 @@ func (L *Level) loseBall() {
 	if r.Stats.DropBarrier > 0 {
 		L.Barrier = min(5, L.Barrier+r.Stats.DropBarrier)
 	}
-	if r.Stats.LifeHeal > 0 {
-		r.HP = math.Min(r.Stats.MaxHP, r.HP+r.Stats.LifeHeal)
+	if r.Stats.LifeSlow > 0 {
+		L.slowServe = r.Stats.LifeSlow // Iron Will: the next serve starts slowed
 	}
 	L.Timers = [numPowers]float64{}
 	L.tempSize = 0
@@ -1901,41 +1919,35 @@ func (L *Level) loseBall() {
 	L.spawnServe()
 }
 
-func (L *Level) hurt(dmg float64, label string) {
+// rockHit is a Guardian's falling rock striking the paddle: it shatters
+// a barrier if there is one, and otherwise stuns the paddle.
+func (L *Level) rockHit() {
 	g := L.g
-	r := g.run
-	if r.Duel {
-		// no health in a duel: a hit stuns the paddle instead
-		if L.paddleGone <= 0 {
-			L.explodePaddle()
-		}
-		L.text(V3{L.PaddleX, 1.5, PaddleZ + 2}, label, color.RGBA{255, 100, 100, 255}, true)
-		return
-	}
-	r.HP -= dmg
 	L.hurtFlash = 1
 	L.Shake = math.Max(L.Shake, 0.6)
-	L.text(V3{L.PaddleX, 1.5, PaddleZ + 2}, fmt.Sprintf("%s  −%.0f", label, dmg), color.RGBA{255, 100, 100, 255}, true)
-	if r.HP <= 0 {
-		if r.Stats.Phoenix && !r.PhoenixUsed {
-			r.PhoenixUsed = true
-			r.HP = 50
-			L.text(V3{L.PaddleX, 2.5, PaddleZ + 3}, "PHOENIX REBIRTH!", color.RGBA{255, 160, 60, 255}, true)
-			g.snd.PlayKeyed("heal")
-			g.snd.Duck(0.5, 1.5)
-			return
-		}
-		// out of health: it costs a life, and the health comes back
-		r.HP = r.Stats.MaxHP
-		L.loseLife("HEALTH LOST")
-		if L.gameOverT <= 0 {
-			L.Balls = nil
-			L.spawnServe()
-		}
-		return
+	if L.Barrier > 0 && !g.run.Duel {
+		L.Barrier--
+		L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: BarrierZ, MaxR: 3, Life: 0.4, Max: 0.4, Col: color.RGBA{170, 140, 255, 255}})
+		L.text(V3{L.PaddleX, 1.5, PaddleZ + 2}, "BARRIER SHATTERED", color.RGBA{190, 170, 255, 255}, true)
+		L.stun = 0.4
+	} else {
+		L.text(V3{L.PaddleX, 1.5, PaddleZ + 2}, "CRUSHED", color.RGBA{255, 100, 100, 255}, true)
+		L.stun = 1.1
 	}
 	g.react(reactHurt)
 	g.snd.Play("lose")
+}
+
+// raiseBarrier adds n barrier charges, up to cap, with a flourish.
+func (L *Level) raiseBarrier(n, cap int, src string) {
+	if L.Barrier >= cap {
+		return
+	}
+	L.Barrier = min(cap, L.Barrier+n)
+	L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: BarrierZ, MaxR: 3, Life: 0.4, Max: 0.4, Col: color.RGBA{170, 140, 255, 255}})
+	L.text(V3{L.PaddleX, 1.3, PaddleZ + 1.6}, "+BARRIER", color.RGBA{190, 170, 255, 255}, false)
+	L.g.snd.Play("shield")
+	_ = src
 }
 
 func (L *Level) clear() {
@@ -1943,6 +1955,7 @@ func (L *Level) clear() {
 	r := g.run
 	L.Cleared = true
 	L.clearT = 0
+	r.notePower(L)
 	if L == g.level && r.SeedCode != "MENU" {
 		g.unlock("ACH_FIRST_CHAMBER")
 		L.omenCleared()
@@ -1961,10 +1974,12 @@ func (L *Level) clear() {
 		reward += 60
 	}
 	L.gainGold(reward, 0, 0, false)
-	if r.Stats.HealOnClear > 0 && r.HP < r.Stats.MaxHP {
-		heal := math.Min(r.Stats.MaxHP-r.HP, r.Stats.HealOnClear)
-		r.HP += heal
-		L.text(V3{0, 2.5, 8}, fmt.Sprintf("+%.0f HEALTH", heal), color.RGBA{120, 255, 150, 255}, true)
+	if r.Stats.GoldOnClear > 0 {
+		L.gainGold(int(r.Stats.GoldOnClear), 0, 0, false)
+	}
+	if r.Stats.CleanClearGold > 0 && L.lostOrbs == 0 && L.Node != NBoss {
+		L.gainGold(int(r.Stats.CleanClearGold), 0, 0, false)
+		L.text(V3{0, 2.5, 8}, fmt.Sprintf("FLAWLESS  +%d GOLD", int(r.Stats.CleanClearGold)), color.RGBA{255, 220, 120, 255}, true)
 	}
 	if r.Stats.Interest > 0 {
 		cap := 30.0
@@ -2233,8 +2248,7 @@ func (L *Level) updateDrops(dt float64) {
 		rk.X += (rk.TX - rk.X) * math.Min(1, dt*0.9)
 		rk.Spin += dt * 5
 		if math.Abs(rk.Z-PaddleZ) < 0.9 && math.Abs(rk.X-L.PaddleX) < L.PaddleW/2+0.5 {
-			L.hurt(8, "CRUSHED")
-			L.stun = 0.6
+			L.rockHit()
 			L.debris(V3{rk.X, 0.5, rk.Z}, 16, color.RGBA{120, 110, 100, 255})
 			L.Rocks = append(L.Rocks[:i], L.Rocks[i+1:]...)
 			continue

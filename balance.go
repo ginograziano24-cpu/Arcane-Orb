@@ -147,10 +147,8 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScena
 				seed := int64(1000*sc.Act + 37*s + sc.Depth)
 				L := g.newLevel(node, seed)
 				g.level, g.state = L, StLevel
-				r.HP = r.Stats.MaxHP
 				ap := &sloppy{rng: rand.New(rand.NewSource(seed * 7)), errSD: errSD, reactMS: react}
 				const dt = 1.0 / 60
-				hp0 := r.HP
 				res.Start += float64(L.Left)
 				lost, abil := 0, 0
 				t := 0.0
@@ -173,11 +171,7 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScena
 					if in.Ability {
 						abil++
 					}
-					hpB := r.HP
 					L.Update(dt, in)
-					if r.HP < hpB {
-						res.Taken += hpB - r.HP
-					}
 					for L.pendingPick > 0 { // the autopilot takes a random cache item
 						L.pendingPick--
 						res.Caches++
@@ -186,10 +180,6 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScena
 						}
 					}
 					lost += L.lostOrbs - lb
-					if r.HP < 1e5 { // never die in the harness; count the damage
-						hp0 += 1e6
-						r.HP += 1e6
-					}
 				}
 				if L.Cleared {
 					res.Cleared++
@@ -215,7 +205,7 @@ func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScena
 				res.Crushes += float64(L.crushes)
 				res.Reinf += float64(L.reinforced)
 				res.Time += t
-				res.HPLost += hp0 - r.HP
+				res.HPLost += float64(lost) // lives lost (health is gone)
 				res.Orbs += float64(lost)
 				res.Abil += float64(abil)
 			}
@@ -328,9 +318,9 @@ func init() {
 		L.release()
 		front := L.frontZ()
 		L.shiftTarget = CellD * 28
-		hp := r.HP
+		lives := r.Lives
 		step(400)
-		say("advanced: shift=%.2f front %.1f->%.1f left=%d hp %.0f->%.0f", L.shift, front, L.frontZ(), L.Left, hp, r.HP)
+		say("advanced: shift=%.2f front %.1f->%.1f left=%d lives %d->%d", L.shift, front, L.frontZ(), L.Left, lives, r.Lives)
 		// break most of wave 1: it should break early and bring wave 2
 		n := 0
 		for _, b := range L.Bricks {
@@ -364,7 +354,7 @@ func init() {
 		// a new world resets the build
 		r.Gold = 999
 		r.NextAct(&g.save)
-		say("world %d: items=%d gold=%d hp=%.0f/%.0f heat=%d actDepth=%d", r.Act, len(r.Order), r.Gold, r.HP, r.Stats.MaxHP, r.heat(), r.ActDepth)
+		say("world %d: items=%d gold=%d lives=%d/%d heat=%d actDepth=%d", r.Act, len(r.Order), r.Gold, r.Lives, r.maxLives(), r.heat(), r.ActDepth)
 		g.run = nil
 		g.state = StMenu
 		return strings.Join(log, "\n")
@@ -390,8 +380,8 @@ func init() {
 		r.recordDmg("", 1200)
 		r.Map.Nodes[0].Visited = true
 		r.Cur = 0
-		before := fmt.Sprintf("arch=%s act=%d depth=%d gold=%d hp=%.1f lives=%d/%d mods=%d dmg=%.2f crit=%.3f speed=%.2f cur=%d nodes=%d visited0=%v recap=%d/%d",
-			r.Arch.ID, r.Act, r.Depth, r.Gold, r.HP, r.Lives, r.LifeFinds, len(r.Order), r.Stats.Damage, r.Stats.CritChance, r.Stats.SpeedMult, r.Cur, len(r.Map.Nodes), r.Map.Nodes[0].Visited, len(r.rc().Timeline), int(r.rc().Dmg["Orb"]))
+		before := fmt.Sprintf("arch=%s act=%d depth=%d gold=%d lives=%d/%d mods=%d dmg=%.2f crit=%.3f speed=%.2f cur=%d nodes=%d visited0=%v recap=%d/%d",
+			r.Arch.ID, r.Act, r.Depth, r.Gold, r.Lives, r.LifeFinds, len(r.Order), r.Stats.Damage, r.Stats.CritChance, r.Stats.SpeedMult, r.Cur, len(r.Map.Nodes), r.Map.Nodes[0].Visited, len(r.rc().Timeline), int(r.rc().Dmg["Orb"]))
 		say("before %s", before)
 		// map phase
 		b := g.snapRun("map", -1)
@@ -399,8 +389,8 @@ func init() {
 		s := parseSavedRun(b)
 		g.continueRun(s)
 		r2 := g.run
-		after := fmt.Sprintf("arch=%s act=%d depth=%d gold=%d hp=%.1f lives=%d/%d mods=%d dmg=%.2f crit=%.3f speed=%.2f cur=%d nodes=%d visited0=%v recap=%d/%d",
-			r2.Arch.ID, r2.Act, r2.Depth, r2.Gold, r2.HP, r2.Lives, r2.LifeFinds, len(r2.Order), r2.Stats.Damage, r2.Stats.CritChance, r2.Stats.SpeedMult, r2.Cur, len(r2.Map.Nodes), r2.Map.Nodes[0].Visited, len(r2.rc().Timeline), int(r2.rc().Dmg["Orb"]))
+		after := fmt.Sprintf("arch=%s act=%d depth=%d gold=%d lives=%d/%d mods=%d dmg=%.2f crit=%.3f speed=%.2f cur=%d nodes=%d visited0=%v recap=%d/%d",
+			r2.Arch.ID, r2.Act, r2.Depth, r2.Gold, r2.Lives, r2.LifeFinds, len(r2.Order), r2.Stats.Damage, r2.Stats.CritChance, r2.Stats.SpeedMult, r2.Cur, len(r2.Map.Nodes), r2.Map.Nodes[0].Visited, len(r2.rc().Timeline), int(r2.rc().Dmg["Orb"]))
 		say("after  %s", after)
 		say("match=%v state=%v (map=%v)", before == after, g.state, g.state == StMap)
 		// node phase: same chamber layout on resume
@@ -447,7 +437,7 @@ func init() {
 		g.hero = heroPortrait{}
 		L := g.newLevel(NCombat, 99)
 		g.level, g.state = L, StLevel
-		say("start lives=%d hp=%.0f", r.Lives, r.HP)
+		say("start lives=%d", r.Lives)
 		step := func(n int, in Input) {
 			for i := 0; i < n && g.state == StLevel; i++ {
 				L.Update(1.0/60, in)
@@ -475,10 +465,10 @@ func init() {
 		}
 		step(110, Input{UseKeys: true})
 		say("after heart lives=%d finds=%d", r.Lives, r.LifeFinds)
-		// health runs dry
-		L.hurt(r.HP+5, "TEST")
-		say("after hp loss lives=%d hp=%.0f", r.Lives, r.HP)
-		// last life (once the paddle has reformed from the health loss)
+		// a Guardian's rock strikes the paddle
+		L.rockHit()
+		say("after rock hit lives=%d barrier=%d stun=%.1f", r.Lives, L.Barrier, L.stun)
+		// last life (once the paddle has reformed)
 		step(90, Input{UseKeys: true})
 		L.release()
 		for _, b := range L.Balls {

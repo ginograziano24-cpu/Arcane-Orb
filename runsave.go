@@ -47,7 +47,7 @@ type savedRun struct {
 	ActDepth                                int
 	MapRows                                 int
 	Map                                     []savedNode
-	HP                                      float64
+	HP                                      float64 // unused since health was removed; kept so old saves load
 	Gold                                    int
 	Mods                                    map[string]int
 	Order                                   []string
@@ -68,6 +68,12 @@ type savedRun struct {
 	Elapsed                                 float64
 	Assisted                                bool
 	Recap                                   *runRecap
+	Carry                                   bool    // v2: the build carries over between acts
+	Power                                   float64 // v2: measured power (power.go)
+	PowerN                                  int
+	PowerI                                  float64
+	PowerItems                              int
+	NextBarrier                             int // barriers waiting for the next chamber
 }
 
 func runPath() string { return filepath.Join(filepath.Dir(savePath()), "run.json") }
@@ -94,14 +100,15 @@ func (g *Game) snapRun(phase string, node int) []byte {
 	if r == nil || r.Duel || r.SeedCode == "MENU" || r.SeedCode == "SIM" || r.SeedCode == "TRAILER" || r.SeedCode == "LIFE" || r.FinalScore != 0 && !r.Endless {
 		return nil
 	}
-	s := savedRun{Version: 1, Phase: phase, Node: node, Endless: g.endlessMode, DailyMode: g.daily,
+	s := savedRun{Version: runSaveVersion, Phase: phase, Node: node, Endless: g.endlessMode, DailyMode: g.daily,
 		SeedCode: r.SeedCode, SeedN: r.SeedN, Daily: r.Daily, Arch: r.Arch.ID, Act: r.Act, Cur: r.Cur, Depth: r.Depth, ActDepth: r.ActDepth,
-		MapRows: r.Map.Rows, HP: r.HP, Gold: r.Gold, Mods: r.Mods, Order: r.Order, PhoenixUsed: r.PhoenixUsed,
+		MapRows: r.Map.Rows, Gold: r.Gold, Mods: r.Mods, Order: r.Order, PhoenixUsed: r.PhoenixUsed,
 		Lives: r.Lives, LifeFinds: r.LifeFinds, Challenge: r.Challenge, Cursed: r.Cursed, LastWorld: r.LastWorld,
 		Element: r.Element, Rerolls: r.Rerolls, Fused: r.Fused, Scrolls: r.Scrolls, Rank: r.Rank, Asc: r.Asc,
 		RunEndless: r.Endless, EndlessStart: r.EndlessStart, XPPaid: r.xpPaid, ShardsPaid: r.shardsPaid,
 		StatsPaid: r.statsPaid, MetaLuck: r.metaLuck, Bricks: r.Bricks, Bosses: r.Bosses, Elites: r.Elites,
-		MaxCombo: r.MaxCombo, Score: r.Score, Elapsed: time.Since(r.Start).Seconds(), Recap: r.recap, Assisted: r.Assisted}
+		MaxCombo: r.MaxCombo, Score: r.Score, Elapsed: time.Since(r.Start).Seconds(), Recap: r.recap, Assisted: r.Assisted,
+		Carry: r.Carry, Power: r.Power, PowerN: r.PowerN, PowerI: r.PowerI, PowerItems: r.PowerItems, NextBarrier: r.NextBarrier}
 	for _, n := range r.Map.Nodes {
 		s.Map = append(s.Map, savedNode{n.Row, n.Lane, n.Type, n.Next, n.Visited, n.Seed, n.Omen})
 	}
@@ -139,11 +146,19 @@ func loadSavedRun() *savedRun {
 
 func parseSavedRun(b []byte) *savedRun {
 	var s savedRun
-	if json.Unmarshal(b, &s) != nil || s.Version != 1 || archByIDOK(s.Arch) == nil || len(s.Map) == 0 {
+	if json.Unmarshal(b, &s) != nil || s.Version < 1 || s.Version > runSaveVersion || archByIDOK(s.Arch) == nil || len(s.Map) == 0 {
 		return nil
+	}
+	if s.Version == 1 {
+		// saved before builds carried over: keep the build from the next
+		// act on, starting from the power its size suggests
+		s.Carry, s.Power, s.PowerN = true, 0, 0
 	}
 	return &s
 }
+
+// runSaveVersion 2 adds the carried build and its measured power.
+const runSaveVersion = 2
 
 func archByIDOK(id string) *Archetype {
 	for i := range archetypes {
@@ -159,7 +174,7 @@ func archByIDOK(id string) *Archetype {
 func (g *Game) continueRun(s *savedRun) {
 	arch := archByIDOK(s.Arch)
 	r := &Run{SeedCode: s.SeedCode, SeedN: s.SeedN, Daily: s.Daily, Arch: arch, Act: s.Act, Cur: s.Cur, Depth: s.Depth, ActDepth: s.ActDepth,
-		HP: s.HP, Gold: s.Gold, Mods: s.Mods, Order: s.Order, PhoenixUsed: s.PhoenixUsed, Lives: s.Lives, LifeFinds: s.LifeFinds,
+		Gold: s.Gold, Mods: s.Mods, Order: s.Order, PhoenixUsed: s.PhoenixUsed, Lives: s.Lives, LifeFinds: s.LifeFinds,
 		Challenge: s.Challenge, Cursed: s.Cursed, LastWorld: s.LastWorld, Element: s.Element, Rerolls: s.Rerolls,
 		Fused: s.Fused, Scrolls: s.Scrolls, Rank: s.Rank, Asc: s.Asc, Endless: s.RunEndless, EndlessStart: s.EndlessStart,
 		xpPaid: s.XPPaid, shardsPaid: s.ShardsPaid, statsPaid: s.StatsPaid, metaLuck: s.MetaLuck,
@@ -170,6 +185,14 @@ func (g *Game) continueRun(s *savedRun) {
 	}
 	if r.recap == nil {
 		r.recap = newRecap()
+	}
+	r.Carry, r.Power, r.PowerN, r.PowerI, r.PowerItems = s.Carry, s.Power, s.PowerN, s.PowerI, s.PowerItems
+	r.NextBarrier = s.NextBarrier
+	if r.Power <= 0 {
+		r.Power = r.itemPower()
+	}
+	if s.PowerItems == 0 {
+		r.PowerItems = r.buildSize() // no feed-forward jump on loading an older save
 	}
 	r.Rng = rand.New(rand.NewSource(levelgen.Mix(r.SeedN, int64(r.Depth), int64(r.Act), 31)))
 	r.Map = &ActMap{Rows: s.MapRows}

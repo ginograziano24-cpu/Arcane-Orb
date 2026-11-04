@@ -55,7 +55,7 @@ func masterySteps(id string) []masteryStep {
 		{3, sigName, "A signature item joins this origin's item pool.", 0},
 		{4, "Orb Trail", "Your orb burns in this origin's colour.", mOptTrail},
 		{5, "Aspect of " + o.Aspect, o.AspectDesc, mOptAspect},
-		{6, "Starting Gift", "Begin every world already holding " + sigName + ".", mOptGift},
+		{6, "Starting Gift", "Begin every run already holding " + sigName + ".", mOptGift},
 		{7, "Seasoned", "+1 free shop reroll.", 0},
 		{8, "Silver Frame", "A silver frame for your portrait.", 0},
 		{9, "Honed", "+5% damage.", 0},
@@ -89,7 +89,7 @@ var originMastery = map[string]originM{
 
 // signature items: only offered to their origin from Mastery 3
 var sigMods = []*Mod{
-	{ID: "sig_halo", Origin: "guardian", Icon: "halo", Name: "Halo of Mercy", Desc: "Guardian signature: Parry waves strike 2 more bricks, and every Parry restores 1 health.", Rarity: Uncommon, Tags: []string{"guard"}, Max: 1,
+	{ID: "sig_halo", Origin: "guardian", Icon: "halo", Name: "Halo of Mercy", Desc: "Guardian signature: Parry waves strike 2 more bricks, and every 8th Parry raises a barrier.", Rarity: Uncommon, Tags: []string{"guard"}, Max: 1,
 		Apply: func(s *Stats) { s.SigHalo = true }},
 	{ID: "sig_bloodprice", Origin: "berserker", Icon: "fang", Name: "Blood Price", Desc: "Berserker signature: Rage survives dropping the orb and lasts 3 seconds longer.", Rarity: Uncommon, Tags: []string{"power"}, Max: 1,
 		Apply: func(s *Stats) { s.SigBloodPrice = true }},

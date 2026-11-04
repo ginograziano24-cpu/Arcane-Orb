@@ -77,7 +77,7 @@ func (L *Level) updateCritters(dt float64) {
 		L.critT -= dt
 	}
 	if L.critT <= 0 {
-		L.critT = 15 + L.rng.Float64()*10
+		L.critT = (15 + L.rng.Float64()*10) / L.g.run.critterPace()
 		if alive < 2 {
 			L.spawnCritter()
 		}

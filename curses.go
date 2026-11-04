@@ -15,14 +15,14 @@ var curseList = []*Mod{
 		Apply: func(s *Stats) { s.SpeedMult += 0.12 }},
 	{ID: "c_purse", Icon: "coin", Name: "Thin Purse", Desc: "Curse: you find 30% less gold.", Curse: true, Tags: []string{"curse"},
 		Apply: func(s *Stats) { s.GoldMult -= 0.3 }},
-	{ID: "c_fragile", Icon: "shatter", Name: "Fragile Soul", Desc: "Curse: dropping the orb also costs 15 health.", Curse: true, Tags: []string{"curse"},
-		Apply: func(s *Stats) { s.BallLossDmg += 15 }},
+	{ID: "c_fragile", Icon: "shatter", Name: "Fragile Soul", Desc: "Curse: losing a life also costs 10 gold.", Curse: true, Tags: []string{"curse"},
+		Apply: func(s *Stats) { s.BallLossGold += 10 }},
 	{ID: "c_dim", Icon: "moon", Name: "Dimmed Fortune", Desc: "Curse: power-ups drop 40% less often.", Curse: true, Tags: []string{"curse"},
 		Apply: func(s *Stats) { s.Luck -= 0.4 }},
 	{ID: "c_weight", Icon: "urn", Name: "Lattice's Weight", Desc: "Curse: bricks have 15% more health.", Curse: true, Tags: []string{"curse"},
 		Apply: func(s *Stats) { s.BrickHPMult += 0.15 }},
-	{ID: "c_doubt", Icon: "mask", Name: "Shaken Resolve", Desc: "Curse: 15 less max health.", Curse: true, Tags: []string{"curse"},
-		Apply: func(s *Stats) { s.MaxHP -= 15 }},
+	{ID: "c_doubt", Icon: "mask", Name: "Shaken Resolve", Desc: "Curse: timed power-ups wear off 25% sooner.", Curse: true, Tags: []string{"curse"},
+		Apply: func(s *Stats) { s.PowerDur -= 0.25 }},
 }
 
 // curses lists the curses the run carries.
@@ -75,7 +75,6 @@ func (g *Game) cleanse() *Mod {
 		}
 	}
 	r.Recompute(&g.save)
-	baseMaxPenalty(r)
 	g.snd.PlayKeyed("heal")
 	return modByID[id]
 }

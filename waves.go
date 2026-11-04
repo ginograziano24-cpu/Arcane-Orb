@@ -26,6 +26,7 @@ const (
 	advanceSlide = 0.45          // seconds an advance takes
 	advanceStep  = 1.1           // how far the formation creeps each advance (world units)
 	advanceRows  = 2             // advanceStep in rows (CellD 0.55)
+	advanceHold  = 8.5           // the wall doesn't advance while its front is this close to the paddle
 	// GridRows is the level grid's depth: the generated formation fills the
 	// first levelgen.MaxRows, and as the wall advances (with reinforcements
 	// marching in behind it) its rows are renumbered further down.
@@ -41,6 +42,9 @@ const (
 // copy, two per fusion. Each point makes bricks a little tougher and the
 // formation a little quicker to advance.
 func (r *Run) heat() int {
+	if r.carries() {
+		return r.powerHeat()
+	}
 	n := 0
 	for id, k := range r.Mods {
 		if m := modByID[id]; m != nil && !m.Curse && !strings.HasPrefix(id, "__") {
@@ -64,6 +68,28 @@ func (L *Level) hpMul() float64 {
 
 const heatHP = 0.07 // extra brick health per point of heat
 
+// chamberHeat is this chamber's heat. A carried run's elites, two packed
+// waves, take a softer share of the scale (scale^0.85: x150 becomes about
+// x70), for both waves.
+func (L *Level) chamberHeat() int {
+	r := L.g.run
+	if r.carries() && L.Node == NElite {
+		return int(math.Round((math.Pow(r.powerScale(), 0.85) - 1) / heatHP))
+	}
+	return r.heat()
+}
+
+// pressure is the heat that sets the armoured share and the advance. In a
+// carried run heat follows the build's measured power and runs into the
+// thousands, which belongs in brick health alone: there the armour and the
+// advance follow the build's size, capped where a fresh act tops out.
+func (L *Level) pressure() int {
+	if r := L.g.run; r.carries() {
+		return min(r.buildSize(), 12)
+	}
+	return L.heat
+}
+
 // heatArmour turns some plain bricks into armoured ones; the share grows
 // with heat and with each world.
 func (L *Level) heatArmour() {
@@ -71,7 +97,7 @@ func (L *Level) heatArmour() {
 		return
 	}
 	r := L.g.run
-	p := math.Min(0.3, 0.012*float64(L.heat)+0.03*float64(r.Act-1))
+	p := math.Min(0.3, 0.012*float64(L.pressure())+0.03*float64(r.Act-1))
 	if p <= 0 {
 		return
 	}
@@ -87,7 +113,10 @@ func (L *Level) heatArmour() {
 
 func (L *Level) setupWaves() {
 	r := L.g.run
-	L.heat = r.heat()
+	L.heat = L.chamberHeat()
+	if r.carries() {
+		L.powerUsed = r.powerScale()
+	}
 	// a chamber is one big, packed board; elites and duel rounds still
 	// come in two waves
 	L.wave, L.waves = 1, 1
@@ -116,7 +145,11 @@ func waveBudget(waves int) float64 {
 
 func (L *Level) waveParams(seed int64) levelgen.Params {
 	r := L.g.run
-	return levelgen.Params{Seed: seed, Depth: r.ActDepth + (r.Act-1)*2, Act: r.Act, Elite: L.Node == NElite}
+	depth := r.ActDepth + (r.Act-1)*2
+	if r.carries() {
+		depth = r.ActDepth + (r.Act-1)*4 // a carried build keeps climbing: no small early chambers again
+	}
+	return levelgen.Params{Seed: seed, Depth: depth, Act: r.Act, Elite: L.Node == NElite}
 }
 
 // waveBreak is the share of an early wave still standing when it breaks.
@@ -179,7 +212,10 @@ func (L *Level) nextWave() {
 	d.Shape = shape
 	L.Data = d
 	L.Designed = strings.HasPrefix(d.Formation, "design")
-	L.heat = g.run.heat()
+	L.heat = L.chamberHeat()
+	if g.run.carries() {
+		L.powerUsed = g.run.powerScale()
+	}
 	hpMul := L.hpMul()
 	for row := 0; row < levelgen.MaxRows; row++ {
 		for c := 0; c < levelgen.Cols; c++ {
@@ -235,7 +271,7 @@ func (L *Level) nextWave() {
 // advInterval is how long the formation holds before it creeps forward.
 func (L *Level) advInterval() float64 {
 	r := L.g.run
-	t := 20 - 0.4*float64(L.heat) - 1.5*float64(r.Act-1)
+	t := 20 - 0.4*float64(L.pressure()) - 1.5*float64(r.Act-1)
 	if L.Node == NElite {
 		t *= 0.85
 	}
@@ -272,6 +308,12 @@ func (L *Level) updateAdvance(dt float64) {
 	if L.advT <= 2 && !L.advWarned {
 		L.advWarned = true
 		L.g.snd.PlayVol("thump", 0.8)
+	}
+	if L.advT <= 0 && L.breakableFrontZ()-PaddleZ < advanceHold {
+		// the wall holds while it is already close: crowding the paddle
+		// only turns tough bricks into dropped orbs
+		L.advT = 2
+		return
 	}
 	if L.advT <= 0 {
 		L.shiftTarget += advanceStep
@@ -393,7 +435,19 @@ func (L *Level) frontZ() float64 {
 	return z
 }
 
-// crushCheck: bricks pushed past the danger line smash and hurt; bricks
+// breakableFrontZ is the nearest brick's z, steel left out: a wall of
+// steel at the front must not hold the advance for good.
+func (L *Level) breakableFrontZ() float64 {
+	z := FarZ
+	for _, b := range L.Bricks {
+		if b.Alive && !b.BossPart && b.Kind.Required() {
+			z = math.Min(z, b.Z())
+		}
+	}
+	return z
+}
+
+// crushCheck: bricks pushed past the danger line smash and cost gold; bricks
 // pushed outside the walls crumble harmlessly.
 func (L *Level) crushCheck() {
 	poly := L.Walls
@@ -566,6 +620,16 @@ func (g *Game) drawCache(s *ebiten.Image) {
 	}
 }
 
+// fmtMult prints a multiplier compactly: 1.4, 12, 140.
+func fmtMult(k float64) string {
+	switch {
+	case k < 10:
+		return fmt.Sprintf("%.1f", k)
+	default:
+		return fmt.Sprintf("%.0f", k)
+	}
+}
+
 // drawWaveStrip shows the wave, the heat and the time to the next advance
 // under the location plaque; it returns the y below it.
 func (g *Game) drawWaveStrip(s *ebiten.Image, L *Level, y float64) float64 {
@@ -577,7 +641,16 @@ func (g *Game) drawWaveStrip(s *ebiten.Image, L *Level, y float64) float64 {
 	gold := rgba(255, 222, 128, 255)
 	u.text(s, fmt.Sprintf("WAVE %d / %d", L.wave, L.waves), fBold, 20, x+20, y+10, gold, alignLeft)
 	hc := mixc(rgba(255, 190, 120, 255), rgba(255, 80, 60, 255), math.Min(1, float64(L.heat)/20))
-	u.text(s, fmt.Sprintf("HEAT %d", L.heat), fBold, 20, x+160, y+10, hc, alignLeft)
+	carried := L.g.run.carries()
+	if carried {
+		// a carried build's heat runs into the hundreds: show it as the
+		// brick health it adds instead
+		k := 1 + heatHP*float64(L.heat)
+		hc = mixc(rgba(255, 190, 120, 255), rgba(255, 80, 60, 255), math.Min(1, math.Log(k)/math.Log(20)))
+		u.text(s, fmt.Sprintf("HEAT ×%s", fmtMult(k)), fBold, 20, x+160, y+10, hc, alignLeft)
+	} else {
+		u.text(s, fmt.Sprintf("HEAT %d", L.heat), fBold, 20, x+160, y+10, hc, alignLeft)
+	}
 	// advance gauge: fills as the formation gets ready to move
 	bx, bw := x+272, 168.0
 	k := 1 - clamp01(L.advT/L.advInterval())
@@ -595,8 +668,10 @@ func (g *Game) drawWaveStrip(s *ebiten.Image, L *Level, y float64) float64 {
 	} else if n := len(L.reserve); n > 0 {
 		u.text(s, fmt.Sprintf("RESERVE %d", n), fBold, 13, bx+bw, y+6, rgba(255, 200, 140, 230), alignRight)
 	}
-	if u.hover(x, y, w, h) {
-		g.tooltip = fmt.Sprintf("Heat %d: your build's strength this world. Each point adds %.0f%% brick health, more armoured bricks and a quicker advance. The formation creeps one row closer when the gauge fills; bricks that reach the red line smash for damage. Reserve rows march in behind the formation at each advance.", L.heat, heatHP*100)
+	if u.hover(x, y, w, h) && carried {
+		g.tooltip = fmt.Sprintf("Heat ×%s: the bricks grow to meet your build. It is set by how fast you clear: chambers you tear through make the next ones tougher, ones that drag ease it off. It adds brick health and never drops below the world's base; armoured bricks and the advance follow how many items you hold. Reserve rows march in behind the formation at each advance.", fmtMult(1+heatHP*float64(L.heat)))
+	} else if u.hover(x, y, w, h) {
+		g.tooltip = fmt.Sprintf("Heat %d: your build's strength this world. Each point adds %.0f%% brick health, more armoured bricks and a quicker advance. The formation creeps one row closer when the gauge fills; bricks that reach the red line smash against the paddle's side, costing gold. The wall holds while its front is close. Reserve rows march in behind the formation at each advance.", L.heat, heatHP*100)
 	}
 	return y + h + 8
 }

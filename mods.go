@@ -25,7 +25,6 @@ var rarityWeights = []float64{50, 30, 14, 5, 1.2, 0.25}
 // Stats are the combined effect of the archetype, every upgrade and relic,
 // and active synergies. They're rebuilt from scratch whenever mods change.
 type Stats struct {
-	MaxHP                                                            float64
 	Damage, DmgMult                                                  float64
 	CritChance, CritMult                                             float64
 	Pierce                                                           int
@@ -41,10 +40,12 @@ type Stats struct {
 	LaserInterval                                                    float64
 	ComboDmg                                                         float64
 	Crescendo                                                        float64 // bonus note per combo step
-	BallLossDmg                                                      float64 // extra health lost when the orb is dropped
+	BallLossGold                                                     float64 // gold lost when a life is lost
 	DropBarrier                                                      int     // barrier charges gained when a life is lost
-	LifeHeal                                                         float64 // health restored when a life is lost
-	Lifesteal                                                        int
+	LifeSlow                                                         float64 // seconds of slowed orbs after a life is lost
+	BarrierEvery                                                     int     // bricks destroyed per barrier raised
+	ExtraLives                                                       int     // lives above the base, every act
+	CleanClearGold                                                   float64 // gold for a chamber cleared without a drop
 	Magnet                                                           bool
 	MoltenEvery, EchoEvery, StaticEvery                              int
 	ThunderCrown, BloodMoon, Phoenix, Momentum, HeavyPaddle          bool
@@ -60,16 +61,17 @@ type Stats struct {
 	FreeRerolls                                                      int
 
 	// added in 0.5
-	Ricochet, BurnMult, ChainMult, BlastMult, FreezeDur, BossDmg  float64
-	ComboTime, ShopDiscount, CoinChance, LaserDmg, KillSplash     float64
-	HiveDmg, LoneDmg, PowerDur, EchoChance, HealOnClear, CritHeal float64
-	CritCoin, ExecuteBelow, Avarice, OpeningCrit, BattleHymn      float64
-	ExtraChoices, ShopRerolls, SunderMult                         int
-	StaticPaddle, FreezeSpread, Blessed, ThornWard, OpeningPower  bool
-	BlackHole, InfiniteCombo, DragonHeart                         bool
-	ClassIgnite                                                   int // ignite every Nth hit (Pyromancer)
-	ClassParry, ClassRage, ClassAttune, ClassOverclock            bool
-	ClassHighRoller, ClassStoke, ClassStatic                      bool
+	Ricochet, BurnMult, ChainMult, BlastMult, FreezeDur, BossDmg float64
+	ComboTime, ShopDiscount, CoinChance, LaserDmg, KillSplash    float64
+	HiveDmg, LoneDmg, PowerDur, EchoChance, GoldOnClear          float64
+	CritBarrier                                                  int // critical hits per barrier raised
+	CritCoin, ExecuteBelow, Avarice, OpeningCrit, BattleHymn     float64
+	ExtraChoices, ShopRerolls, SunderMult                        int
+	StaticPaddle, FreezeSpread, Blessed, ThornWard, OpeningPower bool
+	BlackHole, InfiniteCombo, DragonHeart                        bool
+	ClassIgnite                                                  int // ignite every Nth hit (Pyromancer)
+	ClassParry, ClassRage, ClassAttune, ClassOverclock           bool
+	ClassHighRoller, ClassStoke, ClassStatic                     bool
 	// fusions
 	PlasmaStorm, SteamEngine, CryoCharge, GoldRush, Thunderclap    bool
 	Berserker, TeslaCoil, VoidPrism, Sanctuary, Cataclysm, Volcano bool
@@ -108,7 +110,7 @@ var modList = []*Mod{
 	{ID: "kindling", Icon: "flame", Name: "Kindling", Desc: "+12% chance to ignite bricks. Burning bricks take damage over time.", Rarity: Common, Tags: []string{"fire"}, Apply: func(s *Stats) { s.BurnChance += 0.12 }},
 	{ID: "static", Icon: "bolt", Name: "Static Charge", Desc: "+12% chance for lightning to arc to nearby bricks.", Rarity: Common, Tags: []string{"storm"}, Apply: func(s *Stats) { s.ChainChance += 0.12 }},
 	{ID: "frost", Icon: "snow", Name: "Frost Touch", Desc: "+12% chance to freeze bricks. Frozen bricks take +50% damage.", Rarity: Common, Tags: []string{"frost"}, Apply: func(s *Stats) { s.FreezeChance += 0.12 }},
-	{ID: "fort", Icon: "heart", Name: "Fortitude", Desc: "+25 max health.", Rarity: Common, Tags: []string{"guard"}, Apply: func(s *Stats) { s.MaxHP += 25 }},
+	{ID: "fort", Icon: "shield", Name: "Fortitude", Desc: "Start every chamber with a barrier.", Rarity: Common, Tags: []string{"guard"}, Max: 2, Apply: func(s *Stats) { s.BarrierPerLevel++ }},
 	{ID: "bigorb", Icon: "orb", Name: "Swollen Orb", Desc: "+20% orb size and +0.2 damage.", Rarity: Common, Tags: []string{"power"}, Max: 4, Apply: func(s *Stats) { s.SizeMult += 0.2; s.Damage += 0.2 }},
 	{ID: "barrier", Icon: "shield", Name: "Warding Line", Desc: "Start each level with +1 barrier charge.", Rarity: Uncommon, Tags: []string{"guard"}, Apply: func(s *Stats) { s.BarrierPerLevel++ }},
 	{ID: "split", Icon: "split", Name: "Split Shot", Desc: "15% chance a paddle bounce splits off an extra orb.", Rarity: Uncommon, Tags: []string{"swarm"}, Apply: func(s *Stats) { s.SplitChance += 0.15 }},
@@ -142,26 +144,26 @@ var modList = []*Mod{
 	{ID: "magnet", Icon: "magnet", Name: "Magnet Core", Desc: "Gold and power-ups drift toward your paddle.", Rarity: Common, Relic: true, Tags: []string{"wealth"}, Max: 1, Apply: func(s *Stats) { s.Magnet = true }},
 	{ID: "echo", Icon: "wave", Name: "Echo Chamber", Desc: "Every 5th impact strikes twice.", Rarity: Rare, Relic: true, Tags: []string{"combo"}, Max: 1, Apply: func(s *Stats) { s.EchoEvery = 5 }},
 	{ID: "thunder", Icon: "crown", Name: "Thunder Crown", Desc: "Critical hits call down chain lightning.", Rarity: Epic, Relic: true, Tags: []string{"crit", "storm"}, Max: 1, Apply: func(s *Stats) { s.ThunderCrown = true }},
-	{ID: "bloodmoon", Icon: "moon", Name: "Blood Moon", Desc: "Below half health, damage ×1.75.", Rarity: Rare, Relic: true, Tags: []string{"power"}, Max: 1, Apply: func(s *Stats) { s.BloodMoon = true }},
+	{ID: "bloodmoon", Icon: "moon", Name: "Blood Moon", Desc: "On your last life, damage ×1.75.", Rarity: Rare, Relic: true, Tags: []string{"power"}, Max: 1, Apply: func(s *Stats) { s.BloodMoon = true }},
 	{ID: "inferno", Icon: "flame", Name: "Inferno Core", Desc: "+20% chance to ignite bricks.", Rarity: Uncommon, Relic: true, Tags: []string{"fire"}, Max: 1, Apply: func(s *Stats) { s.BurnChance += 0.2 }},
 	{ID: "staticfield", Icon: "storm", Name: "Static Field", Desc: "Every 15 impacts, lightning strikes a random brick.", Rarity: Uncommon, Relic: true, Tags: []string{"storm"}, Max: 1, Apply: func(s *Stats) { s.StaticEvery = 15 }},
 	{ID: "greed", Icon: "coin", Name: "Greed", Desc: "+25% gold.", Rarity: Common, Relic: true, Tags: []string{"wealth"}, Max: 1, Apply: func(s *Stats) { s.GoldMult += 0.25 }},
 	{ID: "voidbounce", Icon: "swirl", Name: "Void Bounce", Desc: "+20% chance to ignore armour and shields.", Rarity: Uncommon, Relic: true, Tags: []string{"void"}, Max: 1, Apply: func(s *Stats) { s.VoidChance += 0.2 }},
-	{ID: "phoenix", Icon: "wing", Name: "Phoenix Feather", Desc: "Once per run, survive a fatal blow with 50 health.", Rarity: Legendary, Relic: true, Tags: []string{"guard"}, Max: 1, Apply: func(s *Stats) { s.Phoenix = true }},
+	{ID: "phoenix", Icon: "wing", Name: "Phoenix Feather", Desc: "Once per run, the drop that would cost your last life is forgiven.", Rarity: Legendary, Relic: true, Tags: []string{"guard"}, Max: 1, Apply: func(s *Stats) { s.Phoenix = true }},
 	{ID: "prism", Icon: "gem", Name: "Prism Orb", Desc: "Every launch also releases a phantom orb.", Rarity: Epic, Relic: true, Tags: []string{"swarm"}, Max: 1, Apply: func(s *Stats) { s.PrismOrb = true }},
 	{ID: "meteor", Icon: "comet", Name: "Meteor Heart", Desc: "Your orb explodes on every brick it hits.", Rarity: Epic, Relic: true, Tags: []string{"blast"}, Max: 1, Apply: func(s *Stats) { s.MeteorHeart = true }},
 	{ID: "frozenheart", Icon: "iceheart", Name: "Frozen Heart", Desc: "+25% freeze chance. Frozen bricks take double damage.", Rarity: Uncommon, Relic: true, Tags: []string{"frost"}, Max: 1, Apply: func(s *Stats) { s.FreezeChance += 0.25; s.FrozenBonus = true }},
 	{ID: "angel", Icon: "halo", Name: "Guardian Halo", Desc: "+2 barrier charges every level.", Rarity: Uncommon, Relic: true, Tags: []string{"guard"}, Max: 1, Apply: func(s *Stats) { s.BarrierPerLevel += 2 }},
 	{ID: "goldpaddle", Icon: "paddle", Name: "Golden Paddle", Desc: "Each paddle bounce earns 1 gold.", Rarity: Rare, Relic: true, Tags: []string{"wealth"}, Max: 1, Apply: func(s *Stats) { s.GoldenPaddle = true }},
 	{ID: "hydra", Icon: "hydra", Name: "Hydra Seed", Desc: "Every 30 bricks destroyed spawns an extra orb.", Rarity: Epic, Relic: true, Tags: []string{"swarm"}, Max: 1, Apply: func(s *Stats) { s.Hydra = true }},
-	{ID: "leech", Icon: "fang", Name: "Leech Orb", Desc: "Heal 1 health for every 6 bricks destroyed.", Rarity: Rare, Relic: true, Tags: []string{"guard"}, Max: 1, Apply: func(s *Stats) { s.Lifesteal = 6 }},
+	{ID: "leech", Icon: "fang", Name: "Leech Orb", Desc: "Every 40 bricks destroyed raise a barrier (up to 3).", Rarity: Rare, Relic: true, Tags: []string{"guard"}, Max: 1, Apply: func(s *Stats) { s.BarrierEvery = 40 }},
 	{ID: "clover", Icon: "clover", Name: "Four-Leaf Clover", Desc: "+5% crit chance and +30% power-up drops.", Rarity: Uncommon, Relic: true, Tags: []string{"wealth", "crit"}, Max: 1, Apply: func(s *Stats) { s.CritChance += 0.05; s.Luck += 0.3 }},
 	{ID: "philo", Icon: "gem", Name: "Philosopher's Stone", Desc: "Crystals drop triple gold, and every brick may drop gold.", Rarity: Legendary, Relic: true, Tags: []string{"wealth"}, Max: 1, Apply: func(s *Stats) { s.Philosopher = true }},
 	{ID: "storm", Icon: "storm", Name: "Storm Caller", Desc: "Lightning arcs can jump a second time.", Rarity: Legendary, Relic: true, Tags: []string{"storm"}, Max: 1, Apply: func(s *Stats) { s.StormCaller = true }},
 	{ID: "pyro", Icon: "urn", Name: "Pyromancer's Ash", Desc: "Burning bricks take double damage from everything.", Rarity: Epic, Relic: true, Tags: []string{"fire"}, Max: 1, Apply: func(s *Stats) { s.PyroAsh = true }},
 	{ID: "overclock", Icon: "gear", Name: "Overclock", Desc: "Orb speed +20%, damage +40%.", Rarity: Rare, Relic: true, Tags: []string{"power"}, Max: 1, Apply: func(s *Stats) { s.SpeedMult += 0.2; s.DmgMult *= 1.4 }},
 	{ID: "heavypad", Icon: "battery", Name: "Charged Paddle", Desc: "Paddle bounces charge the orb: its next hit is a guaranteed critical.", Rarity: Rare, Relic: true, Tags: []string{"crit"}, Max: 1, Apply: func(s *Stats) { s.HeavyPaddle = true }},
-	{ID: "idol", Icon: "mask", Name: "Cursed Idol", Desc: "Double gold, but −30 max health.", Rarity: Rare, Relic: true, Tags: []string{"wealth"}, Max: 1, Apply: func(s *Stats) { s.GoldMult += 1; s.MaxHP -= 30 }},
+	{ID: "idol", Icon: "mask", Name: "Cursed Idol", Desc: "Double gold, but losing a life also costs 15 gold.", Rarity: Rare, Relic: true, Tags: []string{"wealth"}, Max: 1, Apply: func(s *Stats) { s.GoldMult += 1; s.BallLossGold += 15 }},
 	{ID: "mirror", Icon: "mirror", Name: "Mirror Shard", Desc: "+10% chance a paddle bounce splits off an extra orb.", Rarity: Uncommon, Relic: true, Tags: []string{"swarm"}, Max: 1, Apply: func(s *Stats) { s.SplitChance += 0.1 }},
 	{ID: "singularity", Icon: "blackhole", Name: "Singularity", Desc: "Void hits deal triple damage and +10% void chance.", Rarity: Mythic, Relic: true, Tags: []string{"void"}, Max: 1, Apply: func(s *Stats) { s.VoidChance += 0.1; s.VoidDouble = true }},
 	// ---------------- upgrades (0.5) ----------------
@@ -174,7 +176,7 @@ var modList = []*Mod{
 	{ID: "sunder", Icon: "axe", Name: "Sunder", Desc: "Armoured bricks crack twice as fast, and +5% void chance.", Rarity: Uncommon, Tags: []string{"void"}, Max: 2, Unlock: 2, Apply: func(s *Stats) { s.SunderMult++; s.VoidChance += 0.05 }},
 	{ID: "slayer", Icon: "sword", Name: "Giant Slayer", Desc: "+30% damage to elites and bosses.", Rarity: Uncommon, Tags: []string{"power"}, Max: 3, Unlock: 3, Apply: func(s *Stats) { s.BossDmg += 0.3 }},
 	{ID: "patience", Icon: "hourglass", Name: "Patience", Desc: "Your combo lasts 1 second longer before fading.", Rarity: Common, Tags: []string{"combo"}, Max: 3, Apply: func(s *Stats) { s.ComboTime += 1 }},
-	{ID: "secondwind", Icon: "feather", Name: "Second Wind", Desc: "Heal 6 health after every cleared chamber.", Rarity: Common, Tags: []string{"guard"}, Max: 4, Apply: func(s *Stats) { s.HealOnClear += 6 }},
+	{ID: "secondwind", Icon: "feather", Name: "Second Wind", Desc: "+5 gold for every cleared chamber.", Rarity: Common, Tags: []string{"wealth"}, Max: 4, Apply: func(s *Stats) { s.GoldOnClear += 5 }},
 	{ID: "bargain", Icon: "tag", Name: "Bargain Hunter", Desc: "Shop prices −10%.", Rarity: Common, Tags: []string{"wealth"}, Max: 3, Unlock: 1, Apply: func(s *Stats) { s.ShopDiscount += 0.1 }},
 	{ID: "scavenger", Icon: "lens", Name: "Scavenger", Desc: "Bricks are 8% more likely to drop gold.", Rarity: Common, Tags: []string{"wealth"}, Max: 3, Apply: func(s *Stats) { s.CoinChance += 0.08 }},
 	{ID: "laserfocus", Icon: "target", Name: "Focusing Lens", Desc: "Lasers deal +60% damage.", Rarity: Uncommon, Tags: []string{"tech"}, Max: 3, Needs: "laser", Apply: func(s *Stats) { s.LaserDmg += 0.6 }},
@@ -197,13 +199,13 @@ var modList = []*Mod{
 	{ID: "sandglass", Icon: "hourglass", Name: "Eternal Sandglass", Desc: "Your combo lasts twice as long.", Rarity: Uncommon, Relic: true, Tags: []string{"combo"}, Max: 1, Unlock: 1, Apply: func(s *Stats) { s.ComboTime += 3 }},
 	{ID: "thorns", Icon: "crown", Name: "Crown of Thorns", Desc: "Whenever a barrier saves your orb, it explodes along the bottom row.", Rarity: Rare, Relic: true, Tags: []string{"guard", "blast"}, Max: 1, Unlock: 3, Apply: func(s *Stats) { s.ThornWard = true }},
 	{ID: "bane", Icon: "axe", Name: "Giant's Bane", Desc: "+60% damage to elites and bosses.", Rarity: Rare, Relic: true, Tags: []string{"power"}, Max: 1, Unlock: 2, Apply: func(s *Stats) { s.BossDmg += 0.6 }},
-	{ID: "vampfang", Icon: "fang", Name: "Vampire Fang", Desc: "Critical hits heal 1 health.", Rarity: Rare, Relic: true, Tags: []string{"crit", "guard"}, Max: 1, Unlock: 4, Apply: func(s *Stats) { s.CritHeal += 1 }},
+	{ID: "vampfang", Icon: "fang", Name: "Vampire Fang", Desc: "Every 25th critical hit raises a barrier (up to 3).", Rarity: Rare, Relic: true, Tags: []string{"crit", "guard"}, Max: 1, Unlock: 4, Apply: func(s *Stats) { s.CritBarrier = 25 }},
 	{ID: "lodestone", Icon: "magnet", Name: "Lodestone", Desc: "+15% damage for every extra orb in play (up to +90%).", Rarity: Epic, Relic: true, Tags: []string{"swarm"}, Max: 1, Unlock: 6, Apply: func(s *Stats) { s.HiveDmg += 0.15 }},
 	{ID: "lonestar", Icon: "star", Name: "Lone Star", Desc: "While only one orb is in play, it deals +50% damage.", Rarity: Rare, Relic: true, Tags: []string{"power"}, Max: 1, Unlock: 2, Apply: func(s *Stats) { s.LoneDmg += 0.5 }},
 	{ID: "headsman", Icon: "axe", Name: "Headsman's Axe", Desc: "Bricks below 20% health are destroyed instantly.", Rarity: Epic, Relic: true, Tags: []string{"crit"}, Max: 1, Unlock: 7, Apply: func(s *Stats) { s.ExecuteBelow = 0.2 }},
 	{ID: "shrapshell", Icon: "burst", Name: "Shrapnel Shell", Desc: "Destroyed bricks deal 60% damage to their neighbours.", Rarity: Uncommon, Relic: true, Tags: []string{"blast"}, Max: 1, Unlock: 3, Apply: func(s *Stats) { s.KillSplash += 0.6 }},
 	{ID: "midasglove", Icon: "fist", Name: "Midas Glove", Desc: "Critical hits have a 40% chance to drop a coin.", Rarity: Uncommon, Relic: true, Tags: []string{"wealth", "crit"}, Max: 1, Unlock: 1, Apply: func(s *Stats) { s.CritCoin += 0.4 }},
-	{ID: "seraph", Icon: "wing", Name: "Seraph Wing", Desc: "Heal 12 health after every cleared chamber.", Rarity: Uncommon, Relic: true, Tags: []string{"guard"}, Max: 1, Apply: func(s *Stats) { s.HealOnClear += 12 }},
+	{ID: "seraph", Icon: "wing", Name: "Seraph Wing", Desc: "Clear a chamber without losing a life for +20 gold.", Rarity: Uncommon, Relic: true, Tags: []string{"guard", "wealth"}, Max: 1, Apply: func(s *Stats) { s.CleanClearGold += 20 }},
 	{ID: "tesla", Icon: "battery", Name: "Overcharger", Desc: "Lightning deals +60% damage and arcs to +1 brick.", Rarity: Uncommon, Relic: true, Tags: []string{"storm"}, Max: 1, Unlock: 2, Apply: func(s *Stats) { s.ChainMult += 0.6; s.ChainCount++ }},
 	{ID: "nitroflask", Icon: "flask", Name: "Nitro Flask", Desc: "Explosions deal +60% damage and are 20% larger.", Rarity: Uncommon, Relic: true, Tags: []string{"blast"}, Max: 1, Unlock: 1, Apply: func(s *Stats) { s.BlastMult += 0.6; s.ExplodeRadius += 0.3 }},
 	{ID: "kinetic", Icon: "ricochet", Name: "Kinetic Battery", Desc: "Each wall bounce adds +15% damage until the orb returns to your paddle.", Rarity: Rare, Relic: true, Tags: []string{"combo"}, Max: 1, Unlock: 4, Apply: func(s *Stats) { s.Ricochet += 0.15 }},
@@ -217,7 +219,7 @@ var modList = []*Mod{
 	{ID: "infinity", Icon: "infinity", Name: "Infinity Loop", Desc: "Combo damage bonuses have no cap.", Rarity: Mythic, Relic: true, Tags: []string{"combo"}, Max: 1, Unlock: 10, Apply: func(s *Stats) { s.InfiniteCombo = true; s.ComboDmg += 0.01 }},
 	{ID: "dragonheart", Icon: "dragonheart", Name: "Dragon Heart", Desc: "Fire burns twice as fast, and every hit on a burning brick spreads the flames.", Rarity: Legendary, Relic: true, Tags: []string{"fire"}, Max: 1, Unlock: 8, Apply: func(s *Stats) { s.DragonHeart = true; s.BurnMult += 1 }},
 	{ID: "excalibur", Icon: "sword", Name: "Excalibur", Desc: "+10% critical chance and critical hits deal +150% damage.", Rarity: Legendary, Relic: true, Tags: []string{"crit"}, Max: 1, Unlock: 7, Apply: func(s *Stats) { s.CritChance += 0.1; s.CritMult += 1.5 }},
-	{ID: "phylactery", Icon: "urn", Name: "Phylactery", Desc: "+40 max health, but dropping the orb also costs 10 health.", Rarity: Rare, Relic: true, Tags: []string{"guard"}, Max: 1, Unlock: 5, Apply: func(s *Stats) { s.MaxHP += 40; s.BallLossDmg += 10 }},
+	{ID: "phylactery", Icon: "urn", Name: "Phylactery", Desc: "+1 life every act, but losing a life also costs 10 gold.", Rarity: Rare, Relic: true, Tags: []string{"guard"}, Max: 1, Unlock: 5, Apply: func(s *Stats) { s.ExtraLives++; s.BallLossGold += 10 }},
 }
 
 var modByID = func() map[string]*Mod {

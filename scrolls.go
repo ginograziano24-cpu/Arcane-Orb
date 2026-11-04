@@ -91,12 +91,11 @@ var scrollDefs = []scrollDef{
 		L.Barrier = min(5, L.Barrier+3)
 		return true
 	}},
-	{"heal", "Draught of Mending", "Restore 30 health.", "heart", rgba(255, 90, 120, 255), 30, true, func(L *Level) bool {
-		r := L.g.run
-		if r.HP >= r.Stats.MaxHP {
+	{"heal", "Draught of Warding", "Raise two barriers behind the paddle.", "shield", rgba(170, 140, 255, 255), 30, true, func(L *Level) bool {
+		if L.Barrier >= 5 {
 			return false
 		}
-		r.HP = math.Min(r.Stats.MaxHP, r.HP+30)
+		L.raiseBarrier(2, 5, "Draught of Warding")
 		L.g.snd.PlayKeyed("heal")
 		return true
 	}},

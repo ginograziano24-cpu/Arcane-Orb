@@ -35,10 +35,10 @@ var powerDesc = [numPowers]string{
 var nodeDesc = []string{
 	"A chamber of bricks. Clear it for an upgrade.",
 	"Tougher bricks and an elite. Pays out a relic.",
-	"Spend gold on upgrades, relics and healing.",
+	"Spend gold on upgrades, relics, scrolls and lost lives.",
 	"A free relic, no fight required.",
 	"A strange encounter: a gamble, a bargain, a gift.",
-	"Heal, or train for a stronger upgrade.",
+	"Regain a life, or train for a stronger upgrade.",
 	"The act's Guardian. Defeat it to move on.",
 }
 
@@ -212,7 +212,7 @@ func (g *Game) helpControls(s *ebiten.Image, a float64) {
 	row([]string{"Start"}, "Pause")
 	row([]string{"B"}, "Back")
 	y += 10
-	g.textBlock(s, "", "Let every orb slip past and you lose a life: the paddle shatters and reforms. You start with two lives and each act tops them back up to two. A rare falling heart restores a lost life, three times a run at most. Health only matters in Guardian fights: their attacks wear it down, and running it dry costs a life too.", tx, y, 790, a)
+	g.textBlock(s, "", "Let every orb slip past and you lose a life: the paddle shatters and reforms. You start with two lives and each act tops them back up to two. A rare falling heart restores a lost life, three times a run at most. Barriers behind the paddle catch an orb that slips past; a Guardian's falling rocks shatter one, or stun the paddle if you have none.", tx, y, 790, a)
 }
 
 // ---------------------------------------------------------------- page 2
@@ -282,7 +282,11 @@ func (g *Game) helpRun(s *ebiten.Image, a float64) {
 		y += 50
 	}
 	y = g.textBlock(s, "", "Chambers come in waves, and the formation creeps toward you when the ADVANCE gauge fills. Heat, the strength of your build, toughens the bricks as you grow. Catch rune caches to choose new items mid-fight.", tx, y+10, 800, a)
-	g.textBlock(s, "", "Every world is a fresh start: your build resets and you climb again from your Sanctum gifts. Beat all three Guardians to win, then try Endless Mode.", tx, y, 800, a)
+	if g.settings.FreshActs {
+		g.textBlock(s, "", "Every world is a fresh start: your build resets and you climb again from your Sanctum gifts. Beat all three Guardians to win, then try Endless Mode.", tx, y, 800, a)
+	} else {
+		g.textBlock(s, "", "Your build carries from world to world, and the bricks grow to meet it: the faster you clear, the tougher they get (HEAT). Beat all three Guardians to win, then try Endless Mode.", tx, y, 800, a)
+	}
 }
 
 // ---------------------------------------------------------------- page 3
@@ -402,7 +406,7 @@ func (g *Game) helpItems(s *ebiten.Image, a float64) {
 	y = g.textBlock(s, "Upgrades and relics", "After each chamber, choose one of three cards. Upgrades stack; relics are one-of-a-kind. Rarer cards are stronger: common, uncommon, rare, epic, legendary and mythic.", tx, y, 800, a)
 	y = g.textBlock(s, "Synergies", "Every card has tags such as fire, storm or guard. Own three cards that share a tag and a SYNERGY awakens with a bonus of its own.", tx, y, 800, a)
 	y = g.textBlock(s, "Fusions", "Some pairs forge into something new. Own both halves and they fuse on the spot into a powerful item with its own art and effect. Cards tell you when they complete a fusion.", tx, y, 800, a)
-	g.textBlock(s, "Gold", "Gold buys cards, relics and healing in shops, and pays for gambles at events.", tx, y, 800, a)
+	g.textBlock(s, "Gold", "Gold buys cards, relics, scrolls and lost lives in shops, and pays for gambles at events.", tx, y, 800, a)
 }
 
 // ---------------------------------------------------------------- page 6
@@ -444,7 +448,7 @@ func (g *Game) helpMeta(s *ebiten.Image, a float64) {
 	u := g.ui
 	items := []struct{ glyph, title, body string }{
 		{"star", "Arcane Rank", "Every run earns experience. Ranking up unlocks new upgrades and relics into the pool, so the game keeps growing."},
-		{"gem", "The Sanctum", "Shards earned on every run, won or lost, buy permanent boosts: more health, more gold, extra choices and more."},
+		{"gem", "The Sanctum", "Shards earned on every run, won or lost, buy permanent boosts: extra lives, more gold, extra choices and more."},
 		{"halo", "Ascension", "Win a run to unlock Ascension: ten tiers of harder runs with bigger rewards."},
 		{"infinity", "Endless Mode", "Beat the story and the worlds loop forever, growing tougher each loop. Chase your best score against friends and the world on the leaderboards."},
 		{"book", "The Codex", "Every upgrade, relic and fusion you discover is recorded, along with your Endless records and the story of your last 40 runs."},
@@ -492,8 +496,8 @@ func (g *Game) helpScrolls(s *ebiten.Image, a float64) {
 	}
 
 	tx, y := 1010.0, 190.0
-	y = g.textBlock(s, "Scrolls", "One-shot spells you carry between chambers, three at a time. Read one mid-fight with "+g.bindText("scrolls")+": meteors, frost novas, wildfire, extra orbs, healing and more. Elites and Guardians always leave one; shops and events sell them.", tx, y, 800, a)
+	y = g.textBlock(s, "Scrolls", "One-shot spells you carry between chambers, three at a time. Read one mid-fight with "+g.bindText("scrolls")+": meteors, frost novas, wildfire, extra orbs, barriers and more. Elites and Guardians always leave one; shops and events sell them.", tx, y, 800, a)
 	y = g.textBlock(s, "Omens", "Some chambers on the map carry an omen. Some change the fight: gilded bricks, frenzied orbs, volatile powder. Others set a challenge, like a time limit or no dropped orbs, with a prize if you manage it. Hover a node to read it before you choose your path.", tx, y, 800, a)
 	y = g.textBlock(s, "Curses", "Bargains at events can lay a curse on you: a narrower paddle, weaker hits, a thinner purse. Curses sit in your build in crimson until you cleanse them.", tx, y, 800, a)
-	g.textBlock(s, "Campfires", "Rest to regain a lost life (or heal when your lives are full), Train for a new upgrade, Empower an upgrade you own to double it, or Cleanse a curse.", tx, y, 800, a)
+	g.textBlock(s, "Campfires", "Rest to regain a lost life (or raise barriers for the next chamber when your lives are full), Train for a new upgrade, Empower an upgrade you own to double it, or Cleanse a curse.", tx, y, 800, a)
 }

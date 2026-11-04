@@ -12,6 +12,7 @@ import (
 
 type classState struct {
 	parryCD float64
+	parries int // parries this chamber (Halo of Mercy)
 
 	rage  int
 	rageT float64
@@ -187,8 +188,9 @@ func (L *Level) passiveOnPaddle(b *Ball, t float64) {
 		c.parryCD = s.parryCooldown()
 		L.holyWave(b.X)
 		if s.SigHalo {
-			r := L.g.run
-			r.HP = math.Min(s.MaxHP, r.HP+1)
+			if c.parries++; c.parries%8 == 0 {
+				L.raiseBarrier(1, 3, "Halo of Mercy")
+			}
 		}
 	}
 	if s.ClassStatic && c.static >= 100 && b.Phantom <= 0 {

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
 )
 
@@ -26,8 +25,8 @@ func pickRelic(g *Game, rng *rand.Rand, min int) *Mod {
 
 func moreEvents(g *Game, rng *rand.Rand) []func() *Event {
 	r := g.run
-	heal := func(n float64) { r.HP = math.Min(r.Stats.MaxHP, r.HP+n) }
-	hurt := func(n float64) { r.HP = math.Max(1, r.HP-n) }
+	// ward gives the next chamber's paddle n barrier charges
+	ward := func(n int) { r.NextBarrier += n }
 	return []func() *Event{
 		func() *Event {
 			rel := pickRelic(g, rng, Rare)
@@ -101,33 +100,33 @@ func moreEvents(g *Game, rng *rand.Rand) []func() *Event {
 		func() *Event {
 			return &Event{"A Warden's Grave", "A cairn marks the resting place of a warden who came before you. Their paddle lies broken beside it.",
 				[]EventChoice{
-					{"Dig (lose 12 health): take what they carried", func(g *Game) string {
-						hurt(12)
+					{"Dig (and a curse): take what they carried", func(g *Game) string {
+						g.addCurse(rng)
 						if rel := pickRelic(g, rng, Uncommon); rel != nil {
 							g.take(rel)
-							return "Among the bones: " + rel.Name + "."
+							return "Among the bones: " + rel.Name + ". Something follows you out."
 						}
-						return "Only dust."
-					}, func(g *Game) bool { return g.run.HP > 15 }},
+						return "Only dust, and a chill that follows you out."
+					}, nil},
 					{"Pay your respects", func(g *Game) string {
 						if c := g.cleanse(); c != nil {
 							return "Peace settles on you. " + c.Name + " is lifted."
 						}
-						heal(18)
-						return "You feel steadier. (+18 health)"
+						ward(1)
+						return "You feel steadier. (a barrier in the next chamber)"
 					}, nil},
 				}}
 		},
 		func() *Event {
 			return &Event{"Mirror of Echoes", "A tall mirror shows you a little stronger than you are. It wants something in return.",
 				[]EventChoice{
-					{"Gaze into it (lose 15 health): empower a random upgrade", func(g *Game) string {
+					{fmt.Sprintf("Gaze into it (%d gold): empower a random upgrade", g.run.price(30)), func(g *Game) string {
 						emp := g.run.empowerable()
-						hurt(15)
+						g.run.Gold -= g.run.price(30)
 						m := emp[rng.Intn(len(emp))]
 						g.take(m)
 						return m.Name + " doubles in strength."
-					}, func(g *Game) bool { return len(g.run.empowerable()) > 0 && g.run.HP > 18 }},
+					}, func(g *Game) bool { return len(g.run.empowerable()) > 0 && g.run.Gold >= g.run.price(30) }},
 					{"Shatter it: two scrolls, and a curse", func(g *Game) string {
 						g.addScroll(randomScroll(rng))
 						g.addScroll(randomScroll(rng))
@@ -162,15 +161,15 @@ func moreEvents(g *Game, rng *rand.Rand) []func() *Event {
 		func() *Event {
 			return &Event{"Training Grounds", "Straw dummies and a rack of practice orbs. An old instructor nods at you.",
 				[]EventChoice{
-					{"Spar (lose 12 health): choose an Uncommon+ upgrade", func(g *Game) string {
-						hurt(12)
+					{fmt.Sprintf("Spar (%d gold): choose an Uncommon+ upgrade", g.run.price(25)), func(g *Game) string {
+						g.run.Gold -= g.run.price(25)
 						g.rewards = []rewardSet{{Title: "Training — choose an upgrade", Mods: g.run.Offer(g.run.choices(), false, Uncommon, rng), Skip: 10}}
 						g.setState(StReward)
 						return ""
-					}, func(g *Game) bool { return g.run.HP > 15 }},
-					{"Meditate (+20 health)", func(g *Game) string {
-						heal(20)
-						return "Your breathing slows. (+20 health)"
+					}, func(g *Game) bool { return g.run.Gold >= g.run.price(25) }},
+					{"Meditate (two barriers in the next chamber)", func(g *Game) string {
+						ward(2)
+						return "Your breathing slows. (two barriers in the next chamber)"
 					}, nil},
 				}}
 		},
@@ -200,8 +199,8 @@ func moreEvents(g *Game, rng *rand.Rand) []func() *Event {
 				[]EventChoice{
 					{"Pay 35 gold", func(g *Game) string {
 						g.run.Gold -= 35
-						heal(10)
-						return "The troll tips his hat. You cross in comfort. (+10 health)"
+						ward(1)
+						return "The troll tips his hat. You cross in comfort. (a barrier in the next chamber)"
 					}, func(g *Game) bool { return g.run.Gold >= 35 }},
 					{"Take the long way (next chamber: tougher bricks, double gold)", func(g *Game) string {
 						g.run.Cursed = true
@@ -221,8 +220,7 @@ func moreEvents(g *Game, rng *rand.Rand) []func() *Event {
 						}
 						return "Gold, at least."
 					}, nil},
-					{"Find the merchants (+15 health, a scroll)", func(g *Game) string {
-						heal(15)
+					{"Find the merchants (a scroll)", func(g *Game) string {
 						g.addScroll(randomScroll(rng))
 						return "Grateful, they press a scroll into your hands."
 					}, func(g *Game) bool { return len(g.run.Scrolls) < g.run.scrollCap() }},
@@ -235,11 +233,11 @@ func moreEvents(g *Game, rng *rand.Rand) []func() *Event {
 			}
 			return &Event{"Your Shadow", "Your shadow peels itself off the floor and raises a paddle of its own.",
 				[]EventChoice{
-					{"Duel it (lose 22 health): win " + rel.Name, func(g *Game) string {
-						hurt(22)
+					{"Duel it (next chamber: tougher bricks): win " + rel.Name, func(g *Game) string {
+						g.run.Cursed = true
 						g.take(rel)
-						return "It fades with a bow, leaving " + rel.Name + "."
-					}, func(g *Game) bool { return g.run.HP > 25 }},
+						return "It fades with a bow, leaving " + rel.Name + ". The next chamber remembers the fight."
+					}, nil},
 					{"Let it in: empower two upgrades, gain a curse", func(g *Game) string {
 						emp := g.run.empowerable()
 						rng.Shuffle(len(emp), func(i, j int) { emp[i], emp[j] = emp[j], emp[i] })
@@ -282,11 +280,14 @@ func moreEvents(g *Game, rng *rand.Rand) []func() *Event {
 			stolen := r.Gold / 4
 			return &Event{"A Goblin Thief", fmt.Sprintf("A goblin snatches %d gold and bolts for a hole in the wall!", stolen),
 				[]EventChoice{
-					{"Chase it (lose 8 health)", func(g *Game) string {
-						hurt(8)
-						g.run.Gold += 25
-						return fmt.Sprintf("You catch it, and it pays you 25 gold to let go. (You never lost the %d.)", stolen)
-					}, func(g *Game) bool { return g.run.HP > 10 }},
+					{"Chase it (it might get away)", func(g *Game) string {
+						if rng.Float64() < 0.6 {
+							g.run.Gold += 25
+							return fmt.Sprintf("You catch it, and it pays you 25 gold to let go. (You never lost the %d.)", stolen)
+						}
+						g.run.Gold -= stolen
+						return "It slips down the hole, cackling, with your gold."
+					}, nil},
 					{"Let it go", func(g *Game) string {
 						g.run.Gold -= stolen
 						return "It blows a raspberry from the hole."

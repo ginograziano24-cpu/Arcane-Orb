@@ -72,18 +72,12 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	S := u.S
 
 	// ---- animated readouts
-	hp := math.Max(0, r.HP)
 	if g.hudLevel != L {
 		g.hudLevel = L
-		g.hudHP = hp
 		g.hudGold = float64(r.Gold)
 		g.lastGold = r.Gold
 		g.hudBoss = -1
 	}
-	if g.hudHP < hp {
-		g.hudHP = hp
-	}
-	g.hudHP += (hp - g.hudHP) * math.Min(1, dt*2.4)
 	if r.Gold > g.lastGold {
 		g.goldPop = 1
 	}
@@ -121,10 +115,9 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	const vx = 162.0
 	if g.duel != nil {
 		g.drawDuelVitals(screen, 22+vx, 18)
-	} else if L.Boss == nil {
-		// outside a Guardian fight there is no health: lives are what count,
-		// so the plate shows gold and barrier charges only
-		// sized to what it holds: the gold count, then any barrier charges
+	} else {
+		// lives are what count: the plate shows gold and barrier charges,
+		// sized to what it holds
 		pw := 210.0
 		if L.Barrier > 0 {
 			pw += 110 + 30*float64(L.Barrier)
@@ -141,29 +134,6 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 				x -= 30
 			}
 			u.text(screen, "BARRIER", fBold, 15, x+8, 45, ca(rgba(190, 172, 255, 255), 0.9), alignRight)
-		}
-	} else {
-		u.frame(screen, 22+vx, 18, 440, 112, 0.92)
-		frac := hp / r.Stats.MaxHP
-		beat := 1.0
-		if frac < 0.3 {
-			beat = 1 + 0.14*math.Max(0, math.Sin(L.T*9))
-			drawSprite(screen, sprSoft, u.X(vx+64-40), u.Y(56-40), 80*S, 80*S, ca(rgba(255, 60, 90, 255), 0.5*(beat-1)/0.14), true)
-		}
-		u.icon(screen, icHeart, vx+64, 57, 42*beat, 1)
-		u.bar(screen, vx+100, 42, 338, 28, frac, g.hudHP/r.Stats.MaxHP, rgba(236, 62, 96, 255), r.Stats.MaxHP, 10)
-		u.textOutlined(screen, fmt.Sprintf("%.0f / %.0f", hp, r.Stats.MaxHP), fBold, 18, vx+269, 44, cWhite, alignCenter)
-		pop := g.goldPop
-		u.icon(screen, icCoin, vx+64, 101, 30*(1+0.25*pop), 1)
-		gs := 26 * (1 + 0.16*pop)
-		u.textOutlined(screen, itoa(int(math.Round(g.hudGold))), fBold, gs, vx+92, 101-gs*0.64, mixc(cGold, cWhite, pop*0.6), alignLeft)
-		if L.Barrier > 0 {
-			x := vx + 432.0
-			for i := 0; i < L.Barrier; i++ {
-				u.icon(screen, icShield, x, 101, 26, 1)
-				x -= 30
-			}
-			u.text(screen, "BARRIER", fBold, 15, x+8, 93, ca(rgba(190, 172, 255, 255), 0.9), alignRight)
 		}
 	}
 

@@ -213,6 +213,7 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		y += 70
 		st.ColorBlind = choice("cb", "Colour filter", colorBlindNames, st.ColorBlind, 170)
 		st.NoTips = !toggle("tips", "First-time tips", !st.NoTips)
+		st.FreshActs = !toggle("carry", "Keep your build between acts (new runs)", !st.FreshActs)
 		if u.button(s, "tipsreset", "Show all tips again", 520, y, 300, 48, cAcc, len(g.save.Hints) > 0) {
 			g.save.Hints = nil
 		}

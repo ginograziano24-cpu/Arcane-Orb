@@ -352,7 +352,7 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		val   string
 		col   color.RGBA
 	}{
-		{"Vigor", (st.MaxHP - 60) / 80, fmt.Sprintf("%.0f", st.MaxHP), rgba(236, 70, 100, 255)},
+		{"Precision", (st.CritChance - 0.04) / 0.18, fmt.Sprintf("%.0f%%", st.CritChance*100), rgba(236, 70, 100, 255)},
 		{"Reach", (st.PaddleWidth - 0.6) / 0.8, fmt.Sprintf("%.0f%%", st.PaddleWidth*100), rgba(110, 170, 255, 255)},
 		{"Might", (st.Damage*st.DmgMult - 0.4) / 1.6, fmt.Sprintf("%.1f", st.Damage*st.DmgMult), rgba(255, 170, 70, 255)},
 		{"Fortune", (st.GoldMult - 0.8) / 0.8, fmt.Sprintf("%.0f%%", st.GoldMult*100), rgba(255, 214, 90, 255)},

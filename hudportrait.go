@@ -159,7 +159,7 @@ func (g *Game) updateHero(L *Level, dt float64) {
 
 // restPose is the idle face: battered when the run is on its last legs.
 func (g *Game) restPose() string {
-	if r := g.run; r != nil && (r.Lives <= 1 && r.HP < r.Stats.MaxHP*0.35) {
+	if r := g.run; r != nil && r.Lives <= 1 && r.maxLives() > 1 {
 		return "hurt"
 	}
 	return "rest"
@@ -252,8 +252,8 @@ func (g *Game) drawHero(dst *ebiten.Image, L *Level, x, y, w, h float64) {
 			drawSprite(clip, sprSoft, u.X(mx-6), u.Y(my-6), 12*S, 12*S, ca(c, k*math.Sin(ph*math.Pi)), true)
 		}
 	}
-	// low health: a slow red pulse around the edge
-	if r.HP < r.Stats.MaxHP*0.3 || r.Lives <= 1 {
+	// the last life: a slow red pulse around the edge
+	if r.Lives <= 1 && r.maxLives() > 1 {
 		a := 0.18 + 0.14*math.Max(0, math.Sin(t*5))
 		strokePath(dst, boxPath(u.X(ix), u.Y(iy), iw*S, ih*S, 8*S, false), 3*S, ca(rgba(255, 50, 70, 255), a), false)
 	}

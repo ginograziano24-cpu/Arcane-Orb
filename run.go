@@ -25,10 +25,9 @@ type Archetype struct {
 
 var archetypes = []Archetype{
 	{ID: "guardian", Name: "Guardian", Passive: "Parry",
-		Desc: "Catch the orb on the centre of your paddle to loose a holy wave up that column. Wide paddle, 120 health, a barrier every chamber, slightly weaker hits.",
+		Desc: "Catch the orb on the centre of your paddle to loose a holy wave up that column. Wide paddle, a barrier every chamber, slightly weaker hits.",
 		Apply: func(s *Stats) {
 			s.PaddleWidth += 0.2
-			s.MaxHP += 20
 			s.BarrierPerLevel++
 			s.DmgMult *= 0.9
 			s.ClassParry = true
@@ -223,13 +222,13 @@ type Run struct {
 	Cur          int // current node index (-1 = start of act)
 	Depth        int // levels entered
 	ActDepth     int // chambers entered in the current world
-	HP           float64
 	Gold         int
 	Mods         map[string]int
 	Order        []string // acquisition order for display
 	Stats        Stats
 	Active       []string // active synergy names
 	PhoenixUsed  bool
+	NextBarrier  int    // barrier charges waiting for the next chamber (events, rests)
 	Lives        int    // lives left (lives.go)
 	Challenge    string // challenge run id (challenges.go), "" for none
 	LifeFinds    int    // hearts caught this run
@@ -247,9 +246,14 @@ type Run struct {
 	Endless      bool // continued past the final boss
 	EndlessStart bool // started from the Endless menu (no story)
 	FinalScore   int
-	Assisted     bool // played with the speed assist (kept off the global boards)
-	Duel         bool // a duel round: no Sanctum, no lives lost, no saving
-	xpPaid       int  // XP already awarded (victory before endless)
+	Assisted     bool    // played with the speed assist (kept off the global boards)
+	Duel         bool    // a duel round: no Sanctum, no lives lost, no saving
+	Carry        bool    // the build carries over between acts (power.go)
+	Power        float64 // brick-health scale from measured clear speed (power.go; 1 = base)
+	PowerN       int     // chambers measured
+	PowerI       float64 // the scale controller's running sum of misses (log)
+	PowerItems   int     // build size when Power was last measured (feed-forward)
+	xpPaid       int     // XP already awarded (victory before endless)
 	shardsPaid   int
 	statsPaid    [3]int // bricks, bosses, elites already added to the save
 	metaLuck     int
@@ -275,14 +279,18 @@ func NewRun(code string, arch *Archetype, meta *SaveData, daily bool) *Run {
 	}
 	r.Asc = meta.AscSel
 	r.metaLuck = meta.Upg["fortune"]
+	r.Carry = !meta.Settings.FreshActs
+	r.Power = 1
 	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(n, 1))), 1)
 	r.startKit(meta)
+	r.PowerItems = r.buildSize() // the starting kit is what the base curve expects
 	return r
 }
 
-// startKit is the build a world starts from: no items but what the
-// Sanctum and the origin grant, starting gold and full health. Every
-// world begins with it, so each one is its own climb from nothing.
+// startKit is the build a run starts from: no items but what the Sanctum
+// and the origin grant, starting gold and full health. With the build
+// carried between acts (the default) only the first act begins with it;
+// with fresh acts every world is its own climb from nothing.
 func (r *Run) startKit(meta *SaveData) {
 	r.Mods = map[string]int{}
 	r.Order, r.Fused, r.Scrolls, r.Active = nil, nil, nil, nil
@@ -313,7 +321,6 @@ func (r *Run) startKit(meta *SaveData) {
 		}
 	}
 	r.NewFusions = nil
-	r.HP = r.Stats.MaxHP
 }
 
 func hashStr(s string) int64 {
@@ -326,8 +333,8 @@ func hashStr(s string) int64 {
 }
 
 func baseStats() Stats {
-	return Stats{MaxHP: 100, Damage: 1, DmgMult: 1, CritChance: 0.08, CritMult: 2, SpeedMult: 1, SizeMult: 1,
-		ChainCount: 2, ExplodeRadius: 1.4, GoldMult: 1, Luck: 1, PaddleWidth: 1, BallLossDmg: 0}
+	return Stats{Damage: 1, DmgMult: 1, CritChance: 0.08, CritMult: 2, SpeedMult: 1, SizeMult: 1,
+		ChainCount: 2, ExplodeRadius: 1.4, GoldMult: 1, Luck: 1, PaddleWidth: 1}
 }
 
 func (r *Run) Recompute(meta *SaveData) {
@@ -337,11 +344,10 @@ func (r *Run) Recompute(meta *SaveData) {
 	s := baseStats()
 	applyMeta(&s, meta, r.Asc)
 	if l := r.Loop(); l > 0 {
-		// endless escalation: faster orbs, harsher losses
+		// endless escalation: faster orbs, costlier losses
 		s.SpeedMult += 0.06 * float64(l)
-		s.BallLossDmg += 3 * float64(l)
+		s.BallLossGold += 5 * float64(l)
 	}
-	s.MaxHP -= 20 * float64(r.Mods["__hp"])
 	r.Arch.Apply(&s)
 	applyMastery(&s, meta, r.Arch.ID)
 	if c := r.challenge(); c != nil && c.Stats != nil {
@@ -362,8 +368,8 @@ func (r *Run) Recompute(meta *SaveData) {
 			s.CurseCount++
 		}
 	}
-	if s.CurseWard && r.Mods["c_doubt"] > 0 {
-		s.MaxHP += 15 // the talisman shields your health from curses
+	if s.CurseWard {
+		s.BarrierPerLevel += min(2, s.CurseCount) // the talisman turns curses into wards
 	}
 	r.Active = r.Active[:0]
 	for _, sy := range synergies {
@@ -383,12 +389,9 @@ func (r *Run) Recompute(meta *SaveData) {
 		}
 	}
 	s.PaddleWidth = math.Max(0.5, s.PaddleWidth)
-	s.BallLossDmg = math.Max(0, s.BallLossDmg)
-	s.MaxHP = math.Max(20, s.MaxHP)
+	s.BallLossGold = math.Max(0, s.BallLossGold)
+	s.PowerDur = math.Max(-0.6, s.PowerDur)
 	r.Stats = s
-	if r.HP > s.MaxHP {
-		r.HP = s.MaxHP
-	}
 }
 
 // Add grants a mod and returns any synergy that just activated.
@@ -401,10 +404,10 @@ func (r *Run) Add(id string, meta *SaveData) string {
 		r.Order = append(r.Order, id)
 	}
 	r.Mods[id]++
-	oldMax := r.Stats.MaxHP
+	oldMax := r.maxLives()
 	r.Recompute(meta)
-	if r.Stats.MaxHP > oldMax {
-		r.HP += r.Stats.MaxHP - oldMax
+	if gain := r.maxLives() - oldMax; gain > 0 {
+		r.Lives += gain // a relic that raises your lives grants them at once
 	}
 	for _, a := range r.Active {
 		if !before[a] {
@@ -434,6 +437,9 @@ func (r *Run) price(p int) int {
 	m := math.Max(0.4, 1-r.Stats.ShopDiscount)
 	if r.Asc >= 3 {
 		m *= 1.15
+	}
+	if r.carries() {
+		m *= 1 + shopInflation*float64(min(r.Act-1, 4)) // gold carries over too
 	}
 	return max(1, int(math.Round(float64(p)*m)))
 }
@@ -493,7 +499,13 @@ func (r *Run) NextAct(meta *SaveData) bool {
 	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(r.SeedN, int64(r.Act)))), r.Act)
 	r.applyChallengeMap()
 	r.Cur = -1
-	r.startKit(meta)                     // a new world: the build starts over
+	if r.carries() {
+		// the build carries on: the bricks are scaled to it instead (power.go)
+		r.ActDepth = 0
+		r.Recompute(meta)
+	} else {
+		r.startKit(meta) // fresh acts: the build starts over
+	}
 	r.Lives = max(r.Lives, r.maxLives()) // every act tops lives back up
 	return true
 }
@@ -553,11 +565,11 @@ func makeEvent(g *Game, rng *rand.Rand) *Event {
 		m := relic[0]
 		return &Event{"Mysterious Merchant", "A hooded figure offers you " + m.Name + " — \"" + m.Desc + "\" — in exchange for a little of your life force.",
 			[]EventChoice{
-				{"Pay 20 max health", func(g *Game) string {
-					g.run.Mods["__hp"]++
+				{"Give up a life", func(g *Game) string {
+					g.run.Lives--
 					g.run.Add(m.ID, &g.save)
 					return "You feel weaker, but " + m.Name + " hums in your hand."
-				}, func(g *Game) bool { return g.run.Stats.MaxHP > 40 }},
+				}, func(g *Game) bool { return g.run.Lives > 1 }},
 				{"Walk away", func(g *Game) string { return "The merchant fades into the dark." }, nil},
 			}}
 	case 1:
@@ -614,8 +626,8 @@ func makeEvent(g *Game, rng *rand.Rand) *Event {
 					}
 					return false
 				}},
-				{"Pray (heal 25%)", func(g *Game) string {
-					g.run.HP = math.Min(g.run.Stats.MaxHP, g.run.HP+g.run.Stats.MaxHP*0.25)
+				{"Pray (two barriers in the next chamber)", func(g *Game) string {
+					g.run.NextBarrier += 2
 					return "Warm light washes over you."
 				}, nil},
 			}}
@@ -644,19 +656,11 @@ func makeEvent(g *Game, rng *rand.Rand) *Event {
 	return &Event{"Wandering Spirit", "A friendly wisp circles your paddle and leaves a small gift.",
 		[]EventChoice{
 			{"Accept (+30 gold)", func(g *Game) string { g.run.Gold += 30; return "The wisp giggles and vanishes." }, nil},
-			{"Ask for healing (+20 health)", func(g *Game) string {
-				g.run.HP = math.Min(g.run.Stats.MaxHP, g.run.HP+20)
-				return "You feel refreshed."
+			{"Ask for protection (a barrier in the next chamber)", func(g *Game) string {
+				g.run.NextBarrier++
+				return "It settles on your paddle like a halo."
 			}, nil},
 		}}
-}
-
-// baseMaxPenalty applies permanent max-HP penalties stored as pseudo-mod "__hp".
-func baseMaxPenalty(r *Run) {
-	r.Stats.MaxHP = math.Max(20, r.Stats.MaxHP)
-	if r.HP > r.Stats.MaxHP {
-		r.HP = r.Stats.MaxHP
-	}
 }
 
 // pickWorld chooses this level's world from the act pool, never repeating

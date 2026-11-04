@@ -25,7 +25,7 @@ func (r *Run) maxLives() int {
 	if r.Challenge == "onelife" {
 		return 1
 	}
-	return baseLives
+	return max(1, baseLives+r.Stats.ExtraLives)
 }
 
 // lifeDropFalling reports whether a heart is already on its way down.
@@ -199,4 +199,15 @@ func (g *Game) drawLives(dst *ebiten.Image, L *Level, x, y float64) {
 		}
 		strokePath(dst, circlePath(u.X(cx), u.Y(y), rad*S), 1.6*S, ca(rgba(255, 200, 226, 255), 0.75), false)
 	}
+}
+
+// orbFalling reports whether a real orb is heading down in the near half
+// of the arena (the moment a last life is on the line).
+func (L *Level) orbFalling() bool {
+	for _, b := range L.Balls {
+		if !b.Stuck && b.Phantom <= 0 && b.VZ < 0 && b.Z < 12 {
+			return true
+		}
+	}
+	return false
 }

@@ -36,7 +36,7 @@ var glossary = []glossTerm{
 	{"Execute", []string{"execut"}, "Bricks pushed below the threshold break outright.", rgba(255, 90, 90, 255)},
 	{"Scroll", []string{"scroll"}, "Single-use spells. Read one during a chamber with 1, 2 or 3.", rgba(240, 220, 160, 255)},
 	{"Curse", []string{"curse", "cursed"}, "A lingering penalty that stays with you until something lifts it.", rgba(200, 60, 120, 255)},
-	{"Lives", []string{"a life", "lives", "extra life"}, "Dropping every orb costs a life, and so does running out of health in a Guardian fight. Lives refill to two each act.", rgba(255, 130, 170, 255)},
+	{"Lives", []string{"a life", "lives", "extra life"}, "Dropping every orb costs a life. Lives refill to two each act, and barriers behind the paddle can save an orb.", rgba(255, 130, 170, 255)},
 }
 
 func glossFor(text string) []*glossTerm {
@@ -135,9 +135,9 @@ type coachTip struct {
 
 var coachTips = map[string]coachTip{
 	"level":   {"level", "Break every brick", "Move the paddle with {move} and launch the orb with {launch}. Clear every brick to finish the chamber.\n\nIf every orb falls past your paddle you lose a life, and you have two. They refill each act, and a rare falling heart can restore one.\n\nWhen your class ability is charged, use it with {ability}.", "orb", true},
-	"map":     {"map", "Choose your path", "Each row is one step up the act; the lines show where you can go next.\n\nChambers give upgrades, Elites give better ones, Shops sell items and healing, Events are gambles and Rest sites heal. The act's Guardian waits at the top.", "eye", true},
+	"map":     {"map", "Choose your path", "Each row is one step up the act; the lines show where you can go next.\n\nChambers give upgrades, Elites give better ones, Shops sell items, Events are gambles and Rest sites give back a life. The act's Guardian waits at the top.", "eye", true},
 	"reward":  {"reward", "Take one", "Pick one card, or skip it for a little gold. Hover a card to see what its keywords mean.\n\nSome items fuse: own both halves and they forge into something stronger. Cards that complete a fusion say so.", "star", true},
-	"shop":    {"shop", "The shop", "Spend gold on items, relics, healing and scrolls. Anything you don't buy is gone when you leave.", "coin", true},
+	"shop":    {"shop", "The shop", "Spend gold on items, relics, scrolls and lost lives. Anything you don't buy is gone when you leave.", "coin", true},
 	"scroll":  {"scroll", "A scroll", "Scrolls are one-use spells. Read one during a chamber with {scrolls}. You can carry a few at once.", "book", false},
 	"life":    {"life", "A life lost", "The paddle reforms in a moment. Lives don't come back until the next act unless a heart falls from a broken brick; catch it with the paddle.", "heart", false},
 	"curse":   {"curse", "Cursed", "Curses weaken you until something lifts them. Look for events and items that cleanse them.", "mask", false},

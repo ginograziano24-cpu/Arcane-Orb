@@ -120,9 +120,8 @@ func (L *Level) steamBurst(b *Brick) {
 func (L *Level) barrierSaved(x float64) {
 	r := L.g.run
 	if r.Stats.Sanctuary {
-		r.HP = math.Min(r.Stats.MaxHP, r.HP+5)
 		L.Rings = append(L.Rings, &Ring{X: x, Z: BarrierZ, MaxR: 3, Life: 0.4, Max: 0.4, Col: color.RGBA{140, 255, 180, 255}})
-		L.text(V3{x, 1.2, BarrierZ + 1}, "+5", color.RGBA{140, 255, 180, 255}, false)
+		L.gainGold(3, x, BarrierZ+1, true)
 	}
 	if r.Stats.ThornWard {
 		// strike the lowest brick in every column

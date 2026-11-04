@@ -140,7 +140,6 @@ type Game struct {
 
 	// HUD animation state
 	hudLevel   *Level
-	hudHP      float64
 	hudBoss    float64
 	hudGold    float64
 	goldPop    float64
@@ -433,11 +432,12 @@ func (g *Game) Update() error {
 		if L := g.level; g.state == StLevel && L.pendingPick > 0 && L.gameOverT <= 0 {
 			g.openCache()
 		}
-		if r := g.run; r != nil && r.HP > 0 && r.HP < r.Stats.MaxHP*0.3 && !g.level.Cleared {
+		if r := g.run; r != nil && r.Lives == 1 && r.maxLives() > 1 && !g.level.Cleared && g.level.orbFalling() {
+			// the last life: a heartbeat while an orb drops toward the paddle
 			g.heartT -= dt
 			if g.heartT <= 0 {
 				g.snd.PlayVol("heartbeat", 0.7)
-				g.heartT = 0.55 + 2*r.HP/r.Stats.MaxHP
+				g.heartT = 0.75
 			}
 		}
 		if g.duel == nil && g.state == StLevel && g.level.Cleared && g.level.clearShown() > 1.2 && (g.ui.Click || inpututil.IsKeyJustPressed(ebiten.KeySpace) || g.level.clearShown() > 4) {
@@ -491,7 +491,6 @@ func (g *Game) updateDemo(dt float64) {
 	if L.anyStuck() {
 		L.release()
 	}
-	g.run.HP = g.run.Stats.MaxHP
 	if L.Cleared && L.clearT > 2 {
 		g.menuL = g.demoLevel()
 	}
@@ -595,7 +594,6 @@ func (g *Game) startRunWith(arch *Archetype, ch string) {
 		r := g.run
 		r.Challenge = ch
 		r.Recompute(&g.save)
-		r.HP = r.Stats.MaxHP
 		r.Lives = r.maxLives()
 		r.applyChallengeMap()
 		if c.Setup != nil {
@@ -706,8 +704,8 @@ func (g *Game) beginWorld() {
 	r := g.run
 	g.rewards = nil
 	g.hero = heroPortrait{}
-	if c := challengeByID[r.Challenge]; c != nil && c.Setup != nil {
-		c.Setup(g)
+	if c := challengeByID[r.Challenge]; c != nil && c.Setup != nil && !(r.carries() && r.Act > 1) {
+		c.Setup(g) // a carried build already holds the first act's kit
 	}
 }
 
@@ -747,7 +745,7 @@ func (g *Game) openShop(rng *rand.Rand) {
 	for _, m := range r.Offer(2, true, Common, rng) {
 		g.shop = append(g.shop, shopItem{Mod: m, Kind: "mod", Price: r.price(modPrice(m, rng))})
 	}
-	g.shop = append(g.shop, shopItem{Kind: "heal", Price: r.price(35)})
+	g.shop = append(g.shop, shopItem{Kind: "heal", Price: r.price(45)}) // regain a lost life
 	for i := 0; i < 2; i++ {
 		id := randomScroll(rng)
 		g.shop = append(g.shop, shopItem{Kind: "scroll", Scroll: id, Price: r.price(scrollByID[id].Price + rng.Intn(10) - 5)})
@@ -1171,7 +1169,7 @@ func (g *Game) archPreview(s *ebiten.Image, a *Archetype, x, y, w float64) {
 		v     float64
 		col   color.RGBA
 	}{
-		{"Health", (st.MaxHP - 60) / 80, rgba(236, 70, 100, 255)},
+		{"Precision", (st.CritChance - 0.04) / 0.18, rgba(236, 70, 100, 255)},
 		{"Width", (st.PaddleWidth - 0.6) / 0.8, rgba(110, 170, 255, 255)},
 		{"Power", (st.Damage*st.DmgMult - 0.4) / 1.6, rgba(255, 170, 70, 255)},
 		{"Fortune", (st.GoldMult - 0.8) / 0.8, rgba(255, 214, 90, 255)},
@@ -1216,7 +1214,7 @@ func (g *Game) runPanel(s *ebiten.Image) {
 	g.drawHero(s, nil, 40, 40, 116, 150)
 	u.text(s, r.Arch.Name, fRune, 28, 170, 44, cGold, alignLeft)
 	g.drawLives(s, nil, 184+18*float64(max(r.maxLives(), r.Lives)-2), 100)
-	u.iconLabel(s, icHeart, fmt.Sprintf("%.0f / %.0f", r.HP, r.Stats.MaxHP), fBold, 24, 172, 124, color.RGBA{255, 130, 140, 255}, alignLeft)
+	u.iconLabel(s, icHeart, fmt.Sprintf("%d / %d lives", r.Lives, r.maxLives()), fBold, 24, 172, 124, color.RGBA{255, 130, 140, 255}, alignLeft)
 	u.iconLabel(s, icCoin, fmt.Sprintf("%d gold", r.Gold), fBold, 24, 172, 160, cGold, alignLeft)
 	u.text(s, fmt.Sprintf("%s  ·  Act %d", biomes[r.AI()].Name, r.Act), fReg, 21, 50, 206, cDim, alignLeft)
 	u.text(s, "Seed  "+r.SeedCode, fReg, 21, 50, 238, cDim, alignLeft)
@@ -1666,11 +1664,11 @@ func (g *Game) drawReward(s *ebiten.Image) {
 
 func (r rewardSet) isRerolled() bool { return strings.HasSuffix(r.Title, " ") }
 
-// statLine shows the run's gold and health side by side, centred on cx.
+// statLine shows the run's gold and lives side by side, centred on cx.
 func (g *Game) statLine(s *ebiten.Image, cx, y float64) {
 	u := g.ui
 	a := itoa(g.run.Gold) + " gold"
-	b := fmt.Sprintf("%.0f / %.0f", g.run.HP, g.run.Stats.MaxHP)
+	b := fmt.Sprintf("%d / %d lives", g.run.Lives, g.run.maxLives())
 	is := 24 * 1.05
 	wa := is + 8 + u.measure(a, fBold, 24)
 	wb := is + 8 + u.measure(b, fBold, 24)
@@ -1755,18 +1753,20 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		}
 		h = 430
 	}
-	// heal + reroll
+	// regain a life + reroll
 	for i, it := range g.shop {
 		if it.Kind != "heal" {
 			continue
 		}
-		label := fmt.Sprintf("Heal 30   ·   %d gold", it.Price)
+		label := fmt.Sprintf("Regain a life   ·   %d gold", it.Price)
 		if it.Sold {
-			label = "Healed"
+			label = "Life regained"
+		} else if r.Lives >= r.maxLives() {
+			label = "Lives full"
 		}
-		if u.button(s, "heal", label, 1160, 794, 330, 52, cGreen, !it.Sold && r.Gold >= it.Price && r.HP < r.Stats.MaxHP) {
+		if u.button(s, "heal", label, 1160, 794, 330, 52, cGreen, !it.Sold && r.Gold >= it.Price && r.Lives < r.maxLives()) {
 			r.Gold -= it.Price
-			r.HP = math.Min(r.Stats.MaxHP, r.HP+30)
+			r.Lives++
 			g.shop[i].Sold = true
 			g.snd.PlayKeyed("heal")
 		}
@@ -1855,9 +1855,9 @@ func (g *Game) drawEvent(s *ebiten.Image) {
 	for i, c := range ev.Choices {
 		ok := c.Can == nil || c.Can(g)
 		if u.button(s, "ev"+itoa(i), c.Label, 560, cy, 800, 64, cAcc, ok) && g.stateT > 0.3 {
-			hp, gold, nm := g.run.HP, g.run.Gold, len(g.run.Order)
+			lives, gold, nm, curses := g.run.Lives, g.run.Gold, len(g.run.Order), len(g.run.curses())
 			g.eventMsg = c.Do(g)
-			if g.run.HP < hp || (g.run.Gold < gold && len(g.run.Order) == nm) {
+			if g.run.Lives < lives || len(g.run.curses()) > curses || (g.run.Gold < gold && len(g.run.Order) == nm) {
 				g.snd.PlayKeyed("bad")
 			} else {
 				g.snd.PlayKeyed("good")
@@ -1913,21 +1913,16 @@ func (g *Game) drawRest(s *ebiten.Image) {
 	g.runPanel(s)
 	u.heading(s, "A QUIET CAMPFIRE", 60, 200, cGold, 1)
 	u.text(s, "Rest your hands, or train your craft.", fReg, 26, 960, 300, cDim, alignCenter)
-	healPct := 0.35
-	if r.Asc >= 6 {
-		healPct = 0.25
-	}
-	heal := math.Round(r.Stats.MaxHP * healPct)
-	// health only matters against Guardians, so a rest gives back a lost
-	// life first
+	// a rest gives back a lost life; with lives full it wards the next
+	// two chambers instead
 	if r.Lives < r.maxLives() {
 		if u.button(s, "rest", "Rest  (regain a life)", 380, 380, 560, 76, cGreen, true) {
 			r.Lives++
 			g.snd.PlayKeyed("heal")
 			g.setState(StMap)
 		}
-	} else if u.button(s, "rest", fmt.Sprintf("Rest  (+%.0f health)", heal), 380, 380, 560, 76, cGreen, true) {
-		r.HP = math.Min(r.Stats.MaxHP, r.HP+heal)
+	} else if u.button(s, "rest", "Rest  (two barriers in the next chamber)", 380, 380, 560, 76, cGreen, true) {
+		r.NextBarrier += 2
 		g.snd.PlayKeyed("heal")
 		g.setState(StMap)
 	}
@@ -1944,7 +1939,7 @@ func (g *Game) drawRest(s *ebiten.Image) {
 		g.setState(StReward)
 	}
 	nc := len(r.curses())
-	lbl := "Cleanse  (lift a curse, +10 health)"
+	lbl := "Cleanse  (lift a curse)"
 	if nc == 0 {
 		lbl = "Cleanse  (no curses)"
 	}
@@ -1953,7 +1948,6 @@ func (g *Game) drawRest(s *ebiten.Image) {
 	}
 	if u.button(s, "cleanse", lbl, 980, 476, 560, 76, tagColors["curse"], nc > 0) {
 		if c := g.cleanse(); c != nil {
-			r.HP = math.Min(r.Stats.MaxHP, r.HP+10)
 			g.toastImg("Curse lifted", c.Name+" fades from your soul.", cGreen, modEmblem(c))
 		}
 		g.setState(StMap)
@@ -1990,8 +1984,10 @@ func (g *Game) drawActIntro(s *ebiten.Image) {
 	u.text(s, "GUARDIAN", fBold, 15, 960, 512, ca(cDim, a3), alignCenter)
 	u.text(s, b.BossName, fRune, 34, 960, 534, ca(rgba(255, 214, 190, 255), a3), alignCenter)
 	if l := r.Loop(); l > 0 {
-		u.text(s, fmt.Sprintf("Bricks ×%.2f health   ·   orbs +%d%% speed   ·   drops cost %d health", math.Pow(1.25, float64(l)), 6*l, 3*l),
+		u.text(s, fmt.Sprintf("Bricks ×%.2f health   ·   orbs +%d%% speed   ·   lives cost %d gold", math.Pow(1.25, float64(l)), 6*l, 5*l),
 			fReg, 22, 960, 600, ca(rgba(255, 140, 120, 255), a3), alignCenter)
+	} else if r.Act > 1 && r.carries() {
+		u.text(s, "Your build carries on, and the bricks rise to meet it.", fReg, 22, 960, 600, ca(rgba(200, 190, 230, 255), a3), alignCenter)
 	} else if r.Act > 1 {
 		u.text(s, "A new world, a new build: you start again with your Sanctum gifts and starting gold.", fReg, 22, 960, 600, ca(rgba(200, 190, 230, 255), a3), alignCenter)
 	}

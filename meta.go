@@ -57,16 +57,16 @@ type MetaUpgrade struct {
 }
 
 var metaUpgrades = []MetaUpgrade{
-	{"vitality", "Vitality", "+10 starting max health per rank.", "heart", 30, 5},
+	{"vitality", "Vitality", "+1 life every act at rank 3, and another at rank 5.", "heart", 30, 5},
 	{"power", "Arcane Might", "+0.15 orb damage per rank.", "fist", 60, 5},
 	{"keen", "Keen Eye", "+2% critical chance per rank.", "sword", 40, 5},
 	{"steady", "Steady Hands", "+5% paddle width per rank.", "paddle", 40, 4},
-	{"padding", "Cushioned Fall", "Losing a life restores 10 health per rank.", "shield", 40, 4},
+	{"padding", "Cushioned Fall", "Losing a life raises a barrier (two from rank 3).", "shield", 40, 4},
 	{"purse", "Heavy Purse", "+20 starting gold per rank.", "coin", 25, 5},
 	{"merchant", "Trade Routes", "Shop prices −5% per rank.", "tag", 45, 4},
 	{"fortune", "Fortune", "Rarer upgrades and relics appear more often.", "star", 60, 5},
 	{"reroll", "Fortune's Favour", "+1 free reroll each run per rank.", "clover", 60, 3},
-	{"recover", "Recovery", "Heal 4 health after each cleared chamber per rank.", "feather", 50, 3},
+	{"recover", "Recovery", "+3 gold for each cleared chamber per rank.", "feather", 50, 3},
 	{"combo", "Rhythm", "Your combo lasts 0.5s longer per rank.", "hourglass", 45, 3},
 	{"armory", "Armory", "Start each run with a random upgrade per rank.", "anvil", 90, 3},
 	{"collector", "Collector", "Start each run with a random relic per rank.", "gem", 150, 2},
@@ -81,22 +81,25 @@ func metaCost(m MetaUpgrade, rank int) int {
 // applyMeta adds Sanctum ranks and Ascension modifiers to a run's stats.
 func applyMeta(s *Stats, meta *SaveData, asc int) {
 	u := meta.Upg
-	s.MaxHP += float64(10 * u["vitality"])
+	s.ExtraLives += u["vitality"]/3 + u["vitality"]/5 // a life at rank 3, another at 5
 	s.Damage += 0.15 * float64(u["power"])
 	s.CritChance += 0.02 * float64(u["keen"])
 	s.PaddleWidth += 0.05 * float64(u["steady"])
-	s.LifeHeal += 10 * float64(u["padding"])
+	s.DropBarrier += (u["padding"] + 1) / 2
 	s.ShopDiscount += 0.05 * float64(u["merchant"])
 	s.FreeRerolls += u["reroll"]
-	s.HealOnClear += 4 * float64(u["recover"])
+	s.GoldOnClear += 3 * float64(u["recover"])
 	s.ComboTime += 0.5 * float64(u["combo"])
 	s.BarrierPerLevel += u["ward"]
 	s.ExtraChoices += u["scholar"]
 	if asc >= 2 {
-		s.MaxHP -= 10
+		s.PaddleWidth -= 0.08
 	}
 	if asc >= 5 {
-		s.BallLossDmg += 10
+		s.BallLossGold += 10
+	}
+	if asc >= 6 {
+		s.ExtraLives-- // Weary
 	}
 	if asc >= 8 {
 		s.GoldMult -= 0.15
@@ -107,11 +110,11 @@ func applyMeta(s *Stats, meta *SaveData, asc int) {
 
 var ascensions = []struct{ Name, Desc string }{
 	{"Hardened", "Elite bricks have 25% more health."},
-	{"Frail", "Start with 10 less max health."},
+	{"Frail", "Your paddle is 8% narrower."},
 	{"Inflation", "Shop prices +15%."},
 	{"Fortified", "All bricks have 15% more health."},
-	{"Brittle Orb", "Dropping the orb also costs 10 health."},
-	{"Weary", "Rest sites heal 25% instead of 35%."},
+	{"Brittle Orb", "Losing a life also costs 10 gold."},
+	{"Weary", "Start every act with one life fewer (never fewer than one)."},
 	{"Titans", "Bosses have 30% more health."},
 	{"Poverty", "Earn 15% less gold."},
 	{"Bulwark", "All bricks have another 15% more health."},

@@ -179,7 +179,6 @@ func directorStep(g *Game, t float64) {
 		sh.step(g, lt)
 	}
 	if p := dir.play; p != nil && g.run != nil {
-		g.run.HP = g.run.Stats.MaxHP
 		k := lt / sh.dur
 		if p.cam != nil {
 			camHook = func(c *Camera, L *Level) {
@@ -224,7 +223,6 @@ func startPlay(g *Game, p *playShot) {
 	g.toasts = nil
 	g.bannerT = 0
 	g.run.Depth = p.depth
-	g.run.HP = g.run.Stats.MaxHP
 	if p.designed {
 		levelgenDesign(true)
 	}
@@ -254,7 +252,6 @@ func startPlay(g *Game, p *playShot) {
 	for i := 0; i < int(p.preroll*60); i++ {
 		in := dir.ap.input(g, L, step, p, -1)
 		L.Update(step, in)
-		g.run.HP = g.run.Stats.MaxHP
 		if L.Cleared {
 			break
 		}
