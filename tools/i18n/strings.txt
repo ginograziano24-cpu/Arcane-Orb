@@ -922,6 +922,8 @@
 "New Endless Record!"
 "New items join the pool:"
 "Next  ›"
+"Next chamber: +%d barriers"
+"Next chamber: +1 barrier"
 "Next rank unlocks: "
 "Next rank: more items join the pool"
 "Next · Mastery %d: %s"

@@ -65,3 +65,5 @@
 ["Your breathing slows. (two barriers in the next chamber)", "你的呼吸平缓下来。（下一个密室获得两层屏障）", "呼吸が落ち着いていく。（次の部屋でバリア2つ）", "Дыхание замедляется. (два барьера в следующем зале)", "Tu respiración se calma. (dos barreras en la próxima cámara)", "Sua respiração desacelera. (duas barreiras na próxima câmara)", "Dein Atem wird ruhiger. (zwei Barrieren in der nächsten Kammer)"]
 ["Your paddle is 8% narrower.", "你的挡板窄 8%。", "パドルが8%狭い。", "Платформа уже на 8%.", "Tu pala es un 8% más estrecha.", "Sua raquete é 8% mais estreita.", "Dein Schläger ist 8% schmaler."]
 ["−%d GOLD", "−%d 金币", "−%d ゴールド", "−%d ЗОЛОТА", "−%d ORO", "−%d OURO", "−%d GOLD"]
+["Next chamber: +1 barrier", "下一个密室：+1 层屏障", "次の部屋：バリア+1", "Следующий зал: +1 барьер", "Próxima cámara: +1 barrera", "Próxima câmara: +1 barreira", "Nächste Kammer: +1 Barriere"]
+["Next chamber: +%d barriers", "下一个密室：+%d 层屏障", "次の部屋：バリア+%d", "Следующий зал: +%d барьера", "Próxima cámara: +%d barreras", "Próxima câmara: +%d barreiras", "Nächste Kammer: +%d Barrieren"]

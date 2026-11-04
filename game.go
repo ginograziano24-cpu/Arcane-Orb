@@ -1221,6 +1221,15 @@ func (g *Game) runPanel(s *ebiten.Image) {
 	u.text(s, fmt.Sprintf("%s  ·  Act %d", biomes[r.AI()].Name, r.Act), fReg, 21, 50, 206, cDim, alignLeft)
 	u.text(s, "Seed  "+r.SeedCode, fReg, 21, 50, 238, cDim, alignLeft)
 	u.text(s, fmt.Sprintf("Damage %.1f  ·  Crit %.0f%%", r.Stats.Damage*r.Stats.DmgMult, r.Stats.CritChance*100), fReg, 19, 50, 276, cDim, alignLeft)
+	if n := r.NextBarrier; n > 0 {
+		// barriers banked at a campfire or an event wait for the next fight
+		u.icon(s, icShield, 62, 318, 24, 1)
+		msg := "Next chamber: +1 barrier"
+		if n > 1 {
+			msg = fmt.Sprintf("Next chamber: +%d barriers", n)
+		}
+		u.text(s, msg, fBold, 19, 82, 307, rgba(196, 180, 255, 255), alignLeft)
+	}
 	if len(r.Active) > 0 {
 		u.text(s, "Synergies: "+strings.Join(r.Active, ", "), fBold, 19, 50, 308, cAcc, alignLeft)
 	}
