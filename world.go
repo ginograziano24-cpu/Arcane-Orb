@@ -123,6 +123,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	}
 	floorTexture(L)
 	brickSheet()
+	B.prepMeta() // texture sizes, read by the side batches' presort
 	sScen, sArena := B.side(0), B.side(1)
 	nq0, ng0 := len(B.quads), len(B.glow) // what is already in B stays first
 	var wg sync.WaitGroup
@@ -139,8 +140,12 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		if !classic {
 			g.drawScenery(sScen, L)
 		}
+		sScen.presort()
 	})
-	part(1, func() { g.drawArena(sArena, L, classic) })
+	part(1, func() {
+		g.drawArena(sArena, L, classic)
+		sArena.presort()
+	})
 	defer func() {
 		// joined before the flush below; also on a panic in this goroutine
 		wg.Wait()

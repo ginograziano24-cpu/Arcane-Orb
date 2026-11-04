@@ -525,6 +525,10 @@ type Batch struct {
 	qp       []*quad     // flush: every quad to draw, in submission order
 	extQ     [][]quad    // side batches' quads drawn before b's own (drawFirst)
 	extG     [][]quad
+	extB     []*Batch     // the side batches behind extQ/extG, for their presorted orders
+	pre      [2]presorted // a side batch's own far-first orders (presort)
+	wantMeta [2]bool      // presort: work out run metadata (the flush is likely to plan)
+	mergeK   []uint64     // flush scratch: the own quads' keys when merging
 	runIdx   []int32
 	runCell  [runCols * runRows]int16
 	meta     []uint64 // per quad (submission order): cells and run key
@@ -646,6 +650,11 @@ func (b *Batch) side(i int) *Batch {
 	s.pts = append(s.pts[:0], b.pts...)
 	s.quads = s.quads[:0]
 	s.glow = s.glow[:0]
+	for l := range s.wantMeta {
+		// metadata only matters if the flush plans runs, which follows last
+		// frame's texture switches (see flush)
+		s.wantMeta[l] = planRunsOn && b.switches[l] > runPlanOff
+	}
 	return s
 }
 
@@ -667,7 +676,7 @@ func (b *Batch) insertSides(nq, ng int, sides ...*Batch) {
 }
 
 func (b *Batch) Reset() {
-	b.extQ, b.extG = b.extQ[:0], b.extG[:0]
+	b.extQ, b.extG, b.extB = b.extQ[:0], b.extG[:0], b.extB[:0]
 	b.quads = b.quads[:0]
 	b.glow = b.glow[:0]
 	b.pts = b.pts[:0]
@@ -941,7 +950,12 @@ func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend, list
 	plan := planRunsOn && (sw > runPlanOn || (b.planned[list] && sw > runPlanOff))
 	b.planned[list] = plan
 	// sort indices rather than the (large) quads themselves: far first
-	order := b.sortFarFirst(qs, plan)
+	var order []int32
+	if len(b.extB) == len(segs)-1 && len(b.extB) > 0 && len(b.extB) <= 3 {
+		order = b.mergeSorted(segs, list, plan)
+	} else {
+		order = b.sortFarFirst(qs, plan)
+	}
 	runs, switches := b.planRuns(qs, order, plan)
 	b.switches[list] = switches
 	if flushTrace != nil {
@@ -1093,14 +1107,16 @@ func (b *Batch) prepMeta() {
 // pixel of margin) and its run key (texture and mip level). It is computed
 // in the sort's sequential pass, so planning, which visits quads in depth
 // order, reads a small table instead of jumping around the quads.
-func (b *Batch) quadMeta(q *quad) uint64 {
+func (b *Batch) quadMeta(q *quad) uint64 { return quadMetaAt(q, b.cellW, b.cellH) }
+
+// quadMetaAt is quadMeta for a grid of cw x ch pixel cells.
+func quadMetaAt(q *quad, cw, ch float32) uint64 {
 	x0, y0 := q.v[0].DstX, q.v[0].DstY
 	x1, y1 := x0, y0
 	for k := 1; k < 4; k++ {
 		x0, x1 = min(x0, q.v[k].DstX), max(x1, q.v[k].DstX)
 		y0, y1 = min(y0, q.v[k].DstY), max(y1, q.v[k].DstY)
 	}
-	cw, ch := b.cellW, b.cellH
 	c0 := uint64(max(0, min(runCols-1, (x0-1)/cw)))
 	c1 := uint64(max(0, min(runCols-1, (x1+1)/cw)))
 	r0 := uint64(max(0, min(runRows-1, (y0-1)/ch)))
@@ -1266,33 +1282,50 @@ var quadIndices = func() []uint16 {
 // is several times faster for tens of thousands of quads.
 func (b *Batch) sortFarFirst(qs []*quad, withMeta bool) []int32 {
 	n := len(qs)
+	b.growSort(n)
+	if cap(b.meta) < n {
+		b.meta = make([]uint64, n)
+	}
+	meta := b.meta[:n]
+	b.prepMeta()
+	k0 := b.keys[0][:n]
+	for i := range qs {
+		if withMeta {
+			meta[i] = b.quadMeta(qs[i])
+		}
+		k0[i] = depthKey(qs[i].depth)
+	}
+	return b.radixOrder(n)
+}
+
+// depthKey maps a depth to a key whose ascending order is far to near.
+func depthKey(d float64) uint64 {
+	u := math.Float64bits(d)
+	if u>>63 != 0 {
+		u = ^u // negative: flip every bit
+	} else {
+		u |= 1 << 63 // positive: set the sign bit
+	}
+	return ^u // ascending key = descending depth
+}
+
+func (b *Batch) growSort(n int) {
 	if cap(b.keys[0]) < n {
 		b.keys[0] = make([]uint64, n)
 		b.keys[1] = make([]uint64, n)
 		b.order = make([]int32, n)
 		b.idx2 = make([]int32, n)
 	}
+}
+
+// radixOrder stable-sorts the n keys in b.keys[0] (which it uses as
+// scratch) and returns the order, in b's scratch.
+func (b *Batch) radixOrder(n int) []int32 {
 	k0, k1 := b.keys[0][:n], b.keys[1][:n]
 	o0, o1 := b.order[:n], b.idx2[:n]
 	const bits, passes = 11, 6
 	var hist [passes][1 << bits]int32
-	if cap(b.meta) < n {
-		b.meta = make([]uint64, n)
-	}
-	meta := b.meta[:n]
-	b.prepMeta()
-	for i := range qs {
-		if withMeta {
-			meta[i] = b.quadMeta(qs[i])
-		}
-		u := math.Float64bits(qs[i].depth)
-		if u>>63 != 0 {
-			u = ^u // negative: flip every bit
-		} else {
-			u |= 1 << 63 // positive: set the sign bit
-		}
-		u = ^u // ascending key = descending depth
-		k0[i] = u
+	for i, u := range k0 {
 		o0[i] = int32(i)
 		for p := 0; p < passes; p++ {
 			hist[p][(u>>(p*bits))&(1<<bits-1)]++
@@ -1323,6 +1356,183 @@ func (b *Batch) sortFarFirst(qs []*quad, withMeta bool) []int32 {
 	return o0
 }
 
+// ---------------------------------------------------------------- presorting
+//
+// The scenery and the arena are most of a frame's quads and barely move
+// against each other from one frame to the next, so their side batches sort
+// themselves on their own goroutines (presort), starting from last frame's
+// order: an insertion pass over a nearly sorted list costs about one sweep,
+// against six for the radix sort. The flush then only sorts the frame's own
+// quads (bricks, orbs, effects) and merges the three lists. Ties keep
+// submission order throughout, so the result is exactly the order one
+// stable sort of everything would give.
+
+// presorted is one of a side batch's lists, sorted far first.
+type presorted struct {
+	keys   []uint64 // per quad, in submission order
+	order  []int32
+	meta   []uint64 // per quad: what planRuns needs (quadMeta)
+	metaOK bool     // false: some texture's size was unknown; recompute
+	valid  bool
+}
+
+// presort sorts the batch's own opaque and glow lists and works out their
+// run metadata. Call on the goroutine that built the batch, after drawing.
+func (b *Batch) presort() {
+	cw, ch := float32(b.cam.W)/runCols, float32(b.cam.H)/runRows
+	b.presortList(&b.pre[0], b.quads, cw, ch, b.wantMeta[0])
+	b.presortList(&b.pre[1], b.glow, cw, ch, b.wantMeta[1])
+}
+
+func (b *Batch) presortList(p *presorted, qs []quad, cw, ch float32, wantMeta bool) {
+	n := len(qs)
+	if cap(p.keys) < n {
+		p.keys = make([]uint64, n, n+n/4)
+		p.meta = make([]uint64, n, n+n/4)
+	}
+	keys, meta := p.keys[:n], p.meta[:n]
+	p.keys, p.meta = keys, meta
+	p.metaOK = wantMeta
+	for i := range qs {
+		q := &qs[i]
+		keys[i] = depthKey(q.depth)
+		if !wantMeta {
+			continue
+		}
+		if q.tex != 0 && texSize[q.tex] == ([2]float32{}) {
+			p.metaOK = false // registered since the last flush: the flush works it out
+			continue
+		}
+		meta[i] = quadMetaAt(q, cw, ch)
+	}
+	p.valid = true
+	if n == 0 {
+		p.order = p.order[:0]
+		return
+	}
+	if len(p.order) == n && insertionFix(p.order, keys, 8*n+1024) {
+		return
+	}
+	// first frame, a change in what is drawn, or too much movement: sort afresh
+	b.growSort(n)
+	copy(b.keys[0][:n], keys)
+	o := b.radixOrder(n)
+	p.order = append(p.order[:0], o...)
+}
+
+// insertionFix sorts order by (key, index) in place, giving up (false,
+// leaving order a permutation) once it has moved more than budget entries.
+func insertionFix(order []int32, keys []uint64, budget int) bool {
+	moves := 0
+	for i := 1; i < len(order); i++ {
+		x := order[i]
+		kx := keys[x]
+		j := i - 1
+		for j >= 0 {
+			y := order[j]
+			if ky := keys[y]; ky < kx || (ky == kx && y < x) {
+				break
+			}
+			order[j+1] = y
+			j--
+		}
+		order[j+1] = x
+		if moves += i - 1 - j; moves > budget {
+			return false
+		}
+	}
+	return true
+}
+
+// mergeSorted orders the flush's segments far first: the side batches'
+// presorted lists merged with the batch's own quads, sorted here. Ties go
+// to the earlier segment, then to submission order. It fills b.meta for
+// planRuns when plan is set.
+func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
+	own := segs[len(segs)-1]
+	n := 0
+	for _, s := range segs {
+		n += len(s)
+	}
+	b.growSort(n)
+	if cap(b.meta) < n {
+		b.meta = make([]uint64, n)
+	}
+	meta := b.meta[:n]
+	b.prepMeta()
+	// the own quads: keys and metadata, then their order
+	no := len(own)
+	if cap(b.mergeK) < no {
+		b.mergeK = make([]uint64, no, no+no/4)
+	}
+	ownK := b.mergeK[:no]
+	base := n - no
+	k0 := b.keys[0][:no]
+	for i := range own {
+		ownK[i] = depthKey(own[i].depth)
+		k0[i] = ownK[i]
+		if plan {
+			meta[base+i] = b.quadMeta(&own[i])
+		}
+	}
+	var ownOrd []int32
+	if no > 0 {
+		ownOrd = b.radixOrder(no)
+		// keep it out of the scratch the merge writes into
+		ownOrd = append(b.idx2[n-no : n][:0], ownOrd...)
+	}
+	// the side segments' metadata, copied into place
+	type head struct {
+		keys  []uint64
+		order []int32
+		off   int32
+	}
+	var hs [4]head
+	heads := hs[:0]
+	off := 0
+	for si, s := range segs[:len(segs)-1] {
+		p := &b.extB[si].pre[list]
+		if !p.valid || len(p.order) != len(s) {
+			// not presorted after all: fall back to one sort of everything
+			qs := b.qp
+			return b.sortFarFirst(qs, plan)
+		}
+		if plan {
+			if p.metaOK {
+				copy(meta[off:off+len(s)], p.meta[:len(s)])
+			} else {
+				for i := range s {
+					meta[off+i] = b.quadMeta(&s[i])
+				}
+			}
+		}
+		heads = append(heads, head{p.keys, p.order, int32(off)})
+		off += len(s)
+	}
+	heads = append(heads, head{ownK, ownOrd, int32(base)})
+	// k-way merge (k is 3): smallest key first, the earlier segment on ties
+	out := b.order[:0]
+	var pos [4]int
+	for len(out) < n {
+		best := -1
+		var bk uint64
+		for h := range heads {
+			if pos[h] >= len(heads[h].order) {
+				continue
+			}
+			k := heads[h].keys[heads[h].order[pos[h]]]
+			if best < 0 || k < bk {
+				best, bk = h, k
+			}
+		}
+		hd := &heads[best]
+		out = append(out, hd.off+hd.order[pos[best]])
+		pos[best]++
+	}
+	b.order = out[:cap(out)]
+	return out
+}
+
 // lastQuads is how many quads the last world flush drew (for profiling).
 var lastQuads int
 
@@ -1335,7 +1545,7 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 	}
 	b.flush(dst, append(b.extQ, b.quads), ebiten.BlendSourceOver, 0)
 	b.flush(dst, append(b.extG, b.glow), ebiten.BlendLighter, 1)
-	b.extQ, b.extG = b.extQ[:0], b.extG[:0]
+	b.extQ, b.extG, b.extB = b.extQ[:0], b.extG[:0], b.extB[:0]
 }
 
 // drawFirst queues the side batches' quads to be drawn ahead of b's own,
@@ -1345,6 +1555,7 @@ func (b *Batch) drawFirst(sides ...*Batch) {
 	for _, s := range sides {
 		b.extQ = append(b.extQ, s.quads)
 		b.extG = append(b.extG, s.glow)
+		b.extB = append(b.extB, s)
 	}
 }
 
