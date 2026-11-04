@@ -29,6 +29,8 @@ const (
 	// once, so the bricks keep up with a build that grows every chamber
 	// instead of trailing it; the measurement then corrects the guess.
 	powerPerItem = 1.12
+	// the learnt feed-forward stays within these bounds
+	powerFFMin, powerFFMax = 1.03, 1.2
 )
 
 // powerTarget is the active seconds a chamber should take in an act.
@@ -38,6 +40,15 @@ func (r *Run) powerTarget() float64 {
 	return [3]float64{140, 135, 125}[min(r.Act-1, 2)]
 }
 
+// powerStepUp is the most one chamber may raise the scale, and powerIMax
+// bounds the controller's memory of past misses. Overshooting costs more
+// than undershooting (a chamber that drags for minutes against one that
+// ends early), so the scale climbs more carefully than it falls.
+var powerStepUp, powerIMax = 1.5, 1.0
+
+// powerLearn enables the learnt feed-forward (balance harness switch).
+var powerLearn = true
+
 // powerOff pins the scale at 1 (balance harness experiments).
 var powerOff bool
 
@@ -46,7 +57,20 @@ func (r *Run) carries() bool { return r.Carry && !r.Duel }
 
 // powerCapScale is the most the scale may reach in the current act.
 func (r *Run) powerCapScale() float64 {
-	return [3]float64{4, 40, 150}[min(r.Act-1, 2)] * math.Pow(2, float64(r.Loop()))
+	return [3]float64{4, powerCap2, powerCap3}[min(r.Act-1, 2)] * math.Pow(2, float64(r.Loop()))
+}
+
+// The act 2 and 3 caps. Builds that snowball (Berserker rage, Gambler
+// crits) used to reach the old caps (40, 150) and then clear chambers in
+// half the target time; these leave the controller room to keep up.
+var powerCap2, powerCap3 = 40.0, 150.0
+
+// perItem is the feed-forward one new item adds to the scale.
+func (r *Run) perItem() float64 {
+	if r.PowerFF <= 0 {
+		return powerPerItem
+	}
+	return r.PowerFF
 }
 
 // powerScale is the brick-health scale the next chamber gets: the measured
@@ -58,7 +82,7 @@ func (r *Run) powerScale() float64 {
 	s := math.Max(1, r.Power)
 	if r.Act > 1 {
 		// act 1's own curve already expects a growing build
-		s *= math.Pow(powerPerItem, float64(r.buildSize()-r.PowerItems))
+		s *= math.Pow(r.perItem(), float64(r.buildSize()-r.PowerItems))
 	}
 	return math.Max(1, math.Min(r.powerCapScale(), s))
 }
@@ -97,14 +121,21 @@ func (r *Run) notePower(L *Level) {
 	}
 	target := r.powerTarget()
 	e := math.Log(target / L.activeT)
-	r.PowerI = math.Max(-1.5, math.Min(1.5, r.PowerI+e))
-	step := math.Max(math.Log(0.6), math.Min(math.Log(2.2), powerGain*e+powerInteg*r.PowerI))
+	r.PowerI = math.Max(-powerIMax, math.Min(powerIMax, r.PowerI+e))
+	step := math.Max(math.Log(0.6), math.Min(math.Log(powerStepUp), powerGain*e+powerInteg*r.PowerI))
 	used := L.powerUsed // the scale this chamber was built with
 	if used <= 0 {
 		used = r.powerScale()
 	}
 	s := used * math.Exp(step)
 	r.Power = math.Max(1, math.Min(r.powerCapScale(), s))
+	// learn how much this build gains per item: if the chamber built with
+	// the feed-forward came out too slow, items help it less than assumed
+	// (and the reverse), so the next guess leans that way
+	if n := r.buildSize() - r.PowerItems; n > 0 && r.Act > 1 && powerLearn {
+		ff := math.Log(r.perItem()) + 0.2*e/float64(n)
+		r.PowerFF = math.Exp(math.Max(math.Log(powerFFMin), math.Min(math.Log(powerFFMax), ff)))
+	}
 	r.PowerItems = r.buildSize() // the feed-forward starts again from here
 	if r.Power <= 1 && r.PowerI < 0 {
 		r.PowerI = 0 // at the floor, misses on the slow side don't pile up

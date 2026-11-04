@@ -73,6 +73,7 @@ type savedRun struct {
 	PowerN                                  int
 	PowerI                                  float64
 	PowerItems                              int
+	PowerFF                                 float64
 	NextBarrier                             int // barriers waiting for the next chamber
 }
 
@@ -108,7 +109,7 @@ func (g *Game) snapRun(phase string, node int) []byte {
 		RunEndless: r.Endless, EndlessStart: r.EndlessStart, XPPaid: r.xpPaid, ShardsPaid: r.shardsPaid,
 		StatsPaid: r.statsPaid, MetaLuck: r.metaLuck, Bricks: r.Bricks, Bosses: r.Bosses, Elites: r.Elites,
 		MaxCombo: r.MaxCombo, Score: r.Score, Elapsed: time.Since(r.Start).Seconds(), Recap: r.recap, Assisted: r.Assisted,
-		Carry: r.Carry, Power: r.Power, PowerN: r.PowerN, PowerI: r.PowerI, PowerItems: r.PowerItems, NextBarrier: r.NextBarrier}
+		Carry: r.Carry, Power: r.Power, PowerN: r.PowerN, PowerI: r.PowerI, PowerItems: r.PowerItems, PowerFF: r.PowerFF, NextBarrier: r.NextBarrier}
 	for _, n := range r.Map.Nodes {
 		s.Map = append(s.Map, savedNode{n.Row, n.Lane, n.Type, n.Next, n.Visited, n.Seed, n.Omen})
 	}
@@ -187,6 +188,7 @@ func (g *Game) continueRun(s *savedRun) {
 		r.recap = newRecap()
 	}
 	r.Carry, r.Power, r.PowerN, r.PowerI, r.PowerItems = s.Carry, s.Power, s.PowerN, s.PowerI, s.PowerItems
+	r.PowerFF = s.PowerFF
 	r.NextBarrier = s.NextBarrier
 	if r.Power <= 0 {
 		r.Power = r.itemPower()

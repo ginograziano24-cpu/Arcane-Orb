@@ -122,13 +122,34 @@ func init() {
 			Carry   bool
 			Acts    int
 			NoScale bool
-		}{3, 400, nil, true, 3, false}
+			Cap2    float64
+			Cap3    float64
+			NoLearn bool
+			StepUp  float64
+			IMax    float64
+		}{3, 400, nil, true, 3, false, 0, 0, false, 0, 0}
 		if len(args) > 0 {
 			_ = json.Unmarshal([]byte(args[0].String()), &p)
 		}
 		powerOff = p.NoScale
+		c2, c3 := powerCap2, powerCap3
+		if p.Cap2 > 0 {
+			powerCap2 = p.Cap2
+		}
+		if p.Cap3 > 0 {
+			powerCap3 = p.Cap3
+		}
+		powerLearn = !p.NoLearn
+		su, im := powerStepUp, powerIMax
+		if p.StepUp > 0 {
+			powerStepUp = p.StepUp
+		}
+		if p.IMax > 0 {
+			powerIMax = p.IMax
+		}
+		defer func() { powerStepUp, powerIMax = su, im }()
 		b, _ := json.Marshal(runCampaign(theGame, p.Seeds, p.MaxT, p.Archs, p.Carry, p.Acts))
-		powerOff = false
+		powerOff, powerCap2, powerCap3, powerLearn = false, c2, c3, true
 		return string(b)
 	}))
 }

@@ -272,7 +272,7 @@ func (L *Level) overload() bool {
 	return true
 }
 
-// jackpot stakes a little gold on fortune: three good power-ups rain down
+// jackpot stakes a little gold on fortune: two good power-ups rain down
 // and a few coins come back with them.
 func (L *Level) jackpot() bool {
 	r := L.g.run
@@ -281,7 +281,7 @@ func (L *Level) jackpot() bool {
 		return false
 	}
 	r.Gold -= jackpotCost
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 2; i++ {
 		x := (L.rng.Float64()*2 - 1) * (HalfW - 2)
 		L.dropPower(x, 9+L.rng.Float64()*5, true)
 	}

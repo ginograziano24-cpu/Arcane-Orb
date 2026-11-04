@@ -209,7 +209,7 @@ func (s *Stats) overclockTime() float64 {
 	return 1.5
 }
 func (s *Stats) highRoller(gold int) float64 {
-	per, cap := 6.0, 0.6
+	per, cap := 8.0, 0.45
 	if s.Aspect == "Jackpot" {
 		per, cap = 4, 0.4
 	}

@@ -38,7 +38,6 @@ var archetypes = []Archetype{
 			s.PaddleWidth -= 0.1
 			s.Damage += 0.2
 			s.CritChance += 0.1
-			s.CritMult += 0.5
 			s.ClassRage = true
 		}, Ability: "Bloodlust", AbilityDesc: "Fill your Rage at once. For 5 seconds it cannot fade and every hit lands 50% harder.", Cooldown: 30},
 	{ID: "arcane", Name: "Arcanist", Passive: "Attunement",
@@ -54,15 +53,15 @@ var archetypes = []Archetype{
 			s.ClassOverclock = true
 		}, Ability: "Overload", AbilityDesc: "Dump the reactor: three piercing beam volleys in quick succession.", Cooldown: 26},
 	{ID: "lucky", Name: "Gambler", Passive: "High Roller", Cost: 90,
-		Desc: "Gold is power: +1% damage for every 6 gold you carry, up to +60%. Starts with 25 extra gold. Spend or hoard? +40% gold, +30% power-ups, +8% crit and a free shop reroll.",
+		Desc: "Gold is power: +1% damage for every 8 gold you carry, up to +45%. Starts with 25 extra gold. Spend or hoard? +40% gold, +25% power-ups, +8% crit and a free shop reroll.",
 		Apply: func(s *Stats) {
 			s.GoldMult += 0.4
-			s.Luck += 0.3
+			s.Luck += 0.25
 			s.CritChance += 0.08
 			s.FreeRerolls++
 			s.ClassHighRoller = true
 			s.StartGold += 25
-		}, Ability: "Jackpot", AbilityDesc: "Stake 15 gold: three good power-ups rain down and a few coins come back.", Cooldown: 30},
+		}, Ability: "Jackpot", AbilityDesc: "Stake 15 gold: two good power-ups rain down and a few coins come back.", Cooldown: 30},
 	{ID: "pyro", Name: "Pyromancer", Passive: "Stoke", Cost: 120,
 		Desc: "Every 5th hit ignites. Hitting a burning brick stokes it: +50% damage and the fire is renewed. Fire burns 50% hotter.",
 		Apply: func(s *Stats) {
@@ -71,9 +70,9 @@ var archetypes = []Archetype{
 			s.ClassStoke = true
 		}, Ability: "Firestorm", AbilityDesc: "Set the two lowest rows ablaze.", Cooldown: 32},
 	{ID: "storm", Name: "Stormcaller", Passive: "Static Charge", Cost: 120,
-		Desc: "Sweep the paddle back and forth to build static. When full, your next bounce supercharges the orb: for 3 seconds every hit arcs lightning. Lightning +10%.",
+		Desc: "Sweep the paddle back and forth to build static. When full, your next bounce supercharges the orb: for 3 seconds every hit arcs lightning. Lightning +25%.",
 		Apply: func(s *Stats) {
-			s.ChainMult += 0.1
+			s.ChainMult += 0.25
 			s.ClassStatic = true
 		}, Ability: "Thunderstrike", AbilityDesc: "Smite the toughest brick; it chains to 3 more.", Cooldown: 28},
 }
@@ -253,6 +252,7 @@ type Run struct {
 	PowerN       int     // chambers measured
 	PowerI       float64 // the scale controller's running sum of misses (log)
 	PowerItems   int     // build size when Power was last measured (feed-forward)
+	PowerFF      float64 // the feed-forward each item adds, learnt for this build (0: powerPerItem)
 	xpPaid       int     // XP already awarded (victory before endless)
 	shardsPaid   int
 	statsPaid    [3]int // bricks, bosses, elites already added to the save
