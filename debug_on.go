@@ -111,6 +111,10 @@ func debugPre(g *Game) {
 			}
 			continue
 		}
+		if a == "scrolls" && g.run != nil {
+			g.run.Scrolls = []string{"heal", "midas", "meteor"}
+			continue
+		}
 		if a == "notips" {
 			g.settings.NoTips = true
 			g.coachQ = nil

@@ -139,19 +139,21 @@ type Game struct {
 	coachT       float64
 
 	// HUD animation state
-	hudLevel   *Level
-	hudBoss    float64
-	hudGold    float64
-	goldPop    float64
-	lastGold   int
-	comboShown int
-	comboPop   float64 // 1 on each new combo step, decays
-	comboPrev  int
-	mastBefore int // origin mastery level before and after the last run
-	mastAfter  int
-	toasts     []toastMsg
-	fadeT      float64
-	heartT     float64
+	hudLevel     *Level
+	hudBoss      float64
+	hudGold      float64
+	goldPop      float64
+	lastGold     int
+	comboShown   int
+	comboPop     float64 // 1 on each new combo step, decays
+	comboPrev    int
+	mastBefore   int // origin mastery level before and after the last run
+	mastAfter    int
+	toasts       []toastMsg
+	fadeT        float64
+	scrollShelf  []string // the scrolls the shelf last showed
+	scrollShelfT float64  // seconds the shelf keeps the descriptions open
+	heartT       float64
 
 	codexTab    int
 	endlessMode bool // next run starts in Endless

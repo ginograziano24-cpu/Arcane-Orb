@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"math"
 	"math/rand"
+	"slices"
 	"sort"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -264,4 +265,60 @@ func (g *Game) drawScrolls(screen *ebiten.Image, L *Level) {
 	if g.padActive && len(r.Scrolls) > 0 {
 		u.text(screen, "LB pick · Y read", fBold, 14, 1898, y-22, cDim, alignRight)
 	}
+	g.drawScrollShelf(screen, L, x0, y)
 }
+
+// drawScrollShelf labels the scrolls you hold, stacked above their slots
+// on the right: the key to read each, its name in its own colour and what
+// it does. The descriptions show in full at the start of a chamber and
+// whenever the set of scrolls changes, then settle to just the names so
+// the corner stays clear. (In a chamber the cursor is hidden, so this is
+// the only place a player learns what a scroll will do.)
+func (g *Game) drawScrollShelf(screen *ebiten.Image, L *Level, slotX, slotY float64) {
+	u := g.ui
+	S := u.S
+	r := g.run
+	if len(r.Scrolls) == 0 {
+		g.scrollShelf = g.scrollShelf[:0]
+		return
+	}
+	if !slices.Equal(g.scrollShelf, r.Scrolls) {
+		g.scrollShelf = append(g.scrollShelf[:0], r.Scrolls...)
+		g.scrollShelfT = 6 // the set changed: show it all for a while
+	}
+	g.scrollShelfT -= u.DT
+	full := math.Max(g.scrollShelfT, 6-L.T) // also at the start of a chamber
+	k := smoothstep01(clamp01(full / 0.6))  // 1 = names and descriptions, 0 = names only
+	const w = 340.0
+	x := 1898 - w
+	y := slotY - 14
+	for i := len(r.Scrolls) - 1; i >= 0; i-- {
+		sd := scrollByID[r.Scrolls[i]]
+		lines := u.wrap(sd.Desc, fReg, 15, w-74)
+		h := 46 + k*(float64(len(lines))*20+2)
+		y -= h
+		a := 0.62 + 0.38*k
+		box := boxPath(u.X(x), u.Y(y), w*S, h*S, 9*S, false)
+		fillPath(screen, box, rgba(22, 14, 38, uint8(205*a)), rgba(10, 6, 20, uint8(220*a)), vgrad(u.Y(y), u.Y(y+h)), false)
+		strokePath(screen, box, 1.4*S, ca(sd.Col, 0.35+0.3*k), false)
+		// a stripe of the scroll's colour down the left edge
+		fillPath(screen, boxPath(u.X(x+4), u.Y(y+6), 4*S, (h-12)*S, 2*S, false), sd.Col, darken(sd.Col, 0.6), vgrad(u.Y(y), u.Y(y+h)), false)
+		if !g.padActive {
+			u.keycap(screen, itoa(i+1), x+14, y+5, a)
+		}
+		u.textOutlined(screen, sd.Name, fBold, 18, x+58, y+11, ca(lighten(sd.Col, 0.35), a), alignLeft)
+		if k > 0.02 {
+			raw := u.rawText
+			u.rawText = true // already translated by wrap
+			ly := y + 42
+			for _, l := range lines {
+				u.text(screen, l, fReg, 15, x+58, ly, ca(rgba(214, 206, 230, 255), k), alignLeft)
+				ly += 20
+			}
+			u.rawText = raw
+		}
+		y -= 8
+	}
+}
+
+func smoothstep01(x float64) float64 { return x * x * (3 - 2*x) }
