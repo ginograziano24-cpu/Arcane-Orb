@@ -70,6 +70,8 @@ func benchParse() {
 			benchTag = strings.TrimPrefix(a, "-benchtag=")
 		case a == "-noruns":
 			planRunsOn = false
+		case a == "-notextcache":
+			textOff = true
 		case strings.HasPrefix(a, "-benchwin="):
 			_, _ = fmt.Sscanf(strings.TrimPrefix(a, "-benchwin="), "%dx%d", &benchWinW, &benchWinH)
 		}

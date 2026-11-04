@@ -520,7 +520,7 @@ type Batch struct {
 	keys     [2][]uint64 // radix sort scratch
 	idx2     []int32
 	proj     []projected // mesh corner scratch (drawShared)
-	sides    [2]*Batch   // side batches built on other goroutines (side)
+	sides    []*Batch    // side batches built on other goroutines (side)
 	runs     []quadRun   // flush: draw-call runs (planRuns)
 	qp       []*quad     // flush: every quad to draw, in submission order
 	extQ     [][]quad    // side batches' quads drawn before b's own (drawFirst)
@@ -639,11 +639,10 @@ func newBatch(cam *Camera) *Batch {
 // light, point lights), for drawing on another goroutine. Only b's owner
 // may call it, and only between b's Reset and Flush.
 func (b *Batch) side(i int) *Batch {
-	s := b.sides[i]
-	if s == nil {
-		s = &Batch{}
-		b.sides[i] = s
+	for len(b.sides) <= i {
+		b.sides = append(b.sides, &Batch{})
 	}
+	s := b.sides[i]
 	s.cam = b.cam
 	s.fogColor, s.fogNear, s.fogFar = b.fogColor, b.fogNear, b.fogFar
 	s.light, s.lightCol, s.ambCol = b.light, b.lightCol, b.ambCol
@@ -951,7 +950,7 @@ func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend, list
 	b.planned[list] = plan
 	// sort indices rather than the (large) quads themselves: far first
 	var order []int32
-	if len(b.extB) == len(segs)-1 && len(b.extB) > 0 && len(b.extB) <= 3 {
+	if len(b.extB) == len(segs)-1 && len(b.extB) > 0 && len(b.extB) < maxMerge {
 		order = b.mergeSorted(segs, list, plan)
 	} else {
 		order = b.sortFarFirst(qs, plan)
@@ -967,7 +966,7 @@ func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend, list
 	b.verts = b.verts[:0]
 	for ri := range runs {
 		rn := &runs[ri]
-		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: true}
+		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: worldAA}
 		src := atlas
 		if rn.tex != 0 {
 			src = texImages[rn.tex]
@@ -1080,6 +1079,11 @@ func mipLevelFromDistance(dx0, dy0, dx1, dy1, sx0, sy0, sx1, sy1 float32) int {
 	}
 	return min(level, maxLevel)
 }
+
+// worldAA draws the 3D world anti-aliased: Ebitengine renders it at twice
+// the resolution and filters it down, four times the pixels. The Low preset
+// turns it off (settings: Anti-aliasing).
+var worldAA = true
 
 // planRunsOn enables run planning (-noruns turns it off, for benchmarks).
 var planRunsOn = true
@@ -1444,6 +1448,9 @@ func insertionFix(order []int32, keys []uint64, budget int) bool {
 	return true
 }
 
+// maxMerge is the most lists mergeSorted merges (side batches plus own).
+const maxMerge = 12
+
 // mergeSorted orders the flush's segments far first: the side batches'
 // presorted lists merged with the batch's own quads, sorted here. Ties go
 // to the earlier segment, then to submission order. It fills b.meta for
@@ -1487,7 +1494,7 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 		order []int32
 		off   int32
 	}
-	var hs [4]head
+	var hs [maxMerge]head
 	heads := hs[:0]
 	off := 0
 	for si, s := range segs[:len(segs)-1] {
@@ -1510,9 +1517,9 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 		off += len(s)
 	}
 	heads = append(heads, head{ownK, ownOrd, int32(base)})
-	// k-way merge (k is 3): smallest key first, the earlier segment on ties
+	// k-way merge: smallest key first, the earlier segment on ties
 	out := b.order[:0]
-	var pos [4]int
+	var pos [maxMerge]int
 	for len(out) < n {
 		best := -1
 		var bk uint64

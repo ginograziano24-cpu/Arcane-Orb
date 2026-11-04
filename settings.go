@@ -19,11 +19,11 @@ func (g *Game) applyQuality(q int) {
 	st.Quality = q
 	switch q {
 	case 0:
-		st.RenderRes, st.NoBloom, st.Particles = 0.67, true, 0
+		st.RenderRes, st.NoBloom, st.Particles, st.NoAA = 0.67, true, 0, true
 	case 1:
-		st.RenderRes, st.NoBloom, st.Particles = 0.85, false, 1
+		st.RenderRes, st.NoBloom, st.Particles, st.NoAA = 0.85, false, 1, false
 	case 2:
-		st.RenderRes, st.NoBloom, st.Particles = 1, false, 1
+		st.RenderRes, st.NoBloom, st.Particles, st.NoAA = 1, false, 1, false
 	}
 }
 
@@ -165,7 +165,7 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		}
 		note("Below 100% the 3D scene renders at a lower resolution and is sharpened back up to your screen; menus and text always stay at full resolution.")
 	case 2:
-		was := [3]bool{st.NoBloom, st.Particles == 1, st.Classic}
+		was := [4]bool{st.NoBloom, st.Particles == 1, st.Classic, st.NoAA}
 		st.Shake = toggle("shake", "Screen shake", st.Shake)
 		st.TopDown = toggle("topdown", "Top-down camera", st.TopDown)
 		st.Flashes = toggle("flash", "Flash effects", st.Flashes)
@@ -175,9 +175,10 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 			st.Particles = 1
 		}
 		st.NoBloom = !toggle("bloom", "Bloom & colour grading", !st.NoBloom)
+		st.NoAA = !toggle("aa", "Anti-aliasing (smooth 3D edges)", !st.NoAA)
 		st.Classic = toggle("classic", "Classic backdrop (painted picture, no 3D scenery)", st.Classic)
 		st.FastAnim = toggle("fastanim", "Fast animations (no slow motion or hit-stop, quicker screens)", st.FastAnim)
-		if was != [3]bool{st.NoBloom, st.Particles == 1, st.Classic} && st.Quality != 3 {
+		if was != [4]bool{st.NoBloom, st.Particles == 1, st.Classic, st.NoAA} && st.Quality != 3 {
 			st.Quality = 3
 		}
 	case 3:

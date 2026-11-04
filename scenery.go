@@ -256,7 +256,7 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 			boiler(B, p[0], p[1], t+float64(i))
 		}
 	}
-	g.drawDressing(B, L, t, side)
+	// the dressing (drawDressing) follows, on its own goroutine (drawWorld)
 }
 
 func colKey(c color.RGBA) string { return itoa(int(c.R)) + "-" + itoa(int(c.G)) + "-" + itoa(int(c.B)) }

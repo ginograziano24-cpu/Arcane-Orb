@@ -18,6 +18,7 @@ type Settings struct {
 	ShowFPS    bool                 `json:"show_fps"`
 	DX12       bool                 `json:"dx12,omitempty"` // Windows: DirectX 12 instead of 11 (next launch)
 	NoBloom    bool                 `json:"no_bloom"`
+	NoAA       bool                 `json:"no_aa"`
 	Classic    bool                 `json:"classic_backdrop"` // flat painted picture instead of 3D scenery
 	Quality    int                  `json:"quality"`          // 0 low, 1 medium, 2 high, 3 custom
 	RenderRes  float64              `json:"render_scale"`     // 3D resolution, 0.5..1 (0 = full)

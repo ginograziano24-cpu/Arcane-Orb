@@ -218,6 +218,7 @@
 "An echoing hit lands twice."
 "An overturned wagon. Its merchants are nowhere to be seen, but their goods are."
 "Ancient Ruins"
+"Anti-aliasing (smooth 3D edges)"
 "Anything can happen"
 "Arc Lens"
 "Arcane Might"

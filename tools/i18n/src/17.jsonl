@@ -67,3 +67,4 @@
 ["−%d GOLD", "−%d 金币", "−%d ゴールド", "−%d ЗОЛОТА", "−%d ORO", "−%d OURO", "−%d GOLD"]
 ["Next chamber: +1 barrier", "下一个密室：+1 层屏障", "次の部屋：バリア+1", "Следующий зал: +1 барьер", "Próxima cámara: +1 barrera", "Próxima câmara: +1 barreira", "Nächste Kammer: +1 Barriere"]
 ["Next chamber: +%d barriers", "下一个密室：+%d 层屏障", "次の部屋：バリア+%d", "Следующий зал: +%d барьера", "Próxima cámara: +%d barreras", "Próxima câmara: +%d barreiras", "Nächste Kammer: +%d Barrieren"]
+["Anti-aliasing (smooth 3D edges)", "3D 边缘平滑", "アンチエイリアス（3Dの縁を滑らかに）", "Сглаживание (ровные края 3D)", "Antialiasing (bordes 3D suaves)", "Antisserrilhamento (bordas 3D suaves)", "Kantenglättung (glatte 3D-Kanten)"]

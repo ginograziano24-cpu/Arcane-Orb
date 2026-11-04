@@ -61,6 +61,8 @@ type shopItem struct {
 }
 
 type Game struct {
+	sideJobs         []func(*Batch) // drawWorld: the static parts built on their own goroutines
+	sideBatches      []*Batch
 	state, prevState State
 	stateT           float64
 	run              *Run
@@ -836,10 +838,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	perfEnd(secDraw)
 	g.drawPerf(screen)
 	perfFrameEnd()
+	textFrameEnd()
 }
 
 func (g *Game) drawFrame(screen *ebiten.Image) {
 	sw, sh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
+	worldAA = !g.settings.NoAA
 	g.ui.Setup(sw, sh)
 	now := nowFn()
 	ddt := math.Min(0.05, now.Sub(g.lastDraw).Seconds())

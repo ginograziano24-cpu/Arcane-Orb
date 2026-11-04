@@ -3,6 +3,7 @@ package main
 import (
 	"image/color"
 	"math"
+	"math/rand"
 	"sync"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -124,28 +125,58 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	floorTexture(L)
 	brickSheet()
 	B.prepMeta() // texture sizes, read by the side batches' presort
-	sScen, sArena := B.side(0), B.side(1)
+	// the jobs, in the order their quads always had: scenery, its dressing,
+	// the arena floor, the walls in pieces, the posts
+	jobs := g.sideJobs[:0]
+	jobs = append(jobs, func(s *Batch) {
+		if !classic {
+			g.drawScenery(s, L)
+		}
+	}, func(s *Batch) {
+		if !classic {
+			g.drawDressing(s, L, L.T+g.stateT, sceneSide(L))
+		}
+	}, func(s *Batch) { g.drawArenaBase(s, L, classic) })
+	nw := arenaWallSections(L)
+	for k := 0; k < wallPieces; k++ {
+		from, to := nw*k/wallPieces, nw*(k+1)/wallPieces
+		jobs = append(jobs, func(s *Batch) { g.drawArenaWalls(s, L, from, to) })
+	}
+	jobs = append(jobs, func(s *Batch) { g.drawArenaPosts(s, L) })
+	// then what the frame used to draw first itself: the barrier and Aegis
+	// light, and the bricks in pieces (the main goroutine carries on from the
+	// boss's eyes, so every quad keeps its place in the submission order)
+	jobs = append(jobs, func(s *Batch) { g.drawBarrierLights(s, L) })
+	tb := L.T + g.stateT
+	nb := len(L.Bricks)
+	for k := 0; k < brickPieces; k++ {
+		from, to := nb*k/brickPieces, nb*(k+1)/brickPieces
+		jobs = append(jobs, func(s *Batch) {
+			for _, b := range L.Bricks[from:to] {
+				if b.Alive {
+					g.drawBrick(s, L, b, tb)
+				}
+			}
+		})
+	}
+	g.sideJobs = jobs
+	sides := g.sideBatches[:0]
+	for i := range jobs {
+		sides = append(sides, B.side(i))
+	}
+	g.sideBatches = sides
 	nq0, ng0 := len(B.quads), len(B.glow) // what is already in B stays first
 	var wg sync.WaitGroup
-	var crash [2]any
-	part := func(i int, f func()) {
+	crash := make([]any, len(jobs))
+	for i, job := range jobs {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			defer func() { crash[i] = recover() }()
-			f()
+			job(sides[i])
+			sides[i].presort()
 		}()
 	}
-	part(0, func() {
-		if !classic {
-			g.drawScenery(sScen, L)
-		}
-		sScen.presort()
-	})
-	part(1, func() {
-		g.drawArena(sArena, L, classic)
-		sArena.presort()
-	})
 	defer func() {
 		// joined before the flush below; also on a panic in this goroutine
 		wg.Wait()
@@ -157,45 +188,24 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 				panic(c)
 			}
 		}
-		perfMark(0, len(sScen.quads)+len(sScen.glow))
-		perfMark(1, len(sScen.quads)+len(sScen.glow)+len(sArena.quads)+len(sArena.glow))
+		n := 0
+		for i, sd := range sides {
+			n += len(sd.quads) + len(sd.glow)
+			switch i {
+			case 1:
+				perfMark(0, n) // scenery and dressing
+			case 3 + wallPieces:
+				perfMark(1, n) // and the arena
+			}
+		}
 		if nq0 == 0 && ng0 == 0 {
-			B.drawFirst(sScen, sArena) // flushed in place, no copying
+			B.drawFirst(sides...) // flushed in place, no copying
 		} else {
-			B.insertSides(nq0, ng0, sScen, sArena)
+			B.insertSides(nq0, ng0, sides...)
 		}
 	}
 
-	// barrier
-	if L.Barrier > 0 {
-		a := 0.45 + 0.2*math.Sin(L.T*6)
-		B.Decal(0, BarrierZ, 0.05, HalfW*2, 0.35, sprSoft, alpha(color.RGBA{170, 140, 255, 255}, a), true)
-		B.Decal(0, BarrierZ, 0.06, HalfW*2, 0.08, sprWhite, alpha(color.RGBA{220, 200, 255, 255}, a), true)
-	}
-
-	// the Guardian's Aegis: a wall of holy light behind the paddle
-	if at := L.cls.aegisT; at > 0 {
-		f := math.Min(1, at/0.6) * math.Min(1, (aegisDur-at)/0.2+0.2)
-		p := 0.75 + 0.25*math.Sin(L.T*9)
-		gold := color.RGBA{255, 220, 140, 255}
-		B.Decal(0, BarrierZ, 0.05, HalfW*2, 1.0, sprSoft, alpha(gold, 0.8*f*p), true)
-		B.Decal(0, BarrierZ, 0.06, HalfW*2, 0.16, sprWhite, alpha(color.RGBA{255, 250, 225, 255}, f), true)
-		// a curtain of light rising off the line
-		for x := -HalfW + 0.4; x < HalfW; x += 0.8 {
-			h := 1.3 + 0.4*math.Sin(L.T*4+x*1.7)
-			B.Billboard(V3{x, h * 0.55, BarrierZ}, 1.1*h, sprSoft, alpha(gold, 0.5*f), true)
-			B.Billboard(V3{x, h * 0.3, BarrierZ}, 0.35, sprSoft, alpha(color.RGBA{255, 250, 230, 255}, 0.7*f), true)
-		}
-	}
-
-	// bricks
 	t := L.T + g.stateT
-	for _, b := range L.Bricks {
-		if !b.Alive {
-			continue
-		}
-		g.drawBrick(B, L, b, t)
-	}
 	// boss eyes
 	if L.Boss != nil && !L.Boss.Dead {
 		for _, br := range L.Bricks {
@@ -345,10 +355,56 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	}
 }
 
+// drawBarrierLights draws the barrier line and the Guardian's Aegis.
+func (g *Game) drawBarrierLights(B *Batch, L *Level) {
+	// barrier
+	if L.Barrier > 0 {
+		a := 0.45 + 0.2*math.Sin(L.T*6)
+		B.Decal(0, BarrierZ, 0.05, HalfW*2, 0.35, sprSoft, alpha(color.RGBA{170, 140, 255, 255}, a), true)
+		B.Decal(0, BarrierZ, 0.06, HalfW*2, 0.08, sprWhite, alpha(color.RGBA{220, 200, 255, 255}, a), true)
+	}
+
+	// the Guardian's Aegis: a wall of holy light behind the paddle
+	if at := L.cls.aegisT; at > 0 {
+		f := math.Min(1, at/0.6) * math.Min(1, (aegisDur-at)/0.2+0.2)
+		p := 0.75 + 0.25*math.Sin(L.T*9)
+		gold := color.RGBA{255, 220, 140, 255}
+		B.Decal(0, BarrierZ, 0.05, HalfW*2, 1.0, sprSoft, alpha(gold, 0.8*f*p), true)
+		B.Decal(0, BarrierZ, 0.06, HalfW*2, 0.16, sprWhite, alpha(color.RGBA{255, 250, 225, 255}, f), true)
+		// a curtain of light rising off the line
+		for x := -HalfW + 0.4; x < HalfW; x += 0.8 {
+			h := 1.3 + 0.4*math.Sin(L.T*4+x*1.7)
+			B.Billboard(V3{x, h * 0.55, BarrierZ}, 1.1*h, sprSoft, alpha(gold, 0.5*f), true)
+			B.Billboard(V3{x, h * 0.3, BarrierZ}, 0.35, sprSoft, alpha(color.RGBA{255, 250, 230, 255}, 0.7*f), true)
+		}
+	}
+
+}
+
+// brickPieces is how many goroutines share the bricks.
+const brickPieces = 2
+
+// wallPieces is how many goroutines share the arena walls, the costliest
+// static part of a frame (modelled wall sections, thousands of quads).
+const wallPieces = 3
+
+// sceneSide is the side the scenery's hero piece leans to (the first draw
+// of drawScenery's prop generator), which the dressing also follows.
+func sceneSide(L *Level) float64 {
+	return float64(rand.New(rand.NewSource(L.propSeed)).Intn(2)*2 - 1)
+}
+
 // drawArena draws the platform, the floor, the lane line, the sigil, the
 // walls and the corner posts. It only reads the level, so it can run
 // alongside the rest of the frame.
 func (g *Game) drawArena(B *Batch, L *Level, classic bool) {
+	g.drawArenaBase(B, L, classic)
+	g.drawArenaWalls(B, L, 0, 1<<30)
+	g.drawArenaPosts(B, L)
+}
+
+// drawArenaBase draws the platform, the floor, the lane line and the sigil.
+func (g *Game) drawArenaBase(B *Batch, L *Level, classic bool) {
 	bio := L.Biome
 
 	// platform under the arena
@@ -397,8 +453,26 @@ func (g *Game) drawArena(B *Batch, L *Level, classic bool) {
 	// glowing lane line near the paddle
 	B.Decal(0, PaddleZ-1.3, 0.01, HalfW*2, 0.12, sprWhite, alpha(bio.Trim, 0.35), true)
 	g.drawArenaSigil(B, L)
-	// walls follow the arena outline
-	wallH := 1.4
+}
+
+const arenaWallH = 1.4
+
+// arenaWallSections counts the wall sections drawArenaWalls draws.
+func arenaWallSections(L *Level) int {
+	n := 0
+	for i := 0; i+1 < len(L.Walls); i++ {
+		a, c := L.Walls[i], L.Walls[i+1]
+		n += int(math.Ceil(math.Hypot(c.X-a.X, c.Z-a.Z) / 2.2))
+	}
+	return n
+}
+
+// drawArenaWalls draws wall sections [from, to) of the arena outline, in
+// order, so the walls can be built in pieces on several goroutines.
+func (g *Game) drawArenaWalls(B *Batch, L *Level, from, to int) {
+	bio := L.Biome
+	wallH := arenaWallH
+	idx := 0
 	wallTop, wallSide := matTop[bio.BrickMat], matSide[bio.BrickMat]
 	for i := 0; i+1 < len(L.Walls); i++ {
 		a, c := L.Walls[i], L.Walls[i+1]
@@ -412,6 +486,10 @@ func (g *Game) drawArena(B *Batch, L *Level, classic bool) {
 		steps := int(math.Ceil(ln / 2.2))
 		wm := wallModel(bio.ID)
 		for k := 0; k < steps; k++ {
+			idx++
+			if idx-1 < from || idx-1 >= to {
+				continue
+			}
 			t0, t1 := float64(k)/float64(steps)*ln, float64(k+1)/float64(steps)*ln
 			p0 := [2]float64{a.X + ux*t0, a.Z + uz*t0}
 			p1 := [2]float64{a.X + ux*t1, a.Z + uz*t1}
@@ -441,7 +519,11 @@ func (g *Game) drawArena(B *Batch, L *Level, classic bool) {
 				sprWhite, trimCol, [4]float32{1, 1, 1, 1}, bio.Neon)
 		}
 	}
-	// corner posts
+}
+
+// drawArenaPosts draws the corner posts.
+func (g *Game) drawArenaPosts(B *Batch, L *Level) {
+	wallH := arenaWallH
 	posts := []levelgen.Pt{}
 	for i, v := range L.Walls {
 		if i > 0 && i < len(L.Walls)-1 {

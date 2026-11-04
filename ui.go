@@ -147,11 +147,9 @@ func (u *UI) langName(dst *ebiten.Image, s string, x, y float64, c color.RGBA) {
 		fc = mf
 		u.faces[k] = fc
 	}
-	op := &text.DrawOptions{}
-	op.PrimaryAlign = text.AlignCenter
-	op.GeoM.Translate(u.X(x), u.Y(y)-2*u.S)
-	op.ColorScale.ScaleWithColor(prem(c, 1))
-	text.Draw(dst, s, fc, op)
+	var cs ebiten.ColorScale
+	cs.ScaleWithColor(prem(c, 1))
+	drawTextFace(dst, s, fc, text.AlignCenter, u.X(x), u.Y(y)-2*u.S, cs)
 	perf.cur.text++
 }
 
@@ -182,16 +180,16 @@ func (u *UI) drawText(dst *ebiten.Image, s string, f fontID, size, sx, sy float6
 	if !u.rawText {
 		s = tr(s)
 	}
-	op := &text.DrawOptions{}
+	ta := text.AlignStart
 	switch al {
 	case alignCenter:
-		op.PrimaryAlign = text.AlignCenter
+		ta = text.AlignCenter
 	case alignRight:
-		op.PrimaryAlign = text.AlignEnd
+		ta = text.AlignEnd
 	}
-	op.GeoM.Translate(sx, sy)
-	op.ColorScale.ScaleWithColor(prem(c, 1))
-	text.Draw(dst, s, u.face(f, size), op)
+	var cs ebiten.ColorScale
+	cs.ScaleWithColor(prem(c, 1))
+	drawTextFace(dst, s, u.face(f, size), ta, sx, sy, cs)
 	perf.cur.text++
 }
 
@@ -342,11 +340,9 @@ func (u *UI) rawFace(f fontID, px float64) text.Face {
 
 // drawRawText centres text horizontally at (cx, y) in pixel space.
 func (u *UI) drawRawText(dst *ebiten.Image, s string, face text.Face, cx, y float64, c color.RGBA) {
-	op := &text.DrawOptions{}
-	op.PrimaryAlign = text.AlignCenter
-	op.GeoM.Translate(cx, y)
-	op.ColorScale.ScaleWithColor(prem(c, 1))
-	text.Draw(dst, s, face, op)
+	var cs ebiten.ColorScale
+	cs.ScaleWithColor(prem(c, 1))
+	drawTextFace(dst, s, face, text.AlignCenter, cx, y, cs)
 	perf.cur.text++
 }
 
