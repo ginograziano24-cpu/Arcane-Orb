@@ -59,6 +59,7 @@ type Brick struct {
 	Layer       int
 	Up          *Brick
 	FallY       float64
+	KnX, KnZ    float64 // direction the last hit pushed it (draws with Flash)
 }
 
 func (b *Brick) X() float64 { return cellX(b.C) }
@@ -75,6 +76,8 @@ type Ball struct {
 	Phantom         float64 // >0: temporary orb with this many seconds left
 	Rico            int     // wall bounces since the paddle (Ricochet)
 	Storm           float64 // Stormcaller supercharge seconds left
+	Hit             float64 // impact pulse, 1 at contact fading to 0
+	HitNX, HitNZ    float64 // the surface normal it last struck
 }
 
 type Power int
@@ -275,6 +278,8 @@ type Level struct {
 	ambientT          float64
 	propsX            []V3
 	paddleBounce      float64
+	kickX, kickZ      float64 // camera kick: offset and velocity (a damped spring)
+	kickVX, kickVZ    float64
 	hurtFlash         float64
 	Walls             []levelgen.Pt
 	Vis               Visuals
@@ -595,6 +600,7 @@ func (L *Level) Update(dt float64, in Input) {
 	L.stun -= dt
 	L.hurtFlash = math.Max(0, L.hurtFlash-dt*2)
 	L.paddleBounce = math.Max(0, L.paddleBounce-dt*6)
+	L.updateKick(dt)
 
 	// paddle
 	tw := L.paddleTarget()
@@ -690,6 +696,7 @@ func (L *Level) Update(dt float64, in Input) {
 				L.barrierSaved(b.X)
 			}
 		}
+		b.Hit = math.Max(0, b.Hit-dt*7)
 		b.Trail = append(b.Trail, [2]float64{b.X, b.Z})
 		if len(b.Trail) > 12 {
 			b.Trail = b.Trail[1:]
@@ -918,6 +925,14 @@ func (L *Level) collideWalls(b *Ball) {
 		case b.X > 0:
 			side = 1
 		}
+		switch side {
+		case 0:
+			L.orbImpact(b, 1, 0, 0.6, color.RGBA{230, 235, 255, 255}, 3)
+		case 1:
+			L.orbImpact(b, -1, 0, 0.6, color.RGBA{230, 235, 255, 255}, 3)
+		default:
+			L.orbImpact(b, 0, -1, 0.6, color.RGBA{230, 235, 255, 255}, 3)
+		}
 		L.env.onBump(side, b.Z)
 		fixAngle(b)
 		b.Rico++
@@ -996,12 +1011,24 @@ func (L *Level) collideBricks(b *Ball) {
 			}
 		}
 	}
+	L.orbImpact(b, nx, nz, 1, lighten(best.Col, 0.5), 5)
+	if !best.BossPart {
+		best.KnX, best.KnZ = -nx, -nz
+	}
 	for _, br := range hits {
 		if !br.Alive {
 			continue
 		}
 		destroyed, solid := L.ballHit(b, br)
 		if br == best {
+			switch {
+			case destroyed && (br.MaxHP >= 3 || br.Kind == levelgen.Elite):
+				L.camKick(-nx, -nz, 7)
+			case destroyed:
+				L.camKick(-nx, -nz, 3.5)
+			default:
+				L.camKick(-nx, -nz, 1.5)
+			}
 			if !solid {
 				reflect = false
 			} else if destroyed && b.PierceLeft > 0 {
@@ -1061,6 +1088,7 @@ func (L *Level) collidePaddle(b *Ball) {
 	b.Momentum = 0
 	b.Rico = 0
 	L.paddleBounce = 1
+	L.orbImpact(b, 0, 1, 0.8, color.RGBA{255, 240, 210, 255}, 4)
 	if r.Stats.StaticPaddle {
 		L.zapNearest(b.X, b.Z, math.Max(1, r.Stats.Damage*(1+r.Stats.ChainMult)))
 	}
@@ -2684,4 +2712,44 @@ func (L *Level) lastBrickAim(b *Ball) (float64, bool) {
 	}
 	lim := 62 * math.Pi / 180
 	return math.Max(-lim, math.Min(lim, ang)), true
+}
+
+// ---------------------------------------------------------------- impact feel
+
+// orbImpact marks the instant an orb strikes something: the orb pops and
+// flashes, and a few sparks spray off the contact point along the bounce.
+func (L *Level) orbImpact(b *Ball, nx, nz, strength float64, c color.RGBA, n int) {
+	b.Hit = math.Max(b.Hit, strength)
+	b.HitNX, b.HitNZ = nx, nz
+	if L.g.settings.Particles == 0 {
+		n /= 2
+	}
+	cx, cz := b.X-nx*b.R, b.Z-nz*b.R
+	base := math.Atan2(nz, nx)
+	for i := 0; i < n; i++ {
+		a := base + (L.rng.Float64()-0.5)*2.2
+		s := 4 + L.rng.Float64()*5
+		L.Parts = append(L.Parts, &Particle{P: V3{cx, b.R * 0.8, cz},
+			V:    V3{math.Cos(a) * s, 1.5 + L.rng.Float64()*2.5, math.Sin(a) * s},
+			Life: 0.16 + L.rng.Float64()*0.12, Max: 0.28, Size: 0.18 + L.rng.Float64()*0.12, Col: c, Kind: pSpark, Grav: 10})
+	}
+}
+
+// camKick nudges the camera along a direction; a stiff spring brings it
+// back, so breaks land with a small physical knock rather than a rattle.
+func (L *Level) camKick(dx, dz, v float64) {
+	L.kickVX += dx * v
+	L.kickVZ += dz * v * 0.6
+}
+
+func (L *Level) updateKick(dt float64) {
+	const k, c = 380.0, 30.0
+	step := func(x, v *float64) {
+		a := -k**x - c**v
+		*v += a * dt
+		*x += *v * dt
+		*x = math.Max(-0.35, math.Min(0.35, *x))
+	}
+	step(&L.kickX, &L.kickVX)
+	step(&L.kickZ, &L.kickVZ)
 }

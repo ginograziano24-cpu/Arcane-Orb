@@ -39,6 +39,8 @@ type Sounds struct {
 	intensity      float64
 	curVol, oldVol float64
 	startT, oldT   time.Time
+	punch          float64
+	punchT         time.Time
 }
 
 func pcm(samples []float64) []byte {
@@ -144,6 +146,9 @@ func (s *Sounds) play(name string, vol float64) {
 	if sfxHook != nil && sfxHook(name, v, vol) {
 		return
 	}
+	if pk := punchFor[base]; pk > 0 {
+		s.Punch(pk * vol)
+	}
 	c := s.clip(name, v)
 	if c == nil {
 		return
@@ -152,6 +157,17 @@ func (s *Sounds) play(name string, vol float64) {
 	p.SetVolume(s.SFX * vol)
 	p.Play()
 	s.voices = append(s.voices, p)
+}
+
+// punchFor is how far big impacts dip the music for an instant, so they
+// land on top of it instead of fighting it.
+var punchFor = map[string]float64{"boom": 0.35, "paddleboom": 0.3, "firestorm": 0.3, "thunder": 0.25,
+	"shatter": 0.2, "bosshit": 0.15, "thump": 0.12, "crit": 0.1, "roar": 0.25}
+
+// Punch dips the music by depth (0..1) for a beat-short moment.
+func (s *Sounds) Punch(depth float64) {
+	s.punch = math.Max(s.punch, math.Min(0.4, depth))
+	s.updateVolumes()
 }
 
 // Duck lowers the music briefly under a big stinger.
@@ -298,7 +314,12 @@ func (s *Sounds) updateVolumes() {
 	if s.player == nil {
 		return
 	}
+	if s.punch > 0 {
+		dt := math.Min(0.1, now.Sub(s.punchT).Seconds())
+		s.punch = math.Max(0, s.punch-dt*2.2)
+	}
+	s.punchT = now
 	in := math.Min(1, now.Sub(s.startT).Seconds()/0.6)
-	s.curVol = s.Music * 0.85 * (1 - s.duck) * in
+	s.curVol = s.Music * 0.5 * (1 - s.duck) * (1 - s.punch) * in // songs master near -12.5 dBFS RMS; this sits them where the old loops were, +1.5 dB
 	s.player.SetVolume(s.curVol)
 }

@@ -54,6 +54,11 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	// small knocks stay subtle and big ones land; smooth noise rather than
 	// per-frame jitter, with a little roll that sells it without blurring play
 	cam.Roll = 0
+	if g.settings.Shake && (L.kickX != 0 || L.kickZ != 0) {
+		kv := V3{L.kickX, 0, L.kickZ}
+		cam.Eye = cam.Eye.Add(kv)
+		cam.Target = cam.Target.Add(kv.Mul(0.55))
+	}
 	if sh2 > 0 {
 		tr := math.Min(1.2, sh2)
 		amt := tr*tr*0.8 + tr*0.2
@@ -288,8 +293,14 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		}
 		// the orb is the hero object: a wide halo, a solid core and a hot
 		// centre so it is always the brightest thing on the board
-		B.Billboard(V3{b.X, b.R, b.Z}, b.R*8, sprSoft, alpha(glow, 0.42*a), true)
-		B.Billboard(V3{b.X, b.R, b.Z}, b.R*2.25, sprSphere, alpha(core, a), false)
+		hk := b.Hit * b.Hit
+		B.Billboard(V3{b.X, b.R, b.Z}, b.R*8*(1+0.25*hk), sprSoft, alpha(glow, (0.42+0.3*hk)*a), true)
+		B.Billboard(V3{b.X, b.R, b.Z}, b.R*2.25*(1+0.16*hk), sprSphere, alpha(mixc(core, color.RGBA{255, 255, 255, 255}, hk), a), false)
+		if hk > 0.02 {
+			// the contact flash: a hot burst where it struck, swelling as it fades
+			cx, cz := b.X-b.HitNX*b.R, b.Z-b.HitNZ*b.R
+			B.Billboard(V3{cx, b.R * 0.9, cz}, b.R*(2.2+3.5*(1-b.Hit)), sprSoft, alpha(color.RGBA{255, 250, 235, 255}, 0.8*hk), true)
+		}
 		B.Billboard(V3{b.X, b.R * 1.05, b.Z}, b.R*2.6, sprSoft, alpha(color.RGBA{255, 255, 255, 255}, 0.55*a), true)
 		if b.Charged {
 			B.Billboard(V3{b.X, b.R, b.Z}, b.R*3.4, sprRing, alpha(color.RGBA{255, 90, 90, 255}, 0.8), true)
@@ -550,6 +561,12 @@ var specialGlow = map[levelgen.Kind]color.RGBA{
 
 func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	x, z := b.X()+b.OffX, b.Z()+b.OffZ
+	if b.Flash > 0 && b.Up == nil {
+		// knocked back along the hit, springing home as the flash fades
+		k := b.Flash * b.Flash
+		x += b.KnX * 0.1 * k
+		z += b.KnZ * 0.1 * k
+	}
 	ap := clamp01(b.Appear)
 	if ap <= 0 {
 		return
