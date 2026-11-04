@@ -216,7 +216,7 @@ func (e *adsr) next(gate bool) float64 {
 		e.v = e.s + (e.v-e.s)*e.dk
 	case 2:
 		e.v *= e.rk
-		if e.v < 1e-4 {
+		if e.v < 1.5e-3 { // -56 dB: inaudible under the mix, and long pad tails end sooner
 			e.v, e.stage = 0, 3
 		}
 	}

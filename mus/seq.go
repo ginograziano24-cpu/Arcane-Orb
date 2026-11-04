@@ -101,6 +101,10 @@ const musBlock = 256
 // Solo, when set, plays only the named part (analysis).
 var Solo string
 
+// VoiceStats, when non-nil, sums each part's sounding voices per block
+// (analysis).
+var VoiceStats map[string]int
+
 func newSongPlayer(def *songDef) *songPlayer {
 	sp := &songPlayer{def: def, byName: map[string]*partRT{}, plays: map[string]int{},
 		rng: rand.New(rand.NewSource(int64(len(def.name)) * 977))}
@@ -243,6 +247,10 @@ func (sp *songPlayer) render(l, r []float64, n int) {
 	sp.pumps = sp.pumps[:copy(sp.pumps, sp.pumps[pi:])]
 
 	for _, p := range sp.parts {
+		if VoiceStats != nil {
+			VoiceStats[p.def.name] += len(p.voices)
+			VoiceStats["#blocks"]++
+		}
 		if len(p.voices) == 0 {
 			continue
 		}

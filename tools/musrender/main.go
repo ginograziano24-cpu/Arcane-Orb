@@ -23,6 +23,7 @@ func main() {
 	only := flag.String("song", "", "render only this song")
 	curve := flag.String("curve", "ramp", "intensity curve: ramp, low, high, menu, wave")
 	solo := flag.String("solo", "", "comma list of parts to measure alone")
+	vstats := flag.Bool("voices", false, "report average sounding voices per part")
 	prof := flag.String("cpuprofile", "", "write a CPU profile")
 	flag.Parse()
 	if *prof != "" {
@@ -48,8 +49,20 @@ func main() {
 			mus.Solo = ""
 			continue
 		}
+		if *vstats {
+			mus.VoiceStats = map[string]int{}
+		}
 		t0 := time.Now()
 		l, r := mus.Render(n, *secs, f)
+		if *vstats {
+			nb := mus.VoiceStats["#blocks"] / max(1, len(mus.VoiceStats)-1)
+			for k, v := range mus.VoiceStats {
+				if k != "#blocks" {
+					fmt.Printf("  %-8s %.1f voices\n", k, float64(v)/float64(max(1, nb)))
+				}
+			}
+			mus.VoiceStats = nil
+		}
 		el := time.Since(t0)
 		path := filepath.Join(*out, n+".wav")
 		writeWav(path, l, r)

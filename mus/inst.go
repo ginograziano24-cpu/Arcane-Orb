@@ -126,6 +126,10 @@ func (v *voice) legato(key, vel float64, gate int, slide bool) {
 
 func (v *voice) choke() { v.choked = true }
 
+// tailCut is where a released note stops ringing (-40 dB): below the mix,
+// and it keeps long pad and stab tails from piling up voices.
+const tailCut = 0.01
+
 // render adds the voice into l and r for n samples; false when finished.
 func (v *voice) render(l, r []float64, n int) bool {
 	if v.dead {
@@ -450,6 +454,9 @@ func (v *voice) mono(l, r []float64, s, n int) {
 			v.dead = true
 			return
 		}
+		if v.e.stage == 2 && amp < tailCut && !v.choked {
+			v.choke() // released to -40 dB: fade the rest out quickly
+		}
 		fe := v.fe.next(gate && v.age-v.retrig < 88)
 		acc := 1.0
 		if v.vel > 0.92 {
@@ -530,9 +537,12 @@ func (v *voice) super(l, r []float64, s, n int) {
 			v.dead = true
 			return
 		}
+		if v.e.stage == 2 && amp < tailCut && !v.choked {
+			v.choke() // released to -40 dB: fade the rest out quickly
+		}
 		fe := v.fe.next(gate && v.age < 88)
 		f := v.freq * v.vibrato(t)
-		if v.age&3 == 0 {
+		if v.age&7 == 0 {
 			for j := 0; j < nv; j++ {
 				v.o[j].setHz(f * v.ratio[j])
 			}
@@ -572,10 +582,13 @@ func (v *voice) synth(l, r []float64, s, n int) {
 			v.dead = true
 			return
 		}
+		if v.e.stage == 2 && amp < tailCut && !v.choked {
+			v.choke() // released to -40 dB: fade the rest out quickly
+		}
 		var x float64
 		switch in.kind {
 		case iPluck:
-			if v.age&3 == 0 {
+			if v.age&7 == 0 {
 				v.o[0].setHz(v.freq)
 				v.o[1].setHz(v.freq * 1.006)
 				c := in.cut * fpow2(in.env*fexp(-t/in.fdec))
@@ -584,7 +597,7 @@ func (v *voice) synth(l, r []float64, s, n int) {
 			x = v.f[0].lp(0.6*v.o[0].saw() + 0.5*v.o[1].pulse(0.5))
 		case iBrass:
 			scoop := 1 - 0.025*fexp(-t/0.035)
-			if v.age&3 == 0 {
+			if v.age&7 == 0 {
 				for j := 0; j < 3; j++ {
 					v.o[j].setHz(v.freq * scoop * fpow2(float64(j-1)*0.11/12))
 				}
@@ -619,6 +632,9 @@ func (v *voice) fm(l, r []float64, s, n int) {
 		if v.e.done() {
 			v.dead = true
 			return
+		}
+		if v.e.stage == 2 && amp < tailCut && !v.choked {
+			v.choke() // released to -40 dB: fade the rest out quickly
 		}
 		ph := v.ph
 		v.ph += inc
