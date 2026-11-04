@@ -388,10 +388,26 @@ const brickPieces = 2
 // static part of a frame (modelled wall sections, thousands of quads).
 const wallPieces = 3
 
+// randPool recycles the seeded generators the scenery draws its props
+// from every frame (a fresh one allocates ~5 KB).
+var randPool = sync.Pool{New: func() any { return rand.New(rand.NewSource(1)) }}
+
+// seededRand returns a generator in the state rand.New(rand.NewSource(seed))
+// starts in; hand it back with releaseRand.
+func seededRand(seed int64) *rand.Rand {
+	r := randPool.Get().(*rand.Rand)
+	r.Seed(seed)
+	return r
+}
+
+func releaseRand(r *rand.Rand) { randPool.Put(r) }
+
 // sceneSide is the side the scenery's hero piece leans to (the first draw
 // of drawScenery's prop generator), which the dressing also follows.
 func sceneSide(L *Level) float64 {
-	return float64(rand.New(rand.NewSource(L.propSeed)).Intn(2)*2 - 1)
+	r := seededRand(L.propSeed)
+	defer releaseRand(r)
+	return float64(r.Intn(2)*2 - 1)
 }
 
 // drawArena draws the platform, the floor, the lane line, the sigil, the

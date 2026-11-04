@@ -113,7 +113,8 @@ func flapBird(B *Batch, p V3, heading, t float64, col color.RGBA, s float64) {
 }
 
 func hillRange(B *Batch, seed int64, z0, z1, xspan float64, n int, col color.RGBA, hmin, hmax float64) {
-	r := rand.New(rand.NewSource(seed))
+	r := seededRand(seed)
+	defer releaseRand(r)
 	for i := 0; i < n; i++ {
 		x := (r.Float64()*2 - 1) * xspan
 		z := z0 + r.Float64()*(z1-z0)
@@ -138,7 +139,8 @@ func (g *Game) drawDressing(B *Batch, L *Level, t, side float64) {
 	bio := L.Biome
 	e := &L.env
 	low := g.lowFX()
-	r := rand.New(rand.NewSource(L.propSeed + 7))
+	r := seededRand(L.propSeed + 7)
+	defer releaseRand(r)
 	switch bio.ID {
 	case WMeadow:
 		g.dressMeadow(B, L, e, t, side, r, low)
@@ -391,7 +393,8 @@ func (g *Game) dressRuins(B *Batch, L *Level, e *envState, t, side float64, r *r
 			continue
 		}
 		B.BoxTex(x-0.4, -0.6, 22, x+0.4, 6, 28, stone, matTop[WRuins], matSide[WRuins], 0)
-		gr := rand.New(rand.NewSource(int64(sx * 9)))
+		gr := seededRand(int64(sx * 9))
+		defer releaseRand(gr)
 		for k := 0; k < 12; k++ {
 			gy := 0.6 + float64(k/3)*1.3
 			gzz := 22.8 + float64(k%3)*1.7

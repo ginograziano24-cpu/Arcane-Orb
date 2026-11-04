@@ -529,6 +529,7 @@ type Batch struct {
 	pre      [2]presorted // a side batch's own far-first orders (presort)
 	wantMeta [2]bool      // presort: work out run metadata (the flush is likely to plan)
 	mergeK   []uint64     // flush scratch: the own quads' keys when merging
+	gp       *Batch       // the glow list's planning scratch (glowPlanner)
 	runIdx   []int32
 	runCell  [runCols * runRows]int16
 	meta     []uint64 // per quad (submission order): cells and run key
@@ -931,7 +932,9 @@ func (b *Batch) DecalBelow(x, z, h, w, d float64, spr Sprite, col color.RGBA) {
 	b.quads[len(b.quads)-1].depth += 1000
 }
 
-func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend, list int) {
+// planList orders a list's quads far first and groups them into draw-call
+// runs, in b's scratch. It makes no Ebitengine calls; prepMeta must have run.
+func (b *Batch) planList(segs [][]quad, list int) ([]*quad, []quadRun) {
 	// the quads of every segment, in order, by pointer (no copying)
 	qs := b.qp[:0]
 	for _, s := range segs {
@@ -941,7 +944,7 @@ func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend, list
 	}
 	b.qp = qs
 	if len(qs) == 0 {
-		return
+		return nil, nil
 	}
 	// plan runs only where texture switches are many enough to repay it
 	// (judged by the last frame, with a gap so the choice doesn't flicker)
@@ -957,13 +960,17 @@ func (b *Batch) flush(dst *ebiten.Image, segs [][]quad, blend ebiten.Blend, list
 	}
 	runs, switches := b.planRuns(qs, order, plan)
 	b.switches[list] = switches
+	return qs, runs
+}
+
+// drawRuns submits planned runs: one DrawTriangles per run, at most maxQ
+// quads each.
+func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend ebiten.Blend) {
 	if flushTrace != nil {
 		for i := 1; i < len(runs); i++ {
 			flushTrace(runs[i-1].tex, runs[i].tex, float64(len(runs[i].ids)))
 		}
 	}
-	// one DrawTriangles per run, at most maxQ quads each
-	b.verts = b.verts[:0]
 	for ri := range runs {
 		rn := &runs[ri]
 		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: worldAA}
@@ -1291,7 +1298,6 @@ func (b *Batch) sortFarFirst(qs []*quad, withMeta bool) []int32 {
 		b.meta = make([]uint64, n)
 	}
 	meta := b.meta[:n]
-	b.prepMeta()
 	k0 := b.keys[0][:n]
 	for i := range qs {
 		if withMeta {
@@ -1466,7 +1472,6 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 		b.meta = make([]uint64, n)
 	}
 	meta := b.meta[:n]
-	b.prepMeta()
 	// the own quads: keys and metadata, then their order
 	no := len(own)
 	if cap(b.mergeK) < no {
@@ -1547,12 +1552,59 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 	perfBegin(secFlush)
 	defer perfEnd(secFlush)
 	lastQuads = len(b.quads) + len(b.glow)
+	nGlow := len(b.glow)
 	for i := range b.extQ {
 		lastQuads += len(b.extQ[i]) + len(b.extG[i])
+		nGlow += len(b.extG[i])
 	}
-	b.flush(dst, append(b.extQ, b.quads), ebiten.BlendSourceOver, 0)
-	b.flush(dst, append(b.extG, b.glow), ebiten.BlendLighter, 1)
+	b.prepMeta()
+	segQ := append(b.extQ, b.quads)
+	segG := append(b.extG, b.glow)
+	if nGlow >= glowPlanAside {
+		// the glow list is sorted and planned on another goroutine while
+		// this one submits the opaque list (planning makes no Ebitengine
+		// calls; drawing stays here)
+		gp := b.glowPlanner()
+		var gqs []*quad
+		var gruns []quadRun
+		var crash any
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			defer func() { crash = recover() }()
+			gqs, gruns = gp.planList(segG, 1)
+		}()
+		qs, runs := b.planList(segQ, 0)
+		b.drawRuns(dst, qs, runs, ebiten.BlendSourceOver)
+		<-done
+		if crash != nil {
+			panic(crash)
+		}
+		b.switches[1], b.planned[1] = gp.switches[1], gp.planned[1]
+		gp.drawRuns(dst, gqs, gruns, ebiten.BlendLighter)
+	} else {
+		qs, runs := b.planList(segQ, 0)
+		b.drawRuns(dst, qs, runs, ebiten.BlendSourceOver)
+		qs, runs = b.planList(segG, 1)
+		b.drawRuns(dst, qs, runs, ebiten.BlendLighter)
+	}
 	b.extQ, b.extG, b.extB = b.extQ[:0], b.extG[:0], b.extB[:0]
+}
+
+// glowPlanAside is the glow-list size from which Flush plans it on a
+// goroutine of its own.
+const glowPlanAside = 1500
+
+// glowPlanner returns the scratch batch the glow list is planned in, set up
+// to read the same side batches and grid as b.
+func (b *Batch) glowPlanner() *Batch {
+	if b.gp == nil {
+		b.gp = &Batch{}
+	}
+	g := b.gp
+	g.cam, g.extB, g.cellW, g.cellH = b.cam, b.extB, b.cellW, b.cellH
+	g.switches[1], g.planned[1] = b.switches[1], b.planned[1]
+	return g
 }
 
 // drawFirst queues the side batches' quads to be drawn ahead of b's own,

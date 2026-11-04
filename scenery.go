@@ -21,7 +21,8 @@ type part = struct {
 func (g *Game) drawScenery(B *Batch, L *Level) {
 	bio := L.Biome
 	t := L.T + g.stateT
-	r := rand.New(rand.NewSource(L.propSeed))
+	r := seededRand(L.propSeed)
+	defer releaseRand(r)
 	side := float64(r.Intn(2)*2 - 1) // which side the hero leans to
 	ground := func(col color.RGBA) {
 		if gt := groundTexture(bio.ID); gt != nil && !g.settings.Classic {
@@ -496,7 +497,8 @@ func mushrooms(B *Batch, x, z float64, col color.RGBA, seed int64, t float64) {
 		}
 		return m
 	})
-	r := rand.New(rand.NewSource(seed))
+	r := seededRand(seed)
+	defer releaseRand(r)
 	ms, mc := model("mush_stem"), model("mush_cap")
 	for k := 0; k < 3; k++ {
 		s := 0.6 + r.Float64()*0.8
