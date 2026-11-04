@@ -371,7 +371,12 @@ func (g *Game) Update() error {
 		g.snd.SetIntensity(0.25)
 	default:
 		if g.run != nil {
-			g.snd.SetTrack(g.run.AI())
+			t := g.run.AI()
+			inLevel := g.state == StLevel || g.state == StPause || g.state == StCache || g.state == StSettings
+			if inLevel && g.level != nil && g.level.Boss != nil && g.level.Boss.HP > 0 {
+				t = trackBoss
+			}
+			g.snd.SetTrack(t)
 		}
 		if g.state == StLevel && g.level != nil {
 			v := math.Min(1, float64(g.level.Combo)/25)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"math"
 	"math/rand"
@@ -9,6 +8,8 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2/audio"
+
+	"orb/mus"
 )
 
 const sampleRate = 44100
@@ -32,11 +33,12 @@ type Sounds struct {
 	duckT      time.Time
 	duckLen    float64
 
-	mu        sync.Mutex
-	tracks    map[int][2][]byte
-	base, hot *audio.Player
-	curTrack  int
-	intensity float64
+	player, old    *audio.Player
+	stream         *mus.Stream
+	curTrack       int
+	intensity      float64
+	curVol, oldVol float64
+	startT, oldT   time.Time
 }
 
 func pcm(samples []float64) []byte {
@@ -64,13 +66,12 @@ func sq(f, t float64) float64 {
 
 func NewSounds() *Sounds {
 	s := &Sounds{ctx: audio.NewContext(sampleRate), cache: map[string][]byte{}, lastVar: map[string]int{}, last: map[string]time.Time{},
-		SFX: 0.8, Music: 0.6, tracks: map[int][2][]byte{}, curTrack: -1, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
+		SFX: 0.8, Music: 0.6, curTrack: -1, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
 	go func() {
 		for _, n := range prewarmNames() {
 			s.clip(n, 0)
 		}
 	}()
-	go s.buildMusic()
 	return s
 }
 
@@ -213,51 +214,58 @@ func (s *Sounds) Pick(rarity int) {
 
 // ---------------------------------------------------------------- music
 
-var biomeChords = [][][3]int{
-	{{0, 3, 7}, {-4, 0, 3}, {-9, -5, -2}, {-2, 2, 5}}, // i VI III VII
-	{{0, 3, 7}, {-2, 2, 5}, {-4, 0, 3}, {-5, -1, 2}},  // i VII VI V
-	{{0, 3, 7}, {-7, -4, 0}, {-4, 0, 3}, {-2, 2, 5}},  // i iv VI VII
-	{{0, 4, 7}, {-5, -1, 2}, {-3, 0, 4}, {-7, -3, 0}}, // menu: I V vi IV
-}
+// The soundtrack streams from the music engine (package mus): one song per
+// act, the menu theme and the boss theme, arranged live from the intensity.
 
-func note(root float64, semi int) float64 { return root * math.Pow(2, float64(semi)/12) }
+// trackSongs maps track numbers (0..2 acts, 3 menu, 4 boss) to songs.
+var trackSongs = []string{"rush", "acid", "abyss", "groove", "warden"}
 
-func (s *Sounds) buildMusic() {
-	roots := []float64{110, 98, 123.5, 130.8}
-	for _, i := range []int{3, 0, 1, 2} {
-		tr := s.renderTrack(i, roots[i])
-		s.mu.Lock()
-		s.tracks[i] = tr
-		s.mu.Unlock()
-	}
-}
+const trackBoss = 4
 
-// SetTrack switches music (3 = menu, 0..2 = acts). Safe to call each frame.
+// SetTrack switches music (3 = menu, 0..2 = acts, 4 = boss), crossfading
+// from the old song. Safe to call each frame.
 func (s *Sounds) SetTrack(i int) {
-	s.mu.Lock()
-	tr, ok := s.tracks[i]
-	s.mu.Unlock()
-	if !ok || s.curTrack == i {
+	if s.curTrack == i {
 		s.updateVolumes()
 		return
 	}
-	if s.base != nil {
-		s.base.Close()
-		s.hot.Close()
-	}
 	s.curTrack = i
 	s.Key = i
-	l1 := audio.NewInfiniteLoop(bytes.NewReader(tr[0]), int64(len(tr[0])))
-	l2 := audio.NewInfiniteLoop(bytes.NewReader(tr[1]), int64(len(tr[1])))
-	s.base, _ = s.ctx.NewPlayer(l1)
-	s.hot, _ = s.ctx.NewPlayer(l2)
+	if s.old != nil {
+		s.old.Close()
+	}
+	s.old, s.oldVol, s.oldT = s.player, s.curVol, nowFn()
+	s.player, s.stream = nil, nil
+	s.startStream()
 	s.updateVolumes()
-	s.base.Play()
-	s.hot.Play()
+}
+
+// startStream opens the current track's song (only while music is audible:
+// a muted soundtrack costs nothing).
+func (s *Sounds) startStream() {
+	if s.player != nil || s.curTrack < 0 || s.Music <= 0 {
+		return
+	}
+	st := mus.NewStream(trackSongs[s.curTrack%len(trackSongs)])
+	if st == nil {
+		return
+	}
+	st.SetIntensity(s.intensity)
+	p, err := s.ctx.NewPlayer(st)
+	if err != nil {
+		return
+	}
+	p.SetBufferSize(150 * time.Millisecond)
+	s.stream, s.player, s.startT = st, p, nowFn()
+	s.updateVolumes()
+	p.Play()
 }
 
 func (s *Sounds) SetIntensity(v float64) {
 	s.intensity += (v - s.intensity) * 0.03
+	if s.stream != nil {
+		s.stream.SetIntensity(s.intensity)
+	}
 	if s.duck > 0 {
 		if el := nowFn().Sub(s.duckT).Seconds(); el > s.duckLen {
 			s.duck = math.Max(0, s.duck-0.02)
@@ -267,10 +275,30 @@ func (s *Sounds) SetIntensity(v float64) {
 }
 
 func (s *Sounds) updateVolumes() {
-	if s.base == nil {
+	if s.Music <= 0 {
+		for _, p := range []*audio.Player{s.player, s.old} {
+			if p != nil {
+				p.Close()
+			}
+		}
+		s.player, s.stream, s.old = nil, nil, nil
 		return
 	}
-	d := 1 - s.duck
-	s.base.SetVolume(s.Music * 0.8 * d)
-	s.hot.SetVolume(s.Music * (0.15 + 0.85*s.intensity) * d)
+	s.startStream()
+	now := nowFn()
+	if s.old != nil {
+		u := now.Sub(s.oldT).Seconds() / 0.9
+		if u >= 1 {
+			s.old.Close()
+			s.old = nil
+		} else {
+			s.old.SetVolume(s.oldVol * (1 - u))
+		}
+	}
+	if s.player == nil {
+		return
+	}
+	in := math.Min(1, now.Sub(s.startT).Seconds()/0.6)
+	s.curVol = s.Music * 0.85 * (1 - s.duck) * in
+	s.player.SetVolume(s.curVol)
 }

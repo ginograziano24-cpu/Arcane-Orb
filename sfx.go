@@ -399,17 +399,15 @@ func putS16(b []byte, v float64) {
 
 // ---------------------------------------------------------------- music theory
 
-var keyRoots = []float64{110, 98, 123.47, 130.81} // act 1-3 (minor), menu (major)
+// keyRoots are the soundtrack's keys, so musical SFX sit in the song:
+// act 1 A minor, act 2 G minor, act 3 B minor, menu D dorian, boss D minor.
+var keyRoots = []float64{110, 98, 123.47, 146.83, 146.83}
 
 var minorPenta = []int{0, 3, 5, 7, 10}
-var majorPenta = []int{0, 2, 4, 7, 9}
 
 // ladder returns the n-th note of the key's pentatonic scale above base.
 func ladder(key, n int, base float64) float64 {
 	sc := minorPenta
-	if key == 3 {
-		sc = majorPenta
-	}
 	semi := sc[n%5] + 12*(n/5)
 	return base * math.Pow(2, float64(semi)/12)
 }
@@ -418,10 +416,7 @@ func semis(f float64, s int) float64 { return f * math.Pow(2, float64(s)/12) }
 
 // relMajor is the root of the relative major (for triumphant stingers).
 func relMajor(key int) float64 {
-	if key == 3 {
-		return keyRoots[3]
-	}
-	return semis(keyRoots[key], 3)
+	return semis(keyRoots[key%len(keyRoots)], 3)
 }
 
 // ---------------------------------------------------------------- instruments
