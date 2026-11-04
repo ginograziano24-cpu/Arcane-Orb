@@ -255,7 +255,7 @@ func (g *Game) drawDuelLobby(s *ebiten.Image) {
 	} else {
 		label := "Ready"
 		if d.ready {
-			label = "Ready  ✓  (click to cancel)"
+			label = "Ready  (click to cancel)"
 		}
 		if u.button(s, "dready", label, 660, 850, 600, 70, cGreen, true) {
 			d.ready = !d.ready

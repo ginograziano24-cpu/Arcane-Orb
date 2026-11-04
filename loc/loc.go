@@ -231,6 +231,18 @@ func makePat(sk, tpl string) trPat {
 
 // ---------------------------------------------------------------- lookup
 
+// Mark records s as already translated, so drawing it skips the lookup
+// (for text assembled from pieces translated one by one).
+func (t *Table) Mark(s string) {
+	if t == nil {
+		return
+	}
+	if len(t.done) > 8000 {
+		t.done = map[string]bool{}
+	}
+	t.done[s] = true
+}
+
 // Tr translates a string about to be drawn.
 func (t *Table) Tr(s string) string {
 	if t == nil || s == "" {

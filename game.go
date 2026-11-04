@@ -728,9 +728,9 @@ func (g *Game) take(m *Mod) {
 		r.log("item", m.Name, m.Icon)
 	}
 	if m.Relic {
-		g.toastImg("Relic acquired", m.Name+" — "+m.Desc, rarityColors[m.Rarity], modEmblem(m))
+		g.toastImg("Relic acquired", trJoin(m.Name, " — ", m.Desc), rarityColors[m.Rarity], modEmblem(m))
 	} else {
-		g.toastImg("Upgrade gained", m.Name+" — "+m.Desc, rarityColors[m.Rarity], modEmblem(m))
+		g.toastImg("Upgrade gained", trJoin(m.Name, " — ", m.Desc), rarityColors[m.Rarity], modEmblem(m))
 	}
 	if syn := r.Add(m.ID, &g.save); syn != "" {
 		for _, s := range synergies {
@@ -1256,7 +1256,7 @@ func (g *Game) runPanel(s *ebiten.Image) {
 		}
 		u.text(s, ab, fReg, 15, 1600, y+24, cDim, alignLeft)
 		if u.hover(1546, y-6, 328, 58) {
-			g.tooltip = r.Arch.Passive + " — " + r.Arch.Desc
+			g.tooltip = trJoin(r.Arch.Passive, " — ", r.Arch.Desc)
 		}
 		y += 70
 	}
@@ -1284,7 +1284,11 @@ func (g *Game) runPanel(s *ebiten.Image) {
 		u.drawEmblem(s, modEmblem(m), 1560, y+12, 26, 1)
 		u.text(s, label, fBold, 19, 1576, y, rarityColors[m.Rarity], alignLeft)
 		if u.hover(1540, y-4, 340, 28) {
-			g.tooltip = m.Name + " (" + rarityNames[m.Rarity] + ") — " + m.Desc + "  [" + strings.Join(m.Tags, ", ") + "]"
+			var tags []string
+			for _, t := range m.Tags {
+				tags = append(tags, tagLabel(t))
+			}
+			g.tooltip = trJoin(m.Name, " (", rarityNames[m.Rarity], ") — ", m.Desc, "  [", strings.Join(tags, ", "), "]")
 		}
 		y += 28
 		if y > 1020 {
@@ -1419,7 +1423,7 @@ func (g *Game) drawMap(s *ebiten.Image) {
 		if hv {
 			g.tooltip = nodeNames[n.Type]
 			if o := omenByID[n.Omen]; o != nil && !n.Visited {
-				g.tooltip += "  ·  Omen: " + o.Name + " — " + o.Desc
+				g.tooltip = trJoin(nodeNames[n.Type], "  ·  ", "Omen: ", o.Name, " — ", o.Desc)
 			}
 			if reach[i] {
 				g.tooltip += " — click to enter"
@@ -1604,12 +1608,13 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 	// tags
 	tx := x + 22
 	for _, t := range m.Tags {
-		tw := u.measure(t, fBold, 15) + 24
+		label := tagLabel(t)
+		tw := u.measure(label, fBold, 15) + 24
 		tc := tagColors[t]
 		p := boxPath(u.X(tx), u.Y(y+h-52), tw*S, 28*S, 14*S, false)
 		fillPath(s, p, ca(tc, 0.28), ca(darken(tc, 0.5), 0.28), vgrad(u.Y(y+h-52), u.Y(y+h-24)), false)
 		strokePath(s, p, 1.4*S, ca(tc, 0.8), false)
-		u.text(s, t, fBold, 15, tx+tw/2, y+h-47, lighten(tc, 0.3), alignCenter)
+		u.text(s, label, fBold, 15, tx+tw/2, y+h-47, lighten(tc, 0.3), alignCenter)
 		tx += tw + 8
 	}
 	if g.run.Mods[m.ID] > 0 {
@@ -1816,11 +1821,11 @@ func (g *Game) drawShop(s *ebiten.Image) {
 			g.snd.Play("buy")
 		}
 		if u.hover(1160, sy, 330, 52) {
-			tip := sd.Desc
+			pieces := []string{sd.Name, " — ", sd.Desc}
 			if full && !it.Sold {
-				tip += "  (your scroll slots are full)"
+				pieces = append(pieces, "  (your scroll slots are full)")
 			}
-			g.tooltip = sd.Name + " — " + tip
+			g.tooltip = trJoin(pieces...)
 		}
 		sy += 60
 	}
@@ -1968,7 +1973,7 @@ func (g *Game) drawRest(s *ebiten.Image) {
 	}
 	if u.button(s, "cleanse", lbl, 980, 476, 560, 76, tagColors["curse"], nc > 0) {
 		if c := g.cleanse(); c != nil {
-			g.toastImg("Curse lifted", c.Name+" fades from your soul.", cGreen, modEmblem(c))
+			g.toastImg("Curse lifted", trJoin(c.Name, " fades from your soul."), cGreen, modEmblem(c))
 		}
 		g.setState(StMap)
 	}

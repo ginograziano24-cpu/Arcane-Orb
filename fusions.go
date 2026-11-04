@@ -23,7 +23,7 @@ var fusions = []Fusion{
 	{"berserker", "Berserker Rage", "On your last life your orb burns red and deals another ×1.5 damage.", "glass", "bloodmoon", color.RGBA{255, 60, 60, 255}, func(s *Stats) { s.Berserker = true }},
 	{"teslacoil", "Tesla Coil", "Laser hits chain lightning to 2 more bricks.", "laser", "static", color.RGBA{120, 240, 255, 255}, func(s *Stats) { s.TeslaCoil = true }},
 	{"voidprism", "Void Prism", "Phantom orbs strike with the void: they ignore armour and deal double damage.", "voidtouch", "prism", color.RGBA{180, 110, 255, 255}, func(s *Stats) { s.VoidPrism = true }},
-	{"brood", "Hydra Brood", "A new orb hatches every 15 bricks instead of 30.", "hydra", "split", color.RGBA{120, 255, 160, 255}, func(s *Stats) { s.Hydra = true; s.SplitChance += 0.05 }},
+	{"brood", "Hydra Brood", "A new orb hatches every 33 bricks instead of 66.", "hydra", "split", color.RGBA{120, 255, 160, 255}, func(s *Stats) { s.Hydra = true; s.SplitChance += 0.05 }},
 	{"perpetual", "Perpetual Motion", "Combo damage can reach +200%, and your combo lasts 2 seconds longer.", "momentum", "comboeng", color.RGBA{255, 230, 120, 255}, func(s *Stats) { s.ComboTime += 2; s.ComboDmg += 0.01 }},
 	{"sanctuary", "Sanctuary", "Barriers recharge, and every barrier save pays 3 gold.", "leech", "angel", color.RGBA{140, 255, 180, 255}, func(s *Stats) { s.Sanctuary = true; s.BarrierRegen = true }},
 	{"cataclysm", "Cataclysm", "Every 12 impacts, a meteor slams into the bricks.", "meteor", "fuse", color.RGBA{255, 130, 40, 255}, func(s *Stats) { s.Cataclysm = true }},

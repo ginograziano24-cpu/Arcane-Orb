@@ -212,7 +212,7 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 			cx := bx + float64(i)*56 + 28
 			u.drawEmblem(s, modEmblem(m), cx, y+30, 50, 1)
 			if u.hover(cx-26, y+4, 52, 52) {
-				g.tooltip = m.Name + " — " + m.Desc
+				g.tooltip = trJoin(m.Name, " — ", m.Desc)
 			}
 		}
 	}

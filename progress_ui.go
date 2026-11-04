@@ -198,14 +198,18 @@ func (g *Game) drawCodex(s *ebiten.Image) {
 			if hv {
 				switch {
 				case seen:
-					g.tooltip = m.Name + " (" + rarityNames[m.Rarity] + ") — " + m.Desc
+					pieces := []string{m.Name, " (", rarityNames[m.Rarity], ") — ", m.Desc}
 					if ps := fusionPartners(m.ID); len(ps) > 0 {
-						var names []string
-						for _, p := range ps {
-							names = append(names, modByID[p].Name)
+						pieces = append(pieces, "  ", "Fuses with ")
+						for i, p := range ps {
+							if i > 0 {
+								pieces = append(pieces, ", ")
+							}
+							pieces = append(pieces, modByID[p].Name)
 						}
-						g.tooltip += "  Fuses with: " + strings.Join(names, ", ") + "."
+						pieces = append(pieces, ".")
 					}
+					g.tooltip = trJoin(pieces...)
 				case locked:
 					g.tooltip = fmt.Sprintf("Reach Arcane Rank %d to unlock this %s.", m.Unlock, map[bool]string{true: "relic", false: "upgrade"}[relic])
 				default:
@@ -432,7 +436,7 @@ func (g *Game) drawOriginsTab(s *ebiten.Image, y0 float64) {
 			u.text(s, fmt.Sprintf("Mastery %d", lv), fBold, 16, x+cw/2, y+ch-36, lighten(ci.Col, 0.3), alignCenter)
 		}
 		if hv {
-			g.tooltip = a.Name + " — " + a.Desc + "  " + a.Ability + ": " + a.AbilityDesc
+			g.tooltip = trJoin(a.Name, " — ", a.Desc, "  ", a.Ability, ": ", a.AbilityDesc)
 		}
 	}
 }

@@ -15,7 +15,7 @@
 ["Read selected scroll", "阅读所选卷轴", "選んだ巻物を読む", "Прочитать выбранный свиток", "Leer el pergamino seleccionado", "Ler o pergaminho selecionado", "Gewählte Schriftrolle lesen"]
 ["Reading a scroll has a 30% chance not to use it up.", "阅读卷轴有 30% 几率不消耗它。", "巻物を読んでも30%の確率でなくならない。", "Чтение свитка с шансом 30% не расходует его.", "Leer un pergamino tiene un 30% de probabilidad de no gastarlo.", "Ler um pergaminho tem 30% de chance de não gastá-lo.", "Das Lesen einer Schriftrolle verbraucht sie mit 30 % Chance nicht."]
 ["Ready", "准备", "準備完了", "Готов", "Listo", "Pronto", "Bereit"]
-["Ready  ✓  (click to cancel)", "已准备  ✓  （点击取消）", "準備完了  ✓  （クリックで取消）", "Готов  ✓  (нажмите, чтобы отменить)", "Listo  ✓  (clic para cancelar)", "Pronto  ✓  (clique para cancelar)", "Bereit  ✓  (klicken zum Abbrechen)"]
+["Ready  (click to cancel)", "已准备  （点击取消）", "準備完了  （クリックで取消）", "Готов  (нажмите, чтобы отменить)", "Listo  (clic para cancelar)", "Pronto  (clique para cancelar)", "Bereit  (klicken zum Abbrechen)"]
 ["Recovery", "恢复", "回復", "Восстановление", "Recuperación", "Recuperação", "Erholung"]
 ["Refresh", "刷新", "更新", "Обновить", "Actualizar", "Atualizar", "Aktualisieren"]
 ["Refuse", "拒绝", "断る", "Отказаться", "Rechazar", "Recusar", "Ablehnen"]

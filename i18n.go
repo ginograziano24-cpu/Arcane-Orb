@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"strings"
+	"unicode"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -120,6 +121,42 @@ func detectLanguage() string {
 }
 
 // tr translates a string about to be drawn.
-func tr(s string) string { return curTable.Tr(s) }
+func tr(s string) string {
+	r := curTable.Tr(s)
+	if trMiss != nil && curTable != nil && r == s {
+		trMiss(s)
+	}
+	return r
+}
+
+// trJoin translates each piece on its own and joins them, so composed
+// text such as "Name (Rarity) — Desc  [tags]" translates fully instead of
+// only where the joined whole happens to match. Pieces with no letters
+// (separators) are kept as they are. The result is marked translated.
+func trJoin(pieces ...string) string {
+	var b strings.Builder
+	for _, p := range pieces {
+		if strings.IndexFunc(p, unicode.IsLetter) < 0 {
+			b.WriteString(p)
+			continue
+		}
+		b.WriteString(tr(p))
+	}
+	out := b.String()
+	curTable.Mark(out)
+	return out
+}
+
+// tagLabel is an item tag's display word ("blast", "frost" ...).
+func tagLabel(t string) string {
+	k := "tag:" + t
+	if v := tr(k); v != k {
+		return v
+	}
+	return t
+}
+
+// trMiss, when set (debug builds), sees every string drawn untranslated.
+var trMiss func(string)
 
 func breakTokens(para string) []string { return loc.BreakTokens(para) }

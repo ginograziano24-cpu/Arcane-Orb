@@ -100,7 +100,7 @@ var scrollDefs = []scrollDef{
 		L.g.snd.PlayKeyed("heal")
 		return true
 	}},
-	{"midas", "Scroll of Midas", "For 10 seconds every hit throws off a coin.", "coinstack", rgba(255, 214, 90, 255), 30, false, func(L *Level) bool {
+	{"midas", "Scroll of Midas", "For 10 seconds most hits throw off a coin.", "coinstack", rgba(255, 214, 90, 255), 30, false, func(L *Level) bool {
 		L.midasT = 10
 		return true
 	}},
@@ -172,7 +172,7 @@ func (g *Game) addScroll(id string) bool {
 	}
 	r.Scrolls = append(r.Scrolls, id)
 	g.save.Seen["scroll:"+id] = true
-	g.toastImg("Scroll found", sd.Name+" — "+sd.Desc, sd.Col, glyphImage(sd.Glyph, sd.Col))
+	g.toastImg("Scroll found", trJoin(sd.Name, " — ", sd.Desc), sd.Col, glyphImage(sd.Glyph, sd.Col))
 	g.snd.Play("pick.1." + itoa(g.snd.Key))
 	g.coach("scroll")
 	return true
@@ -258,7 +258,7 @@ func (g *Game) drawScrolls(screen *ebiten.Image, L *Level) {
 				u.keycap(screen, itoa(i+1), x+size-18, y-12, 0.9)
 			}
 			if u.hover(x, y, size, size) {
-				g.tooltip = sd.Name + " — " + sd.Desc
+				g.tooltip = trJoin(sd.Name, " — ", sd.Desc)
 			}
 		}
 	}

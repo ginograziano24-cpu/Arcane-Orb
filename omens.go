@@ -118,10 +118,10 @@ func (L *Level) omenCleared() {
 			g.run.Gold += b
 			prize += fmt.Sprintf("  ·  +%d gold", b)
 		}
-		g.toastImg("Challenge met: "+o.Name, prize, o.Col, glyphImage(o.Glyph, o.Col))
+		g.toastImg(trJoin("Challenge met: ", o.Name), prize, o.Col, glyphImage(o.Glyph, o.Col))
 		g.snd.PlayKeyed("good")
 	} else {
-		g.toastImg("Challenge failed: "+o.Name, "Better luck in the next chamber.", cDim, glyphImage(o.Glyph, cDim))
+		g.toastImg(trJoin("Challenge failed: ", o.Name), "Better luck in the next chamber.", cDim, glyphImage(o.Glyph, cDim))
 	}
 }
 
@@ -141,7 +141,7 @@ func (g *Game) drawOmenTag(screen *ebiten.Image, L *Level, y float64) {
 	u.drawEmblem(screen, glyphImage(o.Glyph, o.Col), 960-w/2+30, y+21, 28, 1)
 	u.text(screen, s, fBold, 18, 960-w/2+52, y+9, lighten(o.Col, 0.2), alignLeft)
 	if u.hover(960-w/2, y, w, 42) {
-		g.tooltip = o.Name + " — " + o.Desc
+		g.tooltip = trJoin(o.Name, " — ", o.Desc)
 	}
 }
 

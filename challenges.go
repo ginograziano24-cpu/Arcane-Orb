@@ -203,7 +203,7 @@ func (g *Game) drawChallenges(s *ebiten.Image) {
 		st, sc := "Not attempted", ca(cDim, 0.7)
 		switch b := g.save.Challenges[c.ID]; {
 		case done:
-			st, sc = "✦ SEALED ✦", cGold
+			st, sc = "• SEALED •", cGold
 		case b > 0:
 			st, sc = fmt.Sprintf("Best: reached Act %d", b), cAcc
 		}
@@ -237,7 +237,7 @@ func (g *Game) challengeBanner(s *ebiten.Image) {
 	u.drawEmblem(s, glyphImage(c.Glyph, c.Col), x+32, 1024, 30, 1)
 	u.text(s, t, fBold, 20, x+56, 1012, lighten(c.Col, 0.3), alignLeft)
 	if u.hover(x, 1000, w, 48) {
-		g.tooltip = c.Name + " — " + c.Rules
+		g.tooltip = trJoin(c.Name, " — ", c.Rules)
 	}
 }
 
