@@ -159,6 +159,7 @@ func (g *Game) prefetchTick() {
 			prefetch("portrait/" + id)
 		}
 		prefetch("scene/rest", "scene/shop", "scene/treasure", "scene/event")
+		go prefetchModels()
 	}
 	r := g.run
 	if r == nil || r.Arch == nil {
@@ -174,4 +175,20 @@ func (g *Game) prefetchTick() {
 	}
 	prefetchAct(r.AI())
 	prefetchAct(r.AI() + 1)
+}
+
+// prefetchModels parses every Blender model (and works out its shared
+// corners) ahead of the first frame that draws it: each is small, but the
+// first frame of a world used to parse a dozen of them under the asset
+// lock, one side job at a time.
+func prefetchModels() {
+	ents, err := modelFS.ReadDir("assets/models")
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		if name, ok := strings.CutSuffix(e.Name(), ".orbm"); ok {
+			model(name)
+		}
+	}
 }
