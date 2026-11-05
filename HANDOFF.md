@@ -111,6 +111,8 @@ Each frame, the world is drawn as CPU-projected quads, sorted by depth and drawn
 
 ## Waiting on the user
 
+- **Opening cinematic.** Preview 4 is in `docs/cinematic/opening_preview.html` (storyboard: `docs/opening.md`). Ideas, style references and the Blender rebuild plan for the next session: `docs/cinematic/NEXT.md`.
+
 - **Roadmap step 1 (lore) is written but not yet compiled.** Go module downloads were blocked in the session that wrote it (proxy.golang.org 403), so story.go, classsel.go, progress_ui.go, game.go and the new lore.go have only passed `gofmt -e`. First thing next session: vet both targets, then screenshot `classsel`, the Lore page and the story cards in all 7 languages, and fix anything that turns up.
 
 - **PC benchmark of the current build.** Compare against perf4 (2560×1440, DX11). The bench files are on the PC but are an older build; copy the current exe (split as above) there first.
