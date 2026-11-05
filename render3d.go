@@ -1095,6 +1095,7 @@ func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend eb
 			op.Address = ebiten.AddressRepeat
 			op.Filter = ebiten.FilterLinear
 			op.DisableMipmaps = rn.noMip
+			op.UniformMipmapLevel = rn.oneMip
 		}
 		vs := b.verts[rn.first*4 : rn.last*4]
 		for len(vs) > 0 {
@@ -1176,7 +1177,8 @@ const (
 type quadRun struct {
 	tex         uint8
 	noMip       bool
-	first, last int // the run's quad indices are runIdx[first:last] once planned
+	oneMip      bool // every quad needs the same mip level (planned runs are keyed by it)
+	first, last int  // the run's quad indices are runIdx[first:last] once planned
 	ids         []int32
 }
 
@@ -1394,7 +1396,7 @@ func (b *Batch) planRuns(qs []*quad, order []int32, plan bool) ([]quadRun, int) 
 				runs = append(runs, quadRun{})
 			}
 			rn := &runs[len(runs)-1]
-			rn.tex, rn.first, rn.noMip = tex, i, false
+			rn.tex, rn.first, rn.noMip, rn.oneMip = tex, i, false, false
 		}
 		if len(runs) > 0 {
 			runs[len(runs)-1].last = len(order)
@@ -1459,6 +1461,7 @@ func (b *Batch) planRuns(qs []*quad, order []int32, plan bool) ([]quadRun, int) 
 			}
 			at = len(runs) - 1
 			runs[at].noMip = key%8 == noMip
+			runs[at].oneMip = true // keyed by mip level: every quad shares it
 			lastOf[key] = int16(at)
 		}
 		// The scan left nothing later than at under the quad (and a new run

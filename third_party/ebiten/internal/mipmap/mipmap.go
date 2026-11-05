@@ -86,7 +86,11 @@ func (m *Mipmap) DrawTriangles(srcs [graphics.ShaderSrcImageCount]*Mipmap, verti
 	level := 0
 	if !canSkipMipmap && srcs[0] != nil && canUseMipmap(srcs[0].imageType) {
 		level = math.MaxInt32
-		for i := 0; i < len(indices); i += 3 {
+		n := len(indices)
+		if hint == restorable.HintUniformMipmapLevel && n > 6 {
+			n = 6 // (Arcane Orb patch) the first quad's level is everyone's
+		}
+		for i := 0; i < n; i += 3 {
 			idx0 := indices[i]
 			idx1 := indices[i+1]
 			idx2 := indices[i+2]
@@ -136,6 +140,9 @@ func (m *Mipmap) DrawTriangles(srcs [graphics.ShaderSrcImageCount]*Mipmap, verti
 		imgs[i] = src.orig
 	}
 
+	if hint == restorable.HintUniformMipmapLevel {
+		hint = restorable.HintNone
+	}
 	m.orig.DrawTriangles(imgs, vertices, indices, blend, dstRegion, srcRegions, shader, uniforms, fillRule, hint)
 	m.markDirty()
 }

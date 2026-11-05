@@ -119,6 +119,12 @@ const (
 	// HintOverwriteDstRegion indicates that the destination region is overwritten.
 	// HintOverwriteDstRegion helps to reduce the size of the draw-image history.
 	HintOverwriteDstRegion
+
+	// HintUniformMipmapLevel (Arcane Orb patch) tells the mipmap layer that
+	// every quad (two triangles) of the draw needs the same mipmap level, so
+	// the first quad's level is the draw's. The restorable layer treats it
+	// as HintNone.
+	HintUniformMipmapLevel
 )
 
 // Image represents an image that can be restored when GL context is lost.

@@ -462,6 +462,11 @@ type DrawTrianglesOptions struct {
 	// The default (zero) value is false.
 	AntiAlias bool
 
+	// UniformMipmapLevel (Arcane Orb patch) promises that every quad (each
+	// six indices) of the draw needs the same mipmap level, so it is worked
+	// out from the first quad instead of every triangle.
+	UniformMipmapLevel bool
+
 	// DisableMipmaps disables mipmaps.
 	// When Filter is FilterLinear and GeoM shrinks the image, mipmaps are used by default.
 	// Mipmap is useful to render a shrunk image with high quality.
@@ -606,7 +611,11 @@ func (i *Image) DrawTriangles(vertices []Vertex, indices []uint16, img *Image, o
 	if !skipMipmap {
 		skipMipmap = filter != builtinshader.FilterLinear
 	}
-	i.image.DrawTriangles(srcs, vs, is, blend, i.adjustedBounds(), [graphics.ShaderSrcImageCount]image.Rectangle{img.adjustedBounds()}, shader.shader, i.tmpUniforms, graphicsdriver.FillRule(options.FillRule), skipMipmap, options.AntiAlias, restorable.HintNone)
+	hint := restorable.HintNone
+	if options.UniformMipmapLevel {
+		hint = restorable.HintUniformMipmapLevel
+	}
+	i.image.DrawTriangles(srcs, vs, is, blend, i.adjustedBounds(), [graphics.ShaderSrcImageCount]image.Rectangle{img.adjustedBounds()}, shader.shader, i.tmpUniforms, graphicsdriver.FillRule(options.FillRule), skipMipmap, options.AntiAlias, hint)
 }
 
 // DrawTrianglesShaderOptions represents options for DrawTrianglesShader.

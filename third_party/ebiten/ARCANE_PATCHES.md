@@ -17,6 +17,12 @@ game's go.mod. Changes, each marked "Arcane Orb patch" in the source:
    command, and the per-command frame log call (a no-op outside debug
    builds, but its variadic argument allocated) is skipped unless
    `debug.IsDebug`.
+4. `DrawTrianglesOptions.UniformMipmapLevel` (new): the caller promises
+   every quad of the draw needs the same mipmap level, so the mipmap layer
+   works it out from the first quad instead of every edge of every
+   triangle (a new restorable hint, HintUniformMipmapLevel, carries it
+   there and is dropped before the restorable layer). The game's planned
+   runs are keyed by mip level, so they set it.
 
 To move to a newer Ebitengine: copy its module here the same way (no
 examples, tests or testdata) and re-apply the patches above.
