@@ -430,11 +430,18 @@ func piecesFor(n int) int {
 	if forcePieces {
 		return n
 	}
+	if !piecesOn {
+		return 1
+	}
 	return max(1, min(n, runtime.GOMAXPROCS(0)/4))
 }
 
-// forcePieces splits jobs whatever the machine (the capture build, single
-// threaded, checks the split draws exactly what one job does).
+// piecesOn enables splitting jobs into pieces (bench: -nopieces).
+var piecesOn = true
+
+// forcePieces splits jobs, and shares out the flush's merge, whatever the
+// machine (the capture build, single threaded, checks the split work comes
+// out exactly as the whole would).
 var forcePieces = false
 
 // wallPieces is how many goroutines share the arena walls, the costliest

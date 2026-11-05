@@ -76,6 +76,10 @@ func benchParse() {
 			glowAsideOn = true
 		case a == "-ebitenaa":
 			aaOwn = false
+		case a == "-noparmerge":
+			parMergeOn = false
+		case a == "-nopieces":
+			piecesOn = false
 		case a == "-nopresort":
 			presortOn = false
 		case strings.HasPrefix(a, "-benchwin="):

@@ -1779,12 +1779,16 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 	}
 	bounds[nl] = n
 	// merge neighbouring lists pairwise until one is left; ties go to the
-	// earlier list, so the result is the order one stable sort would give
+	// earlier list, so the result is the order one stable sort would give.
+	// A big pass is shared out: each merge cut into slices of the output
+	// (mergeSplit), merged on their own goroutines.
+	par := parMergeOn && n >= parMergeMin && (runtime.GOMAXPROCS(0) >= 4 || forcePieces)
 	src := 0
 	for nl > 1 {
 		dk, di := b.mk[1-src][:n], b.mi[1-src][:n]
 		sk, si := b.mk[src][:n], b.mi[src][:n]
 		m := 0
+		var wg sync.WaitGroup
 		for l := 0; l < nl; l += 2 {
 			lo, mid := bounds[l], bounds[l+1]
 			if l+1 >= nl {
@@ -1795,25 +1799,38 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 				continue
 			}
 			hi := bounds[l+2]
-			i, j, w := lo, mid, lo
-			for i < mid && j < hi {
-				if sk[j] < sk[i] {
-					dk[w], di[w] = sk[j], si[j]
-					j++
-				} else {
-					dk[w], di[w] = sk[i], si[i]
-					i++
-				}
-				w++
-			}
-			w += copy(dk[w:], sk[i:mid])
-			copy(di[w-(mid-i):], si[i:mid])
-			w2 := copy(dk[w:], sk[j:hi])
-			copy(di[w:], si[j:hi])
-			_ = w2
 			bounds[m] = lo
 			m++
+			parts := 1
+			if par {
+				parts = min(8, (hi-lo+parMergeSlice-1)/parMergeSlice)
+			}
+			if parts <= 1 {
+				if par {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						mergeRuns(dk, di, sk, si, lo, mid, mid, hi, lo)
+					}()
+				} else {
+					mergeRuns(dk, di, sk, si, lo, mid, mid, hi, lo)
+				}
+				continue
+			}
+			for c := 0; c < parts; c++ {
+				k0, k1 := (hi-lo)*c/parts, (hi-lo)*(c+1)/parts
+				i0 := mergeSplit(sk, lo, mid, mid, hi, k0)
+				i1 := mergeSplit(sk, lo, mid, mid, hi, k1)
+				a0, a1 := lo+i0, lo+i1
+				b0, b1 := mid+k0-i0, mid+k1-i1
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					mergeRuns(dk, di, sk, si, a0, a1, b0, b1, lo+k0)
+				}()
+			}
 		}
+		wg.Wait()
 		bounds[m] = n
 		nl = m
 		src = 1 - src
@@ -1821,6 +1838,56 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 	out := append(b.order[:0], b.mi[src][:n]...)
 	b.order = out[:cap(out)]
 	return out
+}
+
+// parMergeOn enables sharing out the merge (bench: -noparmerge).
+var parMergeOn = true
+
+// parMergeMin is the fewest quads whose merge passes are shared out across
+// goroutines, and parMergeSlice the output each one takes at least.
+const (
+	parMergeMin   = 6000
+	parMergeSlice = 3000
+)
+
+// mergeRuns merges the sorted runs sk/si[a0:a1] and [b0:b1] into dk/di from
+// position w, ties to the first run.
+func mergeRuns(dk []uint64, di []int32, sk []uint64, si []int32, a0, a1, b0, b1, w int) {
+	i, j := a0, b0
+	for i < a1 && j < b1 {
+		if sk[j] < sk[i] {
+			dk[w], di[w] = sk[j], si[j]
+			j++
+		} else {
+			dk[w], di[w] = sk[i], si[i]
+			i++
+		}
+		w++
+	}
+	n := a1 - i
+	copy(dk[w:w+n], sk[i:a1])
+	copy(di[w:w+n], si[i:a1])
+	w += n
+	n = b1 - j
+	copy(dk[w:w+n], sk[j:b1])
+	copy(di[w:w+n], si[j:b1])
+}
+
+// mergeSplit returns how many of the first run's elements (sk[a0:a1]) the
+// first k outputs of merging it with sk[b0:b1] take (ties to the first run),
+// so the merge can be cut at output k and its slices merged independently.
+func mergeSplit(sk []uint64, a0, a1, b0, b1, k int) int {
+	lo, hi := max(0, k-(b1-b0)), min(k, a1-a0)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		// a[mid] comes before b[k-mid-1] if it is not greater
+		if sk[a0+mid] <= sk[b0+k-mid-1] {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
 }
 
 // lastQuads is how many quads the last world flush drew (for profiling).
