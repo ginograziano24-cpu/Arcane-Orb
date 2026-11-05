@@ -530,6 +530,8 @@ type Batch struct {
 	wantMeta [2]bool      // presort: work out run metadata (the flush is likely to plan)
 	mergeK   []uint64     // flush scratch: the own quads' keys when merging
 	gp       *Batch       // the glow list's planning scratch (glowPlanner)
+	mk       [2][]uint64  // mergeSorted scratch: keys and indices, ping-pong
+	mi       [2][]int32
 	runIdx   []int32
 	runCell  [runCols * runRows]int16
 	meta     []uint64 // per quad (submission order): cells and run key
@@ -953,7 +955,7 @@ func (b *Batch) planList(segs [][]quad, list int) ([]*quad, []quadRun) {
 	b.planned[list] = plan
 	// sort indices rather than the (large) quads themselves: far first
 	var order []int32
-	if len(b.extB) == len(segs)-1 && len(b.extB) > 0 && len(b.extB) < maxMerge {
+	if presortOn && len(b.extB) == len(segs)-1 && len(b.extB) > 0 && len(b.extB) < maxMerge {
 		order = b.mergeSorted(segs, list, plan)
 	} else {
 		order = b.sortFarFirst(qs, plan)
@@ -1454,6 +1456,9 @@ func insertionFix(order []int32, keys []uint64, budget int) bool {
 	return true
 }
 
+// presortOn uses the side batches' presorted orders (bench: -nopresort).
+var presortOn = true
+
 // maxMerge is the most lists mergeSorted merges (side batches plus own).
 const maxMerge = 12
 
@@ -1493,14 +1498,17 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 		// keep it out of the scratch the merge writes into
 		ownOrd = append(b.idx2[n-no : n][:0], ownOrd...)
 	}
-	// the side segments' metadata, copied into place
-	type head struct {
-		keys  []uint64
-		order []int32
-		off   int32
+	// the side segments' metadata, copied into place, and every list laid
+	// out back to back as (key, global index) pairs in sorted order
+	if cap(b.mk[0]) < n {
+		for i := range b.mk {
+			b.mk[i] = make([]uint64, n, n+n/4)
+			b.mi[i] = make([]int32, n, n+n/4)
+		}
 	}
-	var hs [maxMerge]head
-	heads := hs[:0]
+	mk, mi := b.mk[0][:n], b.mi[0][:n]
+	var bounds [maxMerge + 1]int
+	nl := 0
 	off := 0
 	for si, s := range segs[:len(segs)-1] {
 		p := &b.extB[si].pre[list]
@@ -1518,29 +1526,62 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 				}
 			}
 		}
-		heads = append(heads, head{p.keys, p.order, int32(off)})
+		bounds[nl] = off
+		nl++
+		for j, oi := range p.order {
+			mk[off+j] = p.keys[oi]
+			mi[off+j] = int32(off) + oi
+		}
 		off += len(s)
 	}
-	heads = append(heads, head{ownK, ownOrd, int32(base)})
-	// k-way merge: smallest key first, the earlier segment on ties
-	out := b.order[:0]
-	var pos [maxMerge]int
-	for len(out) < n {
-		best := -1
-		var bk uint64
-		for h := range heads {
-			if pos[h] >= len(heads[h].order) {
+	bounds[nl] = off
+	nl++
+	for j, oi := range ownOrd {
+		mk[off+j] = ownK[oi]
+		mi[off+j] = int32(base) + oi
+	}
+	bounds[nl] = n
+	// merge neighbouring lists pairwise until one is left; ties go to the
+	// earlier list, so the result is the order one stable sort would give
+	src := 0
+	for nl > 1 {
+		dk, di := b.mk[1-src][:n], b.mi[1-src][:n]
+		sk, si := b.mk[src][:n], b.mi[src][:n]
+		m := 0
+		for l := 0; l < nl; l += 2 {
+			lo, mid := bounds[l], bounds[l+1]
+			if l+1 >= nl {
+				copy(dk[lo:mid], sk[lo:mid])
+				copy(di[lo:mid], si[lo:mid])
+				bounds[m] = lo
+				m++
 				continue
 			}
-			k := heads[h].keys[heads[h].order[pos[h]]]
-			if best < 0 || k < bk {
-				best, bk = h, k
+			hi := bounds[l+2]
+			i, j, w := lo, mid, lo
+			for i < mid && j < hi {
+				if sk[j] < sk[i] {
+					dk[w], di[w] = sk[j], si[j]
+					j++
+				} else {
+					dk[w], di[w] = sk[i], si[i]
+					i++
+				}
+				w++
 			}
+			w += copy(dk[w:], sk[i:mid])
+			copy(di[w-(mid-i):], si[i:mid])
+			w2 := copy(dk[w:], sk[j:hi])
+			copy(di[w:], si[j:hi])
+			_ = w2
+			bounds[m] = lo
+			m++
 		}
-		hd := &heads[best]
-		out = append(out, hd.off+hd.order[pos[best]])
-		pos[best]++
+		bounds[m] = n
+		nl = m
+		src = 1 - src
 	}
+	out := append(b.order[:0], b.mi[src][:n]...)
 	b.order = out[:cap(out)]
 	return out
 }
@@ -1560,7 +1601,7 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 	b.prepMeta()
 	segQ := append(b.extQ, b.quads)
 	segG := append(b.extG, b.glow)
-	if nGlow >= glowPlanAside {
+	if nGlow >= glowPlanAside && glowAsideOn {
 		// the glow list is sorted and planned on another goroutine while
 		// this one submits the opaque list (planning makes no Ebitengine
 		// calls; drawing stays here)
@@ -1594,6 +1635,10 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 // glowPlanAside is the glow-list size from which Flush plans it on a
 // goroutine of its own.
 const glowPlanAside = 1500
+
+// glowAsideOn enables planning the glow list on its own goroutine
+// (bench: -noglowaside).
+var glowAsideOn = true
 
 // glowPlanner returns the scratch batch the glow list is planned in, set up
 // to read the same side batches and grid as b.
