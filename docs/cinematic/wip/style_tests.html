@@ -427,7 +427,7 @@ canvas { display: block; width: 100%; height: 100%; }
     { name: 'D · Long legs', B: 36, W: 15, Hh: 43, lift: 9, tilt: 4 },
     { name: 'E · Hourglass', B: 38.5, W: 14.5, Hh: 46, lift: 3, tilt: 4 },
     { name: 'C+ · 10% curvier', B: 41.8, W: 16.5, Hh: 60.7, Hb: 50, lift: 0, tilt: 5.5 },
-    { name: 'C++ · C+ with 15% fuller bust', B: 48, W: 16.5, Hh: 60.7, Hb: 50, lift: 0, tilt: 5.5, ub: 6 }
+    { name: 'C++ · C+ with 25% fuller bust', B: 52.2, W: 16.5, Hh: 60.7, Hb: 50, lift: 0, tilt: 5.5, ub: 8 }
   ];
   var MVAR = 2, MB = null, MBK = -1;
   // smooth closed/open SVG path through points; a third value of 1 marks a corner
@@ -458,7 +458,7 @@ canvas { display: block; width: 100%; height: 100%; }
     var right = [[B, -313 + (v.ub || 0) * .5], [W + 10, U], [W, -258 + L], [Hh - 2, -212 + L + t], [Hh * .88, -170 + L * .6], [Hb * .6, -104], [Hb * .63, -78], [Hb + 16, -4, 1], [Hb * .45, 2], [0, 0]];
     var left = [[-Hb * .45, 2], [-(Hb + 18), -4, 1], [-Hb * .63, -78], [-Hb * .6, -104], [-Hh * .9, -172 + L * .6], [-(Hh + 2), -212 + L - t], [-W, -258 + L], [-(W + 10), U], [-B, -313 + (v.ub || 0) * .5]];
     var gown = neck.concat(right, left);
-    var cupL = [[-(B - 3), -306 + (v.ub || 0) * .6], [-(B - 11), U - 4], [-14 * bs, U - 1], [-5 * bs, U - 5]];
+    var cupL = [[-(B - 2.5), -307 + (v.ub || 0) * .6], [-(B - 9), U - 3.5], [-(B * .5), U - 1.8]]; // outer half of each cup's underside
     var chest = [[-34, -336, 1], [-40, -343], [-26, -350], [-9, -354], [-7.5, -370, 1], [7.5, -370, 1], [9, -354], [26, -350], [40, -343], [34, -336, 1]].concat(cupR.slice().reverse(), [[0, -318, 1]], cupLn.slice().reverse());
     var arm = (function () { // elbow out to the side, wrist above the hip, fingers draped over the hip
       var el = [Hh + 10, -288], wr = [Hh * .84 + 4, -236], dx = wr[0] - el[0], dy = wr[1] - el[1], l = Math.hypot(dx, dy), a = Math.atan2(dy, dx) + .38, d = [Math.cos(a), Math.sin(a)], n = [-d[1], d[0]];
@@ -472,7 +472,7 @@ canvas { display: block; width: 100%; height: 100%; }
     return {
       gownP: gown,
       gown: MS(crD(gown, true), 2.3),
-      bust: MS(crD(cupL, false) + ' ' + crD(mirror(cupL), false) + ' M0 -318 C0 -313 .4 -310 .8 -307', 1.4, 0),
+      bust: MS(crD(cupL.slice(0, 3), false) + ' ' + crD(mirror(cupL.slice(0, 3)), false) + ' M0 -318 C0 -313 .4 -310 .8 -307', 1.15, 0),
       seams: MS(crD([[-14, -292], [-9, -258 + L], [-16, -212 + L], [-22, -160]], false) + ' ' + crD([[14, -292], [9, -258 + L], [15, -214 + L], [17, -178]], false) + ' ' + crD([[-28, -120], [-33, -60], [-40, -4]], false) + ' ' + crD([[0, -150], [-1, -80], [-3, -2]], false), 1, 0),
       chestP: chest,
       chest: MS(crD(chest, true), 1.4, 0),
@@ -572,7 +572,7 @@ canvas { display: block; width: 100%; height: 100%; }
     base([Bd.gown]); colour(Bd.gown, MCOL.gown, cF(.52, .3), 1.3); shade(Bd.gown, cF(.7, .3), 6, -.5);
     base([Bd.shoe]); colour(Bd.shoe, '#1c1222', cF(.58, .2), 1.6);
     var v = MVARS[MVAR];
-    if (F > .7) { var sk = clamp(cF(.7, .2)); ctx.save(); ctx.clip(Bd.gown.path); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha *= .3 * sk; ctx.fillStyle = MCOL.gownDk; ctx.beginPath(); ctx.ellipse(-(v.B * .5), -291 + (v.ub || 0), v.B * .42, 3.2, .08, 0, 7); ctx.ellipse(v.B * .5, -291 + (v.ub || 0), v.B * .42, 3.2, -.08, 0, 7); ctx.fill(); ctx.restore();
+    if (F > .7) { var sk = clamp(cF(.7, .2)); ctx.save(); ctx.clip(Bd.gown.path); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha *= .26 * sk; ctx.fillStyle = MCOL.gownDk; ctx.filter = 'blur(' + (2.5 * Q * sc).toFixed(1) + 'px)'; ctx.beginPath(); ctx.ellipse(-(v.B * .5), -293 + (v.ub || 0), v.B * .4, 4.5, .08, 0, 7); ctx.ellipse(v.B * .5, -293 + (v.ub || 0), v.B * .4, 4.5, -.08, 0, 7); ctx.fill(); ctx.restore();
       ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha *= .5 * sk; ctx.strokeStyle = '#ff9fb0'; ctx.lineCap = 'round'; ctx.lineWidth = 2.4;
       var bq = v.B / 36.5, yq = -8 * (bq - 1) + (v.ub || 0) * .5; ctx.beginPath(); ctx.moveTo(-(v.B - 6), -316 + yq); ctx.quadraticCurveTo(-(v.B * .6), -325 + yq, -12 * bq, -323 + yq); ctx.moveTo(10 * bq, -323 + yq); ctx.quadraticCurveTo(v.B * .55, -325 + yq, v.B - 8, -316 + yq);
       ctx.moveTo(-(v.Hh - 8), -232 + v.lift); ctx.quadraticCurveTo(-(v.Hh - 2), -210 + v.lift, -(v.Hh - 6), -180); ctx.moveTo(-22, -150); ctx.quadraticCurveTo(-24, -100, -28, -40); ctx.moveTo(14, -112); ctx.quadraticCurveTo(17, -100, 16, -88); ctx.stroke();
