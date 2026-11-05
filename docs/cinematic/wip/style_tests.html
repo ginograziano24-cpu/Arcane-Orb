@@ -72,6 +72,7 @@ canvas { display: block; width: 100%; height: 100%; }
       <button class="btn sty" type="button" data-style="comic">Comic</button>
       <button class="btn sty" type="button" data-style="flat">Flat cartoon</button>
       <button class="btn" id="miraArt" type="button" aria-pressed="false">Mirabel: redrawn</button>
+      <button class="btn" id="miraBody" type="button">Body: C curvy</button>
     </div>
     <div class="scrub">
       <label for="seek" class="time" id="clock">0:00 / 1:08</label>
@@ -414,7 +415,8 @@ canvas { display: block; width: 100%; height: 100%; }
     { name: 'B · Classic', B: 36.5, W: 16, Hh: 43.5, lift: 0, tilt: 4 },
     { name: 'C · Curvy', B: 38, W: 17, Hh: 55.2, Hb: 48, lift: 0, tilt: 5 },
     { name: 'D · Long legs', B: 36, W: 15, Hh: 43, lift: 9, tilt: 4 },
-    { name: 'E · Hourglass', B: 38.5, W: 14.5, Hh: 46, lift: 3, tilt: 4 }
+    { name: 'E · Hourglass', B: 38.5, W: 14.5, Hh: 46, lift: 3, tilt: 4 },
+    { name: 'C+ · 10% curvier', B: 41.8, W: 16.5, Hh: 60.7, Hb: 50, lift: 0, tilt: 5.5 }
   ];
   var MVAR = 2, MB = null, MBK = -1;
   // smooth closed/open SVG path through points; a third value of 1 marks a corner
@@ -456,8 +458,10 @@ canvas { display: block; width: 100%; height: 100%; }
       foreL: MS(limbD([-55, -296], [-60, -347], 9, 7), 1.5, 0),
       upperR: MS(limbD([33, -340], [50, -292], 12.5, 9.5), 1.5, 0),
       foreR: MS(limbD([50, -292], [63, -247], 9, 7), 1.5, 0),
-      sleeveL: MS(crD([[-50, -306], [-63, -310], [-70, -296], [-76, -260], [-82, -214], [-80, -180], [-74, -168, 1], [-66, -188], [-58, -226], [-52, -270], [-49, -292]], true), 1.7),
-      sleeveR: MS(crD([[46, -300], [56, -299], [64, -281], [70, -246], [76, -206], [78, -176], [72, -160, 1], [66, -184], [60, -220], [54, -256], [47, -284]], true), 1.7),
+      sleeveL: MS(crD([[-71, -341, 1], [-50, -339, 1], [-49, -318], [-48.5, -298], [-52, -286], [-58, -268], [-64, -238], [-70, -204], [-73, -180], [-79, -166, 1], [-84, -190], [-86, -232], [-83, -282], [-77, -318]], true), 1.7),
+      cuffL: MS('M-71 -341 C-66 -344 -55 -343 -50 -339', 1.2, 0),
+      sleeveR: MS(crD([[52, -301], [59, -295], [66, -274], [72, -251, 1], [76, -222], [80, -184], [76, -160, 1], [70, -177], [64, -206], [60, -232], [57, -247, 1], [53, -264], [47, -282], [45, -295]], true), 1.7),
+      cuffR: MS('M57 -247 C61 -246 67 -248 72 -251', 1.2, 0),
       handR: MS(crD([[61.5, -248], [72, -249.5], [80, -246.5], [87.5, -242.5], [88, -240.4], [79, -241.6], [88.6, -236.4], [88, -234.2], [78.4, -237.4], [85.8, -230.6], [84.8, -228.6], [76.4, -233.2], [81.8, -224.8], [80, -223.6], [72.6, -230], [67, -233], [64.6, -240.5]], true), 1.25, 0),
       thumbR: MS('M67 -247 C71 -248 75 -246.5 78.5 -243.5', 1, 0),
       fistL: MS(crD([[-67.5, -358], [-58, -360.5], [-54.5, -355], [-54.5, -347.5], [-58.5, -344], [-66, -344.5], [-68.5, -351]], true) + ' M-66 -355 C-62 -355.6 -59 -355.8 -56 -355.5 M-66.4 -351 C-62 -351.4 -59 -351.4 -55.6 -351 M-66 -347 C-62 -347.4 -59 -347.4 -56.6 -347.2', 1.3, 0)
@@ -467,7 +471,8 @@ canvas { display: block; width: 100%; height: 100%; }
   var MIRA = {
     hairBack: MS('M-18 -396 Q-32 -390 -36 -370 Q-42 -352 -38 -336 Q-46 -318 -40 -300 Q-46 -282 -38 -264 Q-42 -250 -36 -238 Q-30 -246 -28 -256 L36 -256 Q38 -246 44 -236 Q52 -250 46 -264 Q54 -282 48 -300 Q56 -318 48 -336 Q52 -356 46 -372 Q40 -394 24 -398 Q14 -402 8 -400 Q-6 -400 -18 -396 Z', 2),
     hairWave: MS('M-34 -330 Q-40 -312 -36 -296 M44 -330 Q50 -312 46 -296', 1.1, 0),
-    staff: MS('M-60.5 -420 C-63 -340 -70 -200 -82.5 -2 L-77.5 -2 C-65 -200 -58 -340 -55.5 -420 Z', 1.6, 0),
+    staff: MS('M-62.5 -420 C-65 -340 -72 -200 -85 -2 L-76 -2 C-63.5 -200 -56.5 -340 -53.5 -420 Z', 1.7, 0),
+    grain: MS('M-58 -400 C-59 -380 -60 -366 -60.5 -350 M-66 -250 C-67 -230 -68 -214 -69 -196 M-74 -120 C-75 -100 -76 -84 -77 -64', .8, 0),
     staffHead: MS('M-58 -420 C-70 -426 -74 -442 -70 -458 C-66 -472 -48 -476 -36 -468 C-26 -460 -26 -442 -34 -430 C-40 -422 -50 -418 -58 -420 Z', 1.8, 0),
     spiral: MS('M-50 -436 C-62 -438 -64 -456 -52 -460 C-42 -463 -36 -452 -41 -445 C-45 -440 -52 -443 -51 -449 C-50 -453 -45 -452 -46 -448', 1.3, 0),
     lockR: MS('M24 -372 C34 -360 38 -344 36 -326 C35 -312 40 -300 44 -286 C36 -292 30 -306 28 -322 C26 -338 22 -352 18 -364 Z', 1.4),
@@ -526,13 +531,14 @@ canvas { display: block; width: 100%; height: 100%; }
     // 1. back hair (follows the head up), the staff
     ctx.save(); ctx.translate(0, -16); base([M.hairBack]); colour(M.hairBack, MCOL.hair, cF(.5, .3), dk, -.4); group([M.hairBack, M.hairWave], F / .6 * 2, lw); ctx.restore();
     base([M.staff, M.staffHead]); colour(M.staff, MCOL.wood, cF(.55, .25), 1.3); colour(M.staffHead, MCOL.wood, cF(.55, .25), 1.4); shade(M.staffHead, cF(.7, .3), 4, -.5);
-    group([M.staff, M.staffHead, M.spiral], F / .6 * 3, lw);
-    // 2. sleeves hang behind
-    base([Bd.sleeveL, Bd.sleeveR]); colour(Bd.sleeveL, MCOL.gown, cF(.52, .3), 1.3); colour(Bd.sleeveR, MCOL.gown, cF(.52, .3), 1.3); shade(Bd.sleeveL, cF(.7, .3), 6, -.5); shade(Bd.sleeveR, cF(.7, .3), 6, -.5);
-    group([Bd.sleeveL, Bd.sleeveR], F / .6 * 2, lw);
-    // 3. arms (sheer black over skin): upper arms first, forearms over them
+    group([M.staff, M.grain, M.staffHead, M.spiral], F / .6 * 3, lw);
+    // 2. arms (sheer black over skin): upper arms, then forearms
     var meshFill = function (list) { if (F <= .5) return; var ck = clamp(cF(.5, .25)); ctx.save(); ctx.globalAlpha *= ck; ctx.fillStyle = '#fbf5e8'; list.forEach(function (p) { ctx.fill(p.path); }); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = MCOL.skin; list.forEach(function (p) { ctx.fill(p.path); }); ctx.globalAlpha *= STYLE === 'sketch' ? .6 : .52; ctx.fillStyle = MCOL.mesh; list.forEach(function (p) { ctx.fill(p.path); }); ctx.restore(); };
     [[Bd.upperL, Bd.foreL], [Bd.upperR, Bd.foreR]].forEach(function (a) { meshFill([a[0]]); draw(a[0], F / .6 * 1.4, lw); meshFill([a[1]]); draw(a[1], F / .6 * 1.4, lw); });
+    // 3. wide red sleeves over the forearms, with a dark lining at each cuff
+    base([Bd.sleeveL, Bd.sleeveR]); colour(Bd.sleeveL, MCOL.gown, cF(.52, .3), 1.3); colour(Bd.sleeveR, MCOL.gown, cF(.52, .3), 1.3); shade(Bd.sleeveL, cF(.7, .3), 6, -.5); shade(Bd.sleeveR, cF(.7, .3), 6, -.5);
+    if (F > .6) { ctx.save(); ctx.globalAlpha *= .55 * clamp(cF(.6, .2)); ctx.fillStyle = MCOL.gownDk; ctx.beginPath(); ctx.ellipse(-60.5, -339.5, 10.5, 2.6, .08, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(64.5, -248.5, 7.8, 2.4, -.35, 0, 7); ctx.fill(); ctx.restore(); }
+    group([Bd.sleeveL, Bd.sleeveR, Bd.cuffL, Bd.cuffR], F / .6 * 2, lw);
     // 4. shoulders, neck and the sheer top over the chest
     meshFill([Bd.chest]);
     // 5. the gown, the leg through the slit, shoe
@@ -1360,9 +1366,11 @@ canvas { display: block; width: 100%; height: 100%; }
   window.__style = setStyle;
   var miraBtn = document.getElementById('miraArt');
   miraBtn.addEventListener('click', function () { MART = !MART; miraBtn.setAttribute('aria-pressed', String(MART)); miraBtn.textContent = MART ? 'Mirabel: your art' : 'Mirabel: redrawn'; LC = {}; snap = {}; fcKey = -1; if (ready) render(now, true); });
+  var bodyBtn = document.getElementById('miraBody');
+  bodyBtn.addEventListener('click', function () { MVAR = MVAR === 2 ? 5 : 2; bodyBtn.textContent = MVAR === 2 ? 'Body: C curvy' : 'Body: C+ 10% curvier'; LC = {}; snap = {}; fcKey = -1; if (ready) render(now, true); });
   window.__miraArt = function (on) { if (MART !== on) miraBtn.click(); };
   window.__variants = function (sc, st) { setPlaying(false); var keep = MART, kv = MVAR; MART = false; ctx = main; ctx.setTransform(Q, 0, 0, Q, 0, 0); ctx.drawImage(paper, 0, 0); boil = 0; tip = null;
-    for (var i = 0; i < 5; i++) { MVAR = i; mirabel(220 + i * 290, 800, sc, 1, 0); ctx.save(); ctx.font = '700 30px Caveat, cursive'; ctx.textAlign = 'center'; ctx.fillStyle = '#3a2a20'; ctx.fillText(MVARS[i].name, 210 + i * 290, 842); ctx.restore(); } MART = keep; MVAR = kv; };
+    var ids = window.__vids || [0, 1, 2, 3, 4], gap = 1450 / ids.length; ids.forEach(function (id, n) { MVAR = id; var cx = 80 + gap * (n + .5); mirabel(cx, 800, sc, 1, 0); ctx.save(); ctx.font = '700 30px Caveat, cursive'; ctx.textAlign = 'center'; ctx.fillStyle = '#3a2a20'; ctx.fillText(MVARS[id].name, cx - 10, 842); ctx.restore(); }); MART = keep; MVAR = kv; MBK = -1; };
   window.__portrait = function (sc, cx, cy, art) { setPlaying(false); var keep = MART; MART = !!art; ctx = main; ctx.setTransform(Q, 0, 0, Q, 0, 0); ctx.drawImage(paper, 0, 0); boil = 0; tip = null; mirabel(cx, cy, sc, 1, 0); MART = keep; };
   window.__seek = function (t) { setPlaying(false); setTime(t, true); };
 })();

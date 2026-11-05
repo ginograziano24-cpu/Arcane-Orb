@@ -39,3 +39,4 @@ the overall art direction.
 - Mirabel: the **redrawn** model, body **C · Curvy** with hips 15% wider and **no leg slit**
   (`mirabel_drawn_C.png`). It is the default on the style test page; the illustration
   is still available behind the "Mirabel" toggle as the reference.
+- Test model **C+** (10% curvier) is behind the "Body" button on the style test page; C stays the default until the user picks. Arms were cleaned up (the sleeves wrap the forearms) and the staff is thicker.
