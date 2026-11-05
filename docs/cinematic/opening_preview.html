@@ -373,7 +373,7 @@ canvas { display: block; width: 100%; height: 100%; }
   // opera gloves, witch hat, blowing a kiss. Feet at 0,0; about 440 tall with the hat.
   var MIRA = {
     hair: S('M-22 -382 C-48 -410 4 -440 40 -416 C64 -398 60 -364 52 -340 C64 -306 68 -270 54 -236 C46 -254 42 -276 40 -294 C42 -324 38 -346 30 -360 L-12 -364 C-16 -346 -26 -328 -36 -312 C-44 -336 -38 -366 -22 -382 Z', { w: 2.2 }),
-    gown: S('M-34 -306 C-30 -318 -12 -320 -4 -308 C4 -320 24 -322 32 -306 C38 -290 34 -274 24 -262 C14 -250 10 -240 12 -230 C30 -214 58 -194 62 -164 C64 -136 50 -104 42 -74 C38 -44 44 -20 52 0 L-28 0 C-22 -36 -26 -80 -32 -116 C-40 -152 -46 -190 -28 -220 C-14 -236 -12 -248 -18 -262 C-30 -276 -38 -290 -34 -306 Z', { w: 2.4 }),
+    gown: S('M-34 -306 C-35 -324 -12 -326 -4 -308 C4 -326 30 -326 32 -306 C46 -290 40 -268 24 -260 C14 -250 10 -240 12 -230 C30 -214 58 -194 62 -164 C64 -136 50 -104 42 -74 C38 -44 44 -20 52 0 L-28 0 C-22 -36 -26 -80 -32 -116 C-40 -152 -46 -190 -28 -220 C-14 -236 -12 -248 -18 -260 C-34 -272 -46 -290 -34 -306 Z', { w: 2.4 }),
     slit: S('M46 -150 C42 -110 38 -60 38 -2', { w: 1.8, ov: 0 }),
     leg: S('M45 -150 C53 -110 55 -64 51 -16 L58 -2 L36 -2 C38 -40 38 -100 40 -146 Z', { w: 2, ov: 1 }),
     shoe: S('M35 -2 C42 -10 52 -12 60 -4 L62 2 L34 2 Z M60 2 L58 12', { w: 2, ov: 0 }),
@@ -398,7 +398,7 @@ canvas { display: block; width: 100%; height: 100%; }
     colour(MIRA.gown, '#8e2c8a', (F - .52) / .3, 1.15); shade(MIRA.gown, (F - .7) / .3, 6, -.5);
     colour(MIRA.leg, '#f6c9a8', (F - .55) / .25, .9); colour(MIRA.shoe, '#4b2370', (F - .58) / .2, 1.2);
     colour(MIRA.armKiss, '#4b2370', (F - .56) / .25, 1.1); colour(MIRA.armHip, '#4b2370', (F - .56) / .25, 1.1);
-    if (F > .55) { ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = .9 * clamp((F - .55) / .25); ctx.fillStyle = '#f6c9a8'; ctx.beginPath(); ctx.moveTo(-34, -306); ctx.bezierCurveTo(-38, -318, -24, -330, -6, -334); ctx.lineTo(16, -334); ctx.bezierCurveTo(32, -332, 40, -320, 32, -306); ctx.bezierCurveTo(24, -322, 4, -320, -4, -308); ctx.bezierCurveTo(-12, -320, -30, -318, -34, -306); ctx.fill(); ctx.fillRect(-4, -352, 18, 20); ctx.restore(); }
+    if (F > .55) { ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = .9 * clamp((F - .55) / .25); ctx.fillStyle = '#f6c9a8'; ctx.beginPath(); ctx.moveTo(-34, -306); ctx.bezierCurveTo(-38, -318, -24, -330, -6, -334); ctx.lineTo(16, -334); ctx.bezierCurveTo(32, -332, 40, -320, 32, -306); ctx.bezierCurveTo(30, -326, 4, -326, -4, -308); ctx.bezierCurveTo(-12, -326, -35, -324, -34, -306); ctx.fill(); ctx.fillRect(-4, -352, 18, 20); ctx.restore(); }
     base([MIRA.face, MIRA.hat]); colour(MIRA.face, '#f6c9a8', (F - .6) / .25, .9); colour(MIRA.swoop, '#c4402a', (F - .62) / .25, 1.15);
     colour(MIRA.hat, '#4b2370', (F - .62) / .3, 1.1); colour(MIRA.band, '#ffd34d', (F - .7) / .2, 1); colour(MIRA.sparkle, '#ffd34d', (F - .75) / .2, 1);
     group([MIRA.hair, MIRA.gown, MIRA.slit, MIRA.leg, MIRA.shoe, MIRA.shoulders, MIRA.armKiss, MIRA.armHip, MIRA.neck, MIRA.face, MIRA.swoop, MIRA.hat, MIRA.band, MIRA.sparkle], F / .6, lw);
