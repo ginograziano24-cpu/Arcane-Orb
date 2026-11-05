@@ -11,6 +11,7 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -535,6 +536,7 @@ type Batch struct {
 	mk       [2][]uint64  // mergeSorted scratch: keys and indices, ping-pong
 	mi       [2][]int32
 	runIdx   []int32
+	qtex     []uint8 // planList: each quad's texture, by index (beside qp)
 	runCell  [runCols * runRows]int16
 	meta     []uint64 // per quad (submission order): cells and run key
 	switches [2]int   // texture switches in last frame's opaque and glow lists
@@ -947,6 +949,10 @@ func (b *Batch) planList(segs [][]quad, list int) ([]*quad, []quadRun) {
 		}
 	}
 	b.qp = qs
+	if cap(b.qtex) < len(qs) {
+		b.qtex = make([]uint8, len(qs), len(qs)+len(qs)/4)
+	}
+	b.qtex = b.qtex[:len(qs)]
 	if len(qs) == 0 {
 		return nil, nil
 	}
@@ -957,12 +963,16 @@ func (b *Batch) planList(segs [][]quad, list int) ([]*quad, []quadRun) {
 	b.planned[list] = plan
 	// sort indices rather than the (large) quads themselves: far first
 	var order []int32
+	tA := time.Now()
 	if presortOn && len(b.extB) == len(segs)-1 && len(b.extB) > 0 && len(b.extB) < maxMerge {
 		order = b.mergeSorted(segs, list, plan)
 	} else {
 		order = b.sortFarFirst(qs, plan)
 	}
+	tB := time.Now()
 	runs, switches := b.planRuns(qs, order, plan)
+	planT[0] += tB.Sub(tA)
+	planT[1] += time.Since(tB)
 	b.switches[list] = switches
 	return qs, runs
 }
@@ -972,7 +982,7 @@ func (b *Batch) planList(segs [][]quad, list int) ([]*quad, []quadRun) {
 func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend ebiten.Blend, scale float32) {
 	if flushTrace != nil {
 		for i := 1; i < len(runs); i++ {
-			flushTrace(runs[i-1].tex, runs[i].tex, float64(len(runs[i].ids)))
+			flushTrace(runs[i-1].tex, runs[i].tex, float64(runs[i].last-runs[i].first))
 		}
 	}
 	b.fillVerts(qs, scale)
@@ -1037,6 +1047,10 @@ func (b *Batch) fillVerts(qs []*quad, scale float32) {
 	fill(0, min(step, len(ids)))
 	wg.Wait()
 }
+
+// flushBenchHook, when set (capture builds), runs after a flush with the
+// lists it drew, so the planner can be timed on real frames.
+var flushBenchHook func(b *Batch, segQ, segG [][]quad)
 
 // fillChunk is the fewest quads worth handing to another goroutine.
 const fillChunk = 3000
@@ -1261,24 +1275,32 @@ func (b *Batch) planRuns(qs []*quad, order []int32, plan bool) ([]quadRun, int) 
 	switches := 0
 	prevTex := uint8(255)
 	if !plan {
-		// plain runs: a new draw call at every texture switch
-		for _, oi := range order {
-			tex := qs[oi].tex
-			if len(runs) > 0 && runs[len(runs)-1].tex != tex {
+		// plain runs: a new draw call at every texture switch, the
+		// indices straight from the order
+		b.runIdx = append(b.runIdx[:0], order...)
+		tx := b.qtex[:len(qs)]
+		for i, oi := range order {
+			tex := tx[oi]
+			if len(runs) > 0 && runs[len(runs)-1].tex == tex {
+				continue
+			}
+			if len(runs) > 0 {
 				switches++
+				runs[len(runs)-1].last = i
 			}
-			if len(runs) == 0 || runs[len(runs)-1].tex != tex {
-				if len(runs) < cap(runs) {
-					runs = runs[:len(runs)+1]
-					runs[len(runs)-1].tex, runs[len(runs)-1].ids = tex, runs[len(runs)-1].ids[:0]
-				} else {
-					runs = append(runs, quadRun{tex: tex})
-				}
-				runs[len(runs)-1].noMip = false
+			if len(runs) < cap(runs) {
+				runs = runs[:len(runs)+1] // (keeping the slot's ids storage)
+			} else {
+				runs = append(runs, quadRun{})
 			}
-			runs[len(runs)-1].ids = append(runs[len(runs)-1].ids, oi)
+			rn := &runs[len(runs)-1]
+			rn.tex, rn.first, rn.noMip = tex, i, false
 		}
-		order = order[:0]
+		if len(runs) > 0 {
+			runs[len(runs)-1].last = len(order)
+		}
+		b.runs = runs
+		return runs, switches
 	}
 	for _, oi := range order {
 		m := meta[oi]
@@ -1307,13 +1329,22 @@ func (b *Batch) planRuns(qs []*quad, order []int32, plan bool) ([]quadRun, int) 
 			}
 		} else if at >= 0 {
 		scan:
-			for y := r0; y <= r1; y++ {
-				row := cell[y*runCols : y*runCols+runCols]
-				brow := big[(y/runBlock)*runBX:]
-				for x := c0; x <= c1; x++ {
-					if int(row[x]) > at || int(brow[x/runBlock]) > at {
+			for y := by0; y <= by1; y++ {
+				for x := bx0; x <= bx1; x++ {
+					if int(big[y*runBX+x]) > at {
 						at = -1
 						break scan
+					}
+				}
+			}
+			if at >= 0 {
+			scanC:
+				for y := r0; y <= r1; y++ {
+					for _, c := range cell[y*runCols+c0 : y*runCols+c1+1] {
+						if int(c) > at {
+							at = -1
+							break scanC
+						}
 					}
 				}
 			}
@@ -1330,25 +1361,27 @@ func (b *Batch) planRuns(qs []*quad, order []int32, plan bool) ([]quadRun, int) 
 			runs[at].noMip = key%8 == noMip
 			lastOf[key] = int16(at)
 		}
+		// The scan left nothing later than at under the quad (and a new run
+		// is the latest of all), so its own cells or blocks are simply set;
+		// only a block's latest-of-its-fine-cells needs a max.
 		a := int16(at)
 		if isBig {
 			for y := by0; y <= by1; y++ {
 				for x := bx0; x <= bx1; x++ {
-					if i := y*runBX + x; big[i] < a {
-						big[i] = a
-					}
+					big[y*runBX+x] = a
 				}
 			}
 		} else {
 			for y := r0; y <= r1; y++ {
-				row := cell[y*runCols : y*runCols+runCols]
-				frow := fineMax[(y/runBlock)*runBX:]
-				for x := c0; x <= c1; x++ {
-					if row[x] < a {
-						row[x] = a
-					}
-					if frow[x/runBlock] < a {
-						frow[x/runBlock] = a
+				row := cell[y*runCols+c0 : y*runCols+c1+1]
+				for x := range row {
+					row[x] = a
+				}
+			}
+			for y := by0; y <= by1; y++ {
+				for x := bx0; x <= bx1; x++ {
+					if i := y*runBX + x; fineMax[i] < a {
+						fineMax[i] = a
 					}
 				}
 			}
@@ -1395,11 +1428,13 @@ func (b *Batch) sortFarFirst(qs []*quad, withMeta bool) []int32 {
 	}
 	meta := b.meta[:n]
 	k0 := b.keys[0][:n]
+	tx := b.qtex[:n]
 	for i := range qs {
 		if withMeta {
 			meta[i] = b.quadMeta(qs[i])
 		}
 		k0[i] = depthKey(qs[i].depth)
+		tx[i] = qs[i].tex
 	}
 	return b.radixOrder(n)
 }
@@ -1478,6 +1513,7 @@ type presorted struct {
 	keys   []uint64 // per quad, in submission order
 	order  []int32
 	meta   []uint64 // per quad: what planRuns needs (quadMeta)
+	tex    []uint8  // per quad, in submission order
 	metaOK bool     // false: some texture's size was unknown; recompute
 	valid  bool
 }
@@ -1496,12 +1532,16 @@ func (b *Batch) presortList(p *presorted, qs []quad, cw, ch float32, wantMeta bo
 		p.keys = make([]uint64, n, n+n/4)
 		p.meta = make([]uint64, n, n+n/4)
 	}
-	keys, meta := p.keys[:n], p.meta[:n]
-	p.keys, p.meta = keys, meta
+	if cap(p.tex) < n {
+		p.tex = make([]uint8, n, n+n/4)
+	}
+	keys, meta, tex := p.keys[:n], p.meta[:n], p.tex[:n]
+	p.keys, p.meta, p.tex = keys, meta, tex
 	p.metaOK = wantMeta
 	for i := range qs {
 		q := &qs[i]
 		keys[i] = depthKey(q.depth)
+		tex[i] = q.tex
 		if !wantMeta {
 			continue
 		}
@@ -1579,9 +1619,11 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 	ownK := b.mergeK[:no]
 	base := n - no
 	k0 := b.keys[0][:no]
+	tx := b.qtex[:n]
 	for i := range own {
 		ownK[i] = depthKey(own[i].depth)
 		k0[i] = ownK[i]
+		tx[base+i] = own[i].tex
 		if plan {
 			meta[base+i] = b.quadMeta(&own[i])
 		}
@@ -1611,6 +1653,7 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 			qs := b.qp
 			return b.sortFarFirst(qs, plan)
 		}
+		copy(tx[off:off+len(s)], p.tex[:len(s)])
 		if plan {
 			if p.metaOK {
 				copy(meta[off:off+len(s)], p.meta[:len(s)])
@@ -1731,6 +1774,9 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 	if own {
 		aaEnd(dst)
 	}
+	if flushBenchHook != nil {
+		flushBenchHook(b, segQ, segG)
+	}
 	b.extQ, b.extG, b.extB = b.extQ[:0], b.extG[:0], b.extB[:0]
 }
 
@@ -1842,3 +1888,7 @@ func fillRectA(dst *ebiten.Image, x, y, w, h float64, c color.RGBA, a float64) {
 	pm := color.RGBA{uint8(float64(c.R) * a), uint8(float64(c.G) * a), uint8(float64(c.B) * a), uint8(255 * a)}
 	vector.DrawFilledRect(dst, float32(x), float32(y), float32(w), float32(h), pm, false)
 }
+
+// planT adds up planList's time sorting and planning runs (the capture
+// build's planner benchmark reads it).
+var planT [2]time.Duration
