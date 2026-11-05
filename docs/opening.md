@@ -14,8 +14,8 @@ a star, huge cloud beard, round nose, bushy brows, tiny boots.
 
 | Time | Shot | Narration |
 |---|---|---|
-| 0:00 | **I. The Date.** The messy tower interior (shelves, potions, cauldron, candles, sleeping cat, the sock). A calendar with DATE NIGHT circled and a heart; Fumbleton sweating ("Fumbleton (nervous)"). A thought bubble: his girlfriend **Mirabel**, a pretty mage in a modest high-collared teal robe, purple witch hat with a gold star, auburn hair, green eyes; hearts float up | This is Archmage Fumbleton. His girlfriend Mirabel is coming over tonight, and his tower is a disaster. |
-| 0:06 | **II. The Scroll.** A shifty hooded merchant leans in through the window ("Psst!") holding out a scroll: INSTANT TIDY! (no refunds). Ka-ching. Fumbleton reads it ("Instant… TIDY!"), POOF fills the room. It clears to a spotless, sparkling tower with three enormous bosses crammed inside holding a duster, mop and dustpan; Fumbleton has the sock on his head ("…wow."); the bosses: TIDY! MORE! | So he bought an Instant Tidy scroll from a travelling merchant. No refunds. |
+| 0:00 | **I. The Date.** The messy tower interior (shelves, potions, cauldron, candles, sleeping cat, the sock). A calendar with DATE NIGHT circled and a heart; Fumbleton sweating ("Fumbleton (nervous)"). A thought bubble: his girlfriend **Mirabel**, full figure: a curvy, long-legged cartoon mage in a fitted high-collared teal dress, flowing purple cloak, tall boots and a purple witch hat with a gold star, auburn hair; hand on hip, waving and winking; hearts float up | This is Archmage Fumbleton. His girlfriend Mirabel is coming over tonight, and his tower is a disaster. |
+| 0:06 | **II. The Scroll.** "Ta-da!" Fumbleton whips out a scroll: INSTANT TIDY! (no refunds), with a note: "bought from a travelling merchant!" He reads it ("Instant… TIDY!"), POOF fills the room. It clears to a spotless, sparkling tower with three enormous bosses crammed inside holding a duster, mop and dustpan; Fumbleton has the sock on his head ("…wow."); the bosses: TIDY! MORE! | So he bought an Instant Tidy scroll from a travelling merchant. No refunds. |
 | 0:13 | **III. Outside.** The tower door SLAMs; the bosses stomp out and march across the hills, a brick carpet unrolling behind them (TIDY! TIDY!! TIDY ALL!!!); birds: "nope"; "they kept going…" | It worked! Three enormous bosses tidied his tower in seconds. Then they kept going. |
 | 0:20 | **IV. Bricks.** Hills, river, trees and a smiling sun, then the wall climbs row by row; the sun goes O_O; "even the SKY?!" | They tidied everything outside into bricks. The hills, the rivers, even the sky. |
 | 0:26 | Fumbleton pops up over the bottom of the page holding the glowing Orb ("Ha-HA!"), hurls it up; it falls back at the camera, white flash, the page burns away in a ring of fire with embers and paper flakes | Desperate, Fumbleton grabbed the one thing that can break any spell. |
@@ -25,7 +25,7 @@ a star, huge cloud beard, round nose, bushy brows, tiny boots.
 | 0:52 | Title: the Orb as a sunburst over the team in silhouette, the logo forms letter by letter with a glint, tagline; Fumbleton pops up in pencil: "sorry!" Letterbox eases out. | Now it's your turn. Smash the walls, beat the bosses, and bring back the sky. |
 
 **Sound cue sheet** (the preview synthesizes stand-ins): music-box theme and
-pencil scratching through the sketch half; a dreamy chime for Mirabel; page turns; "psst"; ka-ching; the scroll glowing; POOF; sparkling-clean chimes; the door SLAM; giant footsteps; brick thuds; "Ha-HA"; falling
+pencil scratching through the sketch half; a dreamy chime for Mirabel; page turns; a "ta-da"; the scroll glowing; POOF; sparkling-clean chimes; the door SLAM; giant footsteps; brick thuds; "Ha-HA"; falling
 whistle; impact boom and crackle; from 0:31 the arcane music on a 120 bpm
 pulse, shatters on the hits, a chord stinger per hero, bells as they ignite,
 a choir swell and shimmer on the logo.

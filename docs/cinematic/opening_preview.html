@@ -73,7 +73,7 @@ canvas { display: block; width: 100%; height: 100%; }
   <section class="script" aria-label="Narration script">
     <h2>Narration</h2>
     <div id="scenes"></div>
-    <p class="note">Tap a line to jump to it. Press and hold the picture to try hold-to-skip. Sound is synthesized live as a stand-in for the real mix: pencil, the merchant's coin, POOF, bricks, the burn, then the music kicks in on the Orb with a stinger for each hero.</p>
+    <p class="note">Tap a line to jump to it. Press and hold the picture to try hold-to-skip. Sound is synthesized live as a stand-in for the real mix: pencil, the ta-da, POOF, bricks, the burn, then the music kicks in on the Orb with a stinger for each hero.</p>
   </section>
 </div>
 
@@ -340,44 +340,45 @@ canvas { display: block; width: 100%; height: 100%; }
     ctx.restore();
   }
   function cam(s, cx, cy, dx, dy) { ctx.translate(800, 450); ctx.scale(s, s); ctx.translate(-(cx || 800) + (dx || 0), -(cy || 450) + (dy || 0)); }
-  // ---------------------------------------------------------------- Mirabel, in Fumbleton's daydream (local space, face centred on 0,0)
+  // ---------------------------------------------------------------- Mirabel, in Fumbleton's daydream (full figure, feet at 0,0)
   var MIRA = {
-    hairBack: S('M-70 0 C-80 -70 -30 -110 0 -108 C40 -110 82 -70 72 0 C70 60 86 110 64 140 C40 150 30 120 40 80 L-40 80 C-30 120 -42 150 -66 140 C-88 110 -70 60 -70 0 Z', { w: 2.8 }),
-    robe: S('M-92 152 C-88 112 -52 88 -14 84 L14 84 C52 88 88 112 92 152 Z', { w: 2.8 }),
-    collar: S('M-24 84 L-14 102 L0 92 L14 102 L24 84', { w: 2.2, ov: 2 }),
-    face: S('M-46 -10 C-48 -60 48 -60 46 -10 C44 40 20 66 0 68 C-20 66 -44 40 -46 -10 Z', { w: 2.6, ov: 2 }),
-    neck: S('M-14 62 L-14 86 M14 62 L14 86', { w: 2.2, ov: 1 }),
-    bangs: S('M-50 -26 C-36 -72 14 -80 52 -30 C32 -46 12 -44 -4 -38 C-18 -48 -36 -44 -50 -26 Z', { w: 2.4, ov: 2 }),
-    curls: S('M-62 40 C-74 60 -60 80 -70 100 M62 40 C74 60 60 80 70 100', { w: 2, ov: 2 }),
-    hat: S('M-112 -70 C-60 -98 60 -98 112 -70 C60 -54 -60 -54 -112 -70 Z M-56 -84 C-40 -140 -10 -190 34 -222 C44 -202 36 -188 28 -178 C38 -140 54 -110 58 -84', { w: 2.8 }),
-    band: S('M-55 -96 C-20 -104 20 -104 57 -96 L58 -84 C20 -92 -20 -92 -56 -84 Z', { w: 2, ov: 1 }),
-    hatStar: S('M14 -128 L18 -118 L29 -117 L21 -110 L23 -99 L14 -105 L5 -99 L7 -110 L-1 -117 L10 -118 Z', { w: 1.6, ov: 1 }),
-    eyes: S('M-31 -8 C-27 -19 -12 -19 -8 -8 C-12 -1 -27 -1 -31 -8 Z M8 -8 C12 -19 27 -19 31 -8 C27 -1 12 -1 8 -8 Z', { w: 2.2, ov: 1 }),
-    lashes: S('M-31 -10 L-37 -16 M-29 -14 L-33 -21 M31 -10 L37 -16 M29 -14 L33 -21', { w: 1.8, ov: 0 }),
-    brows: S('M-31 -26 C-25 -31 -14 -31 -9 -27 M9 -27 C14 -31 25 -31 31 -26', { w: 2, ov: 1 }),
-    nose: S('M1 4 C-2 12 0 16 5 16', { w: 1.8, ov: 0 }),
-    mouth: S('M-12 32 C-6 41 6 41 12 32', { w: 2.2, ov: 1 }),
-    clasp: S('M6 106 A6 6 0 1 1 -6 106 A6 6 0 1 1 6 106 Z', { w: 1.8, ov: 0 })
+    cloak: S('M-30 -250 C-48 -200 -56 -140 -58 -78 C-46 -72 -36 -80 -26 -74 L26 -76 C36 -70 48 -76 56 -72 C54 -140 48 -200 30 -250 Z', { w: 2.4 }),
+    hairBack: S('M-24 -300 C-34 -330 -10 -344 6 -340 C30 -338 40 -312 30 -286 C36 -262 42 -238 30 -224 C22 -232 18 -246 20 -258 L-18 -258 C-16 -244 -22 -228 -32 -222 C-42 -240 -34 -268 -24 -300 Z', { w: 2.4 }),
+    legs: S('M-17 -96 C-19 -64 -17 -40 -15 -50 M15 -96 C17 -64 21 -42 22 -50', { w: 2.4, ov: 1 }),
+    boots: S('M-24 -54 L-8 -54 L-7 -6 C0 -6 6 -4 6 2 L-26 2 Z M14 -54 L30 -54 L29 -6 C36 -6 42 -4 42 2 L12 2 Z', { w: 2.4, ov: 1 }),
+    dress: S('M-26 -254 C-36 -242 -37 -224 -31 -212 C-21 -199 -16 -192 -17 -182 C-18 -170 -37 -158 -37 -141 C-37 -124 -33 -110 -31 -94 L31 -94 C33 -110 37 -124 37 -141 C37 -158 18 -170 17 -182 C16 -192 21 -199 31 -212 C37 -224 36 -242 26 -254 C12 -260 -12 -260 -26 -254 Z', { w: 2.6 }),
+    collar: S('M-12 -258 L-8 -246 L0 -250 L8 -246 L12 -258', { w: 1.8, ov: 1 }),
+    belt: S('M-18 -186 C-6 -181 6 -181 18 -186 M-18 -178 C-6 -173 6 -173 18 -178', { w: 1.8, ov: 1 }),
+    armHip: S('M28 -248 C44 -234 56 -214 52 -200 C47 -188 39 -177 33 -166', { w: 2.4 }),
+    armWave: S('M-28 -248 C-44 -262 -52 -282 -54 -300 M-54 -300 C-60 -306 -60 -316 -52 -318 C-46 -316 -46 -306 -50 -302', { w: 2.4 }),
+    face: S('M-14 -294 C-15 -312 15 -312 14 -294 C13 -280 6 -270 0 -270 C-6 -270 -13 -280 -14 -294 Z', { w: 2.2, ov: 1 }),
+    bangs: S('M-16 -300 C-10 -316 8 -318 18 -302 C8 -308 0 -306 -6 -302 C-10 -306 -14 -304 -16 -300 Z', { w: 1.8, ov: 1 }),
+    hat: S('M-44 -306 C-24 -318 24 -318 44 -306 C24 -298 -24 -298 -44 -306 Z M-20 -311 C-14 -340 -2 -364 18 -380 C24 -372 20 -366 16 -360 C20 -342 24 -326 22 -311', { w: 2.4 }),
+    hatStar: S('M4 -334 L6 -329 L11 -328 L7 -325 L8 -320 L4 -322 L0 -320 L1 -325 L-3 -328 L2 -329 Z', { w: 1.2, ov: 0 }),
+    clasp: S('M4 -246 A4 4 0 1 1 -4 -246 A4 4 0 1 1 4 -246 Z', { w: 1.4, ov: 0 }),
+    eyes: S('M-9 -292 C-7 -296 -3 -296 -2 -292 M2 -293 L9 -291', { w: 1.8, ov: 0 }),
+    mouth: S('M-5 -280 C-2 -276 3 -276 6 -281', { w: 1.8, ov: 0 })
   };
   function mirabel(x, y, sc, F) {
-    ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); var lw = 1 / sc * 1.1;
-    if (F > .45) { ctx.save(); ctx.globalAlpha = clamp((F - .45) / .2); ctx.fillStyle = '#fbf5e8'; [MIRA.hairBack, MIRA.robe, MIRA.face, MIRA.hat].forEach(function (p) { ctx.fill(p.path); }); ctx.restore(); }
-    colour(MIRA.hairBack, '#c8643c', (F - .5) / .3, 1); colour(MIRA.robe, '#3f8f8a', (F - .55) / .3, 1); colour(MIRA.face, '#f6c9a8', (F - .6) / .25, .9);
-    colour(MIRA.bangs, '#c8643c', (F - .6) / .25, 1); colour(MIRA.hat, '#7a4fc9', (F - .62) / .3, 1); colour(MIRA.band, '#ffd34d', (F - .7) / .2, 1); colour(MIRA.hatStar, '#ffd34d', (F - .72) / .2, 1);
-    group([MIRA.hairBack, MIRA.robe, MIRA.neck, MIRA.face, MIRA.collar, MIRA.bangs, MIRA.curls, MIRA.hat, MIRA.band, MIRA.hatStar, MIRA.clasp], F / .55, lw);
-    if (F > .6) {
-      ctx.fillStyle = '#fff'; ctx.fill(MIRA.eyes.path); group([MIRA.eyes, MIRA.lashes, MIRA.brows, MIRA.nose, MIRA.mouth], (F - .6) / .25, lw);
-      ctx.fillStyle = '#3b6f5a'; ctx.beginPath(); ctx.arc(-19, -9, 5, 0, 7); ctx.arc(19, -9, 5, 0, 7); ctx.fill();
-      ctx.fillStyle = 'rgb(' + PENCIL + ')'; ctx.beginPath(); ctx.arc(-19, -9, 2.4, 0, 7); ctx.arc(19, -9, 2.4, 0, 7); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-17, -11, 1.3, 0, 7); ctx.arc(21, -11, 1.3, 0, 7); ctx.fill();
-      ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = 'rgba(240,120,130,' + (.35 * clamp((F - .75) / .2)) + ')'; ctx.beginPath(); ctx.ellipse(-30, 14, 10, 6, 0, 0, 7); ctx.ellipse(30, 14, 10, 6, 0, 0, 7); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); var lw = 1 / sc * 1.05;
+    if (F > .45) { ctx.save(); ctx.globalAlpha = clamp((F - .45) / .2); ctx.fillStyle = '#fbf5e8'; [MIRA.cloak, MIRA.hairBack, MIRA.boots, MIRA.dress, MIRA.face, MIRA.hat].forEach(function (p) { ctx.fill(p.path); }); ctx.restore(); }
+    colour(MIRA.cloak, '#5a3f9e', (F - .5) / .3, 1); colour(MIRA.hairBack, '#c8643c', (F - .52) / .3, 1); colour(MIRA.boots, '#6b4a33', (F - .55) / .3, 1);
+    colour(MIRA.dress, '#3fa39b', (F - .55) / .3, 1);
+    if (F > .45) { ctx.save(); ctx.globalAlpha = clamp((F - .45) / .2); ctx.fillStyle = '#fbf5e8'; ctx.fill(MIRA.face.path); ctx.restore(); }
+    colour(MIRA.face, '#f6c9a8', (F - .6) / .25, .9); colour(MIRA.bangs, '#c8643c', (F - .62) / .25, 1);
+    colour(MIRA.hat, '#7a4fc9', (F - .62) / .3, 1); colour(MIRA.hatStar, '#ffd34d', (F - .7) / .2, 1); colour(MIRA.clasp, '#ffd34d', (F - .7) / .2, 1);
+    shade(MIRA.cloak, (F - .7) / .3, 7, -.8);
+    group([MIRA.cloak, MIRA.hairBack, MIRA.legs, MIRA.boots, MIRA.dress, MIRA.collar, MIRA.belt, MIRA.armHip, MIRA.armWave, MIRA.face, MIRA.bangs, MIRA.hat, MIRA.hatStar, MIRA.clasp], F / .6, lw);
+    if (F > .65) {
+      group([MIRA.eyes, MIRA.mouth], (F - .65) / .2, lw);
+      ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = 'rgba(240,120,130,' + (.4 * clamp((F - .75) / .2)) + ')'; ctx.beginPath(); ctx.ellipse(-9, -284, 4, 2.6, 0, 0, 7); ctx.ellipse(9, -284, 4, 2.6, 0, 0, 7); ctx.fill(); ctx.restore();
     }
     ctx.restore();
   }
   var HEART = 'M0 6 C-10 -6 -22 4 0 20 C22 4 10 -6 0 6 Z';
   function heart(x, y, s, F, col) { if (F <= 0) return; ctx.save(); ctx.translate(x, y); ctx.scale(s * outBack(F), s * outBack(F)); var p = new Path2D(HEART); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = col || '#e2566b'; ctx.globalAlpha = .75; ctx.fill(p); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.lineWidth = 2 / s; ctx.strokeStyle = 'rgb(' + PENCIL + ')'; ctx.stroke(p); ctx.restore(); }
   function cloudD(cx, cy, rx, ry, n) { var d = '', pts = []; for (var i = 0; i < n; i++) { var a = i / n * Math.PI * 2; pts.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]); } for (var j = 0; j < n; j++) { var p0 = pts[j], p1 = pts[(j + 1) % n], mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2, ox = (mx - cx) * .28, oy = (my - cy) * .28; d += (j ? '' : 'M' + p0[0] + ' ' + p0[1]) + ' Q' + (mx + ox) + ' ' + (my + oy) + ' ' + p1[0] + ' ' + p1[1]; } return d + ' Z'; }
-  var thought = S(cloudD(1235, 265, 215, 165, 13), { w: 3 });
+  var thought = S(cloudD(1240, 285, 225, 190, 13), { w: 3 });
   var thoughtDots = S('M1004 382 A16 14 0 1 1 972 382 A16 14 0 1 1 1004 382 Z M954 420 A11 10 0 1 1 932 420 A11 10 0 1 1 954 420 Z M918 448 A7 6 0 1 1 904 448 A7 6 0 1 1 918 448 Z', { w: 2.4, ov: 1 });
   var calendar = S(rectD(546, 182, 96, 112, 0) + ' M546 208 L642 208 M570 176 L570 190 M618 176 L618 190', { w: 2.4 });
   var calCircle = S('M612 262 C640 250 642 286 608 288 C580 290 574 262 600 256', { w: 2.6, ov: 4 });
@@ -392,11 +393,11 @@ canvas { display: block; width: 100%; height: 100%; }
     // the daydream
     draw(thoughtDots, (t - 3.2) / .4); draw(thought, (t - 3.5) / .5);
     if (t > 3.8) { ctx.save(); ctx.fillStyle = 'rgba(255,252,244,.82)'; ctx.globalAlpha = clamp((t - 3.8) / .3); ctx.fill(thought.path); ctx.restore(); draw(thought, 1); }
-    ctx.save(); ctx.beginPath(); ctx.rect(1000, 80, 480, 380); ctx.clip(); mirabel(1235, 290, .95, clamp((t - 3.9) / 1.4)); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(1000, 80, 490, 400); ctx.clip(); mirabel(1250, 450, .92, clamp((t - 3.9) / 1.4)); hand('*wink*', 1300, 200, (t - 5.4) / .3, .1, 28); ctx.restore();
     for (var hh = 0; hh < 4; hh++) heart(1070 + hh * 40 + Math.sin(t * 3 + hh) * 6, 170 - ((t * 30 + hh * 40) % 90), .9, (t - 5 - hh * .12) / .3);
     hand('Fumbleton', 560, 510, (t - 4.6) / .6, -.05, 46); group(noteName, (t - 5) / .4);
     hand('(nervous)', 580, 552, (t - 5.2) / .5, -.05, 32);
-    hand('Mirabel ♥', 1300, 470, (t - 5.4) / .5, -.06, 40, '#b8402c');
+    hand('Mirabel ♥', 1340, 500, (t - 5.4) / .5, -.06, 40, '#b8402c');
     ctx.restore();
     chapter(card1, 'I. The Date', 180, 100, (t - .2));
   }
@@ -436,17 +437,17 @@ canvas { display: block; width: 100%; height: 100%; }
     ctx.save(); cam(1.03, 860, 450, Math.sin(t * 60) * shake, Math.cos(t * 50) * shake);
     if (t < 3.4) {
       drawRoom(99); draw(calendar, 1); hand('DATE', 556, 238, 1, 0, 26, '#b8402c'); hand('NIGHT', 556, 262, 1, 0, 26, '#b8402c'); draw(calCircle, 1, 1, '184,64,44');
-      // the merchant leans in through the window
-      var m = t < 2 ? outBack(t / .5) : 1 - outCubic((t - 2) / .4);
-      if (m > 0) { ctx.save(); ctx.beginPath(); ctx.rect(660, 120, 280, 262); ctx.clip(); ctx.translate((1 - m) * 260, 0);
-        ctx.fillStyle = '#f4ecd9'; ctx.fill(merchant.hood.path); colour(merchant.hood, '#6b4a33', 1); ctx.fillStyle = '#f4ecd9'; ctx.fill(merchant.face.path); colour(merchant.face, '#e8b48a', 1, .9);
-        group([merchant.hood, merchant.face, merchant.nose, merchant.eyes, merchant.grin], 1); ctx.restore(); }
-      if (t > .4 && t < 2.2) hand('Psst!', 960, 170, (t - .4) / .3, -.1, 52);
-      if (t > .6 && t < 1.9) { draw(merchant.hand, 1); ctx.fillStyle = '#fbf3df'; ctx.fill(merchant.scroll.path); draw(merchant.scroll, (t - .6) / .4);
-        hand('INSTANT', 546, 450, (t - .9) / .3, 0, 0, '#b8402c', '400 38px "Permanent Marker", cursive'); hand('TIDY!', 562, 500, (t - 1) / .3, 0, 0, '#b8402c', '400 44px "Permanent Marker", cursive'); hand('(no refunds)', 548, 560, (t - 1.2) / .3, 0, 26); }
-      if (t > 1.5 && t < 2.6) { hand('ka-ching!', 960, 520, (t - 1.5) / .3, .1, 44); ctx.save(); ctx.translate(900, 560 - (t - 1.5) * 120); ctx.fillStyle = '#ffd34d'; ctx.beginPath(); ctx.arc(0, 0, 14, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgb(' + PENCIL + ')'; ctx.lineWidth = 2.4; ctx.stroke(); ctx.restore(); }
+      // ta-da: he whips out the scroll he bought from a travelling merchant
+      if (t > .3 && t < 2.3) {
+        ctx.save(); ctx.translate(410, 0); var u = outBack((t - .3) / .4); ctx.translate(615, 500); ctx.scale(u, u); ctx.translate(-615, -500);
+        ctx.fillStyle = '#fbf3df'; ctx.fill(merchant.scroll.path); draw(merchant.scroll, (t - .3) / .35);
+        hand('INSTANT', 546, 450, (t - .5) / .3, 0, 0, '#b8402c', '400 38px "Permanent Marker", cursive'); hand('TIDY!', 562, 500, (t - .6) / .3, 0, 0, '#b8402c', '400 44px "Permanent Marker", cursive'); hand('(no refunds)', 548, 560, (t - .8) / .3, 0, 26);
+        ctx.restore();
+        hand('ta-da!', 1180, 380, (t - .5) / .3, -.1, 52);
+        hand('bought from a travelling merchant!', 1110, 640, (t - 1) / .6, -.03, 32, '#b8402c');
+      }
       fumbleton(830, 772, 1.25, 0, 1, t > 2.2 ? 'wide' : 'idle');
-      if (t > 1.9) { ctx.save(); ctx.translate(912, 470); ctx.rotate(-.2); ctx.fillStyle = '#fbf3df'; ctx.fill(heldScroll.path); draw(heldScroll, 1); ctx.restore();
+      if (t > 2.2) { ctx.save(); ctx.translate(912, 470); ctx.rotate(-.2); ctx.fillStyle = '#fbf3df'; ctx.fill(heldScroll.path); draw(heldScroll, 1); ctx.restore();
         if (t > 2.2) { for (var i = 0; i < 8; i++) { var a = i / 8 * 6.283 + t * 4; ctx.fillStyle = 'rgba(' + PENCIL + ',.8)'; ctx.fillRect(940 + Math.cos(a) * 60, 490 + Math.sin(a) * 60, 6, 6); } } }
       if (t > 2.2) { draw(bubble, (t - 2.2) / .3); ctx.fillStyle = 'rgba(255,250,240,.6)'; ctx.fill(bubble.path); hand('Instant…', 1090, 300, (t - 2.4) / .3, 0, 56); hand('TIDY!', 1244, 300, (t - 2.7) / .2, 0, 56); }
       if (t > 3) { // POOF fills the room
@@ -866,8 +867,7 @@ canvas { display: block; width: 100%; height: 100%; }
     for (var p = .6; p < 26; p += .9) CUES.push([p, function () { noise(.28, .03, 'bandpass', 2400, 3200, 0, 3); }]); // pencil scratch
     [6.5, 13, 20].forEach(function (pt) { CUES.push([pt, function () { noise(.5, .12, 'bandpass', 800, 4000, 0, .7); }]); }); // page turns
     CUES.push([4, function () { [0, 4, 7].forEach(function (n, i) { bell(n + 2, .08, i * .12); }); }]); // daydream sigh
-    CUES.push([6.9, function () { noise(.25, .1, 'highpass', 2500); }]); // psst
-    CUES.push([8.0, function () { tone('square', 1568, 0, .12, .06); tone('square', 2093, 0, .4, .05, .08); }]); // ka-ching
+    CUES.push([6.9, function () { [0, 4, 7, 12].forEach(function (n, i) { tone('triangle', 523 * Math.pow(2, n / 12), 0, .3, .07, i * .07); }); }]); // ta-da
     CUES.push([8.9, function () { for (var i = 0; i < 6; i++) bell(6 + i, .05, i * .06); }]); // scroll glows
     CUES.push([9.5, function () { noise(.8, .4, 'lowpass', 1800, 200); tone('sine', 70, 40, .6, .4); }]); // POOF
     CUES.push([10.0, function () { for (var i = 0; i < 8; i++) bell(8 + (i % 4), .04, i * .09); }]); // sparkling clean
