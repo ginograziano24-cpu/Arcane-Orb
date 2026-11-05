@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"image"
 	_ "image/png"
 	"math"
@@ -53,12 +52,7 @@ func hudPortrait(id, pose string) *ebiten.Image {
 	if img, ok := hudPortraitCache[key]; ok {
 		return img
 	}
-	var img *ebiten.Image
-	if b, err := portraitFS.ReadFile("assets/portraits/hud/" + key + ".png"); err == nil {
-		if im, _, err := image.Decode(bytes.NewReader(b)); err == nil {
-			img = ebiten.NewImageFromImage(im)
-		}
-	}
+	img := loadImage("hud/" + key).img
 	if img == nil && pose != "rest" {
 		img = hudPortrait(id, "rest")
 	}

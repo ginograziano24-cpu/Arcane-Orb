@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"embed"
-	"image"
 	_ "image/jpeg"
 	"math"
 
@@ -23,12 +21,7 @@ func sceneImage(name string) *ebiten.Image {
 	if img, ok := sceneCache[name]; ok {
 		return img
 	}
-	var img *ebiten.Image
-	if b, err := sceneFS.ReadFile("assets/scenes/" + name + ".jpg"); err == nil {
-		if im, _, err := image.Decode(bytes.NewReader(b)); err == nil {
-			img = ebiten.NewImageFromImage(im)
-		}
-	}
+	img := loadImage("scene/" + name).img
 	sceneCache[name] = img
 	return img
 }

@@ -129,8 +129,9 @@ func init() {
 				}
 				return t / float64(len(v))
 			}
-			js.Global().Set("__planBenchRes", fmt.Sprintf("q %d g %d plan %v | sort %.3f runs %.3f | opaque %.3f fill %.3f glow %.3f",
-				nq, ng, b.planned[0], med(ts), med(tr), med(tq), med(tf), med(tg)))
+			_, rq := b.planList(segQ, 0)
+			js.Global().Set("__planBenchRes", fmt.Sprintf("runs %d | q %d g %d plan %v | sort %.3f runs %.3f | opaque %.3f fill %.3f glow %.3f",
+				len(rq), nq, ng, b.planned[0], med(ts), med(tr), med(tq), med(tf), med(tg)))
 		}
 		return nil
 	}))

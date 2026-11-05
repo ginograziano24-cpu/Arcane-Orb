@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"embed"
 	"fmt"
 	"image"
@@ -27,29 +26,30 @@ func portrait(id string) *ebiten.Image {
 	if img, ok := portraitCache[id]; ok {
 		return img
 	}
-	// colour (JPEG) and alpha (greyscale PNG) are stored separately
-	var img *ebiten.Image
-	cdata, err1 := portraitFS.ReadFile("assets/portraits/" + id + ".jpg")
-	adata, err2 := portraitFS.ReadFile("assets/portraits/" + id + "_a.png")
-	if err1 == nil && err2 == nil {
-		c, _, e1 := image.Decode(bytes.NewReader(cdata))
-		a, _, e2 := image.Decode(bytes.NewReader(adata))
-		if e1 == nil && e2 == nil {
-			b := c.Bounds()
-			out := image.NewNRGBA(b)
-			for y := b.Min.Y; y < b.Max.Y; y++ {
-				for x := b.Min.X; x < b.Max.X; x++ {
-					r, g, bl, _ := c.At(x, y).RGBA()
-					av, _, _, _ := a.At(x, y).RGBA()
-					i := out.PixOffset(x, y)
-					out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = uint8(r>>8), uint8(g>>8), uint8(bl>>8), uint8(av>>8)
-				}
-			}
-			img = ebiten.NewImageFromImage(out)
-		}
-	}
+	img := loadImage("portrait/" + id).img
 	portraitCache[id] = img
 	return img
+}
+
+// composePortrait joins a portrait's colour (JPEG) and alpha (greyscale
+// PNG), which are stored separately.
+func composePortrait(id string) image.Image {
+	c := decodeEmbedded(portraitFS.ReadFile("assets/portraits/" + id + ".jpg"))
+	a := decodeEmbedded(portraitFS.ReadFile("assets/portraits/" + id + "_a.png"))
+	if c == nil || a == nil {
+		return nil
+	}
+	b := c.Bounds()
+	out := image.NewNRGBA(b)
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, bl, _ := c.At(x, y).RGBA()
+			av, _, _, _ := a.At(x, y).RGBA()
+			i := out.PixOffset(x, y)
+			out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = uint8(r>>8), uint8(g>>8), uint8(bl>>8), uint8(av>>8)
+		}
+	}
+	return out
 }
 
 // classStyle is how an origin plays: two short tags and a difficulty (1-3).

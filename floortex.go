@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"embed"
 	"image"
 	"image/color"
 	"math"
-
-	"github.com/hajimehoshi/ebiten/v2"
 
 	"orb/levelgen"
 )
@@ -42,18 +39,15 @@ func bakedTexture(name string) *bakedTex {
 	if ok {
 		return t
 	}
+	e := loadImage("floor/" + name) // (outside the lock: it may wait on a prefetch)
 	assetMu.Lock()
 	defer assetMu.Unlock()
 	if t, ok := bakedTexCache[name]; ok {
 		return t
 	}
 	t = nil
-	if data, err := floorFS.ReadFile("assets/floor/" + name + ".jpg"); err == nil {
-		if src, _, err := image.Decode(bytes.NewReader(data)); err == nil {
-			img := ebiten.NewImageFromImage(src)
-			b := src.Bounds()
-			t = &bakedTex{id: registerTex(img), w: float32(b.Dx()), h: float32(b.Dy()), avg: meanColour(src)}
-		}
+	if e.img != nil {
+		t = &bakedTex{id: registerTex(e.img), w: float32(e.w), h: float32(e.h), avg: e.avg}
 	}
 	bakedTexCache[name] = t
 	return t
@@ -212,53 +206,59 @@ func brickSheet() *bakedTex {
 	if ok {
 		return t
 	}
+	e := loadImage("bricks/sheet")
 	assetMu.Lock()
 	defer assetMu.Unlock()
 	if t, ok := bakedTexCache["#bricks"]; ok {
 		return t
 	}
 	t = nil
-	dd, err := floorFS.ReadFile("assets/floor/bricks.jpg")
-	if err == nil {
-		if dimg, _, err := image.Decode(bytes.NewReader(dd)); err == nil {
-			b := dimg.Bounds()
-			w, h := b.Dx(), b.Dy()
-			var simg image.Image
-			if sd, err := floorFS.ReadFile("assets/floor/bricks_spec.jpg"); err == nil {
-				simg, _, _ = image.Decode(bytes.NewReader(sd))
-			}
-			rows := h
-			if simg != nil {
-				rows = 2 * h
-			}
-			out := image.NewRGBA(image.Rect(0, 0, w, rows))
-			for y := 0; y < h; y++ {
-				for x := 0; x < w; x++ {
-					r, g, bl, _ := dimg.At(b.Min.X+x, b.Min.Y+y).RGBA()
-					i := out.PixOffset(x, y)
-					out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = uint8(r>>8), uint8(g>>8), uint8(bl>>8), 255
-				}
-			}
-			if simg != nil {
-				sb := simg.Bounds()
-				for y := 0; y < h && y < sb.Dy(); y++ {
-					for x := 0; x < w && x < sb.Dx(); x++ {
-						r, g, bl, _ := simg.At(sb.Min.X+x, sb.Min.Y+y).RGBA()
-						l := (r*30 + g*59 + bl*11) / 100 >> 8
-						i := out.PixOffset(x, h+y)
-						out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = uint8(r>>8), uint8(g>>8), uint8(bl>>8), uint8(min(255, l))
-					}
-				}
-			}
-			t = &bakedTex{id: registerTex(ebiten.NewImageFromImage(out)), w: float32(w), h: float32(rows)}
-			if simg != nil {
-				t.specOff = float32(h)
-			}
-			brickCellW, brickCellH = float32(w)/8, float32(h)/6
+	if e.img != nil {
+		h := e.aux // the diffuse layer's height
+		t = &bakedTex{id: registerTex(e.img), w: float32(e.w), h: float32(e.h)}
+		if e.h > h {
+			t.specOff = float32(h)
 		}
+		brickCellW, brickCellH = float32(e.w)/8, float32(h)/6
 	}
 	bakedTexCache["#bricks"] = t
 	return t
+}
+
+// composeBrickSheet builds the brick sheet image (see brickSheet) and
+// returns it with the diffuse layer's height.
+func composeBrickSheet() (image.Image, int) {
+	dimg := decodeEmbedded(floorFS.ReadFile("assets/floor/bricks.jpg"))
+	if dimg == nil {
+		return nil, 0
+	}
+	b := dimg.Bounds()
+	w, h := b.Dx(), b.Dy()
+	simg := decodeEmbedded(floorFS.ReadFile("assets/floor/bricks_spec.jpg"))
+	rows := h
+	if simg != nil {
+		rows = 2 * h
+	}
+	out := image.NewRGBA(image.Rect(0, 0, w, rows))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			r, g, bl, _ := dimg.At(b.Min.X+x, b.Min.Y+y).RGBA()
+			i := out.PixOffset(x, y)
+			out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = uint8(r>>8), uint8(g>>8), uint8(bl>>8), 255
+		}
+	}
+	if simg != nil {
+		sb := simg.Bounds()
+		for y := 0; y < h && y < sb.Dy(); y++ {
+			for x := 0; x < w && x < sb.Dx(); x++ {
+				r, g, bl, _ := simg.At(sb.Min.X+x, sb.Min.Y+y).RGBA()
+				l := (r*30 + g*59 + bl*11) / 100 >> 8
+				i := out.PixOffset(x, h+y)
+				out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = uint8(r>>8), uint8(g>>8), uint8(bl>>8), uint8(min(255, l))
+			}
+		}
+	}
+	return out, h
 }
 
 // brickShine scales the baked highlights.

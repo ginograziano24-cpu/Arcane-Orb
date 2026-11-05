@@ -63,6 +63,8 @@ type shopItem struct {
 type Game struct {
 	sideJobs         []func(*Batch) // drawWorld: the static parts built on their own goroutines
 	sideBatches      []*Batch
+	preBoot          bool       // prefetchTick: the menus' images are queued
+	preKey           string     // prefetchTick: the run origin and act last queued for
 	pieceCost        [3]float64 // drawWorld: last frame's cost of the scenery, its dressing and the arena floor (beginPiece)
 	state, prevState State
 	stateT           float64
@@ -350,6 +352,7 @@ func (g *Game) Update() error {
 	}
 	g.checkAchievements()
 	g.lbTick()
+	g.prefetchTick()
 
 	if inpututil.IsKeyJustPressed(ebiten.KeyF11) || (inpututil.IsKeyJustPressed(ebiten.KeyEnter) && ebiten.IsKeyPressed(ebiten.KeyAlt)) {
 		g.settings.Fullscreen = !g.settings.Fullscreen
