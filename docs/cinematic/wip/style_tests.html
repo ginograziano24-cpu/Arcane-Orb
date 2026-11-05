@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Intro Style Tests</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -72,7 +73,7 @@ canvas { display: block; width: 100%; height: 100%; }
       <button class="btn sty" type="button" data-style="comic">Comic</button>
       <button class="btn sty" type="button" data-style="flat">Flat cartoon</button>
       <button class="btn" id="miraArt" type="button" aria-pressed="false">Mirabel: redrawn</button>
-      <button class="btn" id="miraBody" type="button">Body: C curvy</button>
+      <button class="btn" id="miraBody" type="button">Body: Final</button>
     </div>
     <div class="scrub">
       <label for="seek" class="time" id="clock">0:00 / 1:08</label>
@@ -429,9 +430,10 @@ canvas { display: block; width: 100%; height: 100%; }
     { name: 'C+ · 10% curvier', B: 41.8, W: 16.5, Hh: 60.7, Hb: 50, lift: 0, tilt: 5.5 },
     { name: 'C++ · C+ with 25% fuller bust', B: 52.2, W: 16.5, Hh: 60.7, Hb: 50, lift: 0, tilt: 5.5, ub: 8 },
     { name: 'C+++ · bust even with hips', B: 58, W: 16.5, Hh: 60.7, Hb: 50, lift: 0, tilt: 5.5, ub: 10 },
-    { name: 'C★ · C++ posed: higher, sheen', B: 52.2, W: 16.5, Hh: 60.7, Hb: 50, lift: 0, tilt: 9, ub: 8, hi: 6, sheen: 1, pose: 1 }
+    { name: 'C★ · C++ posed: higher, sheen', B: 52.2, W: 16.5, Hh: 60.7, Hb: 50, lift: 0, tilt: 9, ub: 8, hi: 6, sheen: 1, pose: 1 },
+    { name: 'Final · C★ pose with C+++ proportions', B: 58, W: 16.5, Hh: 60.7, Hb: 50, lift: 0, tilt: 9, ub: 10, hi: 6, sheen: 1, pose: 1 }
   ];
-  var MVAR = 2, MB = null, MBK = -1;
+  var MVAR = 9, MB = null, MBK = -1;
   // smooth closed/open SVG path through points; a third value of 1 marks a corner
   function crD(P, closed) {
     var n = P.length, m = closed ? n : n - 1, d = 'M' + P[0][0].toFixed(2) + ' ' + P[0][1].toFixed(2);
@@ -1401,7 +1403,7 @@ canvas { display: block; width: 100%; height: 100%; }
   var miraBtn = document.getElementById('miraArt');
   miraBtn.addEventListener('click', function () { MART = !MART; miraBtn.setAttribute('aria-pressed', String(MART)); miraBtn.textContent = MART ? 'Mirabel: your art' : 'Mirabel: redrawn'; LC = {}; snap = {}; fcKey = -1; if (ready) render(now, true); });
   var bodyBtn = document.getElementById('miraBody');
-  bodyBtn.addEventListener('click', function () { var order = [2, 5, 6, 7, 8]; MVAR = order[(order.indexOf(MVAR) + 1) % order.length]; bodyBtn.textContent = 'Body: ' + MVARS[MVAR].name.split(' · ')[0]; LC = {}; snap = {}; fcKey = -1; if (ready) render(now, true); });
+  bodyBtn.addEventListener('click', function () { var order = [9, 2, 5, 6, 7, 8]; MVAR = order[(order.indexOf(MVAR) + 1) % order.length]; bodyBtn.textContent = 'Body: ' + MVARS[MVAR].name.split(' · ')[0]; LC = {}; snap = {}; fcKey = -1; if (ready) render(now, true); });
   window.__miraArt = function (on) { if (MART !== on) miraBtn.click(); };
   window.__variants = function (sc, st) { setPlaying(false); var keep = MART, kv = MVAR; MART = false; ctx = main; ctx.setTransform(Q, 0, 0, Q, 0, 0); ctx.drawImage(paper, 0, 0); boil = 0; tip = null;
     var ids = window.__vids || [0, 1, 2, 3, 4], gap = 1450 / ids.length; ids.forEach(function (id, n) { MVAR = id; var cx = 80 + gap * (n + .5); mirabel(cx, 800, sc, 1, 0); ctx.save(); ctx.font = '700 30px Caveat, cursive'; ctx.textAlign = 'center'; ctx.fillStyle = '#3a2a20'; ctx.fillText(MVARS[id].name, cx - 10, 842); ctx.restore(); }); MART = keep; MVAR = kv; MBK = -1; };

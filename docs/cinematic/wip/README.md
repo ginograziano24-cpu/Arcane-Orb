@@ -46,3 +46,9 @@ the overall art direction.
 - The neckline cups, under-bust curves, sheen and the sheer top now scale with the bust width, so larger bodies (C++) fill their outline.
 - No ink lines run under the bust: only short outer accents and soft shading. **C++** is now C+ with a 25% fuller bust.
 - Test models added: **C+++** (bust even with the hips: the agreed ceiling, never wider) and **C★** (the C++ bust sitting higher, stronger satin sheen, posed: bigger hip cock, slight lean, head tilt). The Body button cycles C, C+, C++, C+++, C★.
+
+## Mirabel final (2026-11-05)
+
+**Final** = the C★ pose (bigger hip cock, slight lean, head tilt), stronger satin sheen and
+higher-set bust, with the C+++ proportions (bust as wide as the hips). It is the default on the
+style test page (`mirabel_final.png`); the Body button still cycles the earlier test models.
