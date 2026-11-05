@@ -29,6 +29,8 @@ game's go.mod. Changes, each marked "Arcane Orb patch" in the source:
    images, where its per-vertex conversion would change nothing, it uses
    the caller's vertices in place (Vertex has the internal layout), so it
    may overwrite them.
+6. `internal/atlas`: the per-vertex offset and texel-scale loops are one
+   pass.
 
 To move to a newer Ebitengine: copy its module here the same way (no
 examples, tests or testdata) and re-apply the patches above.

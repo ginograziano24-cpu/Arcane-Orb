@@ -399,18 +399,23 @@ func (i *Image) drawTriangles(srcs [graphics.ShaderSrcImageCount]*Image, vertice
 		r := srcs[0].regionWithPadding()
 		oxf, oyf = float32(r.Min.X), float32(r.Min.Y)
 		n := len(vertices)
-		for i := 0; i < n; i += graphics.VertexFloatCount {
-			vertices[i] += dx
-			vertices[i+1] += dy
-			vertices[i+2] += oxf
-			vertices[i+3] += oyf
-		}
 		if shader.ensureShader().Unit() == shaderir.Texels {
+			// Arcane Orb patch: one pass instead of two (the same
+			// operations, in the same order, per value).
 			sw, sh := srcs[0].backend.restorable.InternalSize()
 			swf, shf := float32(sw), float32(sh)
 			for i := 0; i < n; i += graphics.VertexFloatCount {
-				vertices[i+2] /= swf
-				vertices[i+3] /= shf
+				vertices[i] += dx
+				vertices[i+1] += dy
+				vertices[i+2] = (vertices[i+2] + oxf) / swf
+				vertices[i+3] = (vertices[i+3] + oyf) / shf
+			}
+		} else {
+			for i := 0; i < n; i += graphics.VertexFloatCount {
+				vertices[i] += dx
+				vertices[i+1] += dy
+				vertices[i+2] += oxf
+				vertices[i+3] += oyf
 			}
 		}
 	} else {
