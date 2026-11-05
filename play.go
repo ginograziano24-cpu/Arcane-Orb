@@ -306,7 +306,7 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 		wi = int(uint64(seed)>>5) % NumWorlds // each duel round visits a different world
 	}
 	r.LastWorld = wi
-	g.snd.World = wi
+	g.snd.SetWorld(wi)
 	b, vis := levelLook(&worlds[wi], seed)
 	if node == NBoss {
 		bc := worlds[wi]

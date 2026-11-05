@@ -111,6 +111,7 @@ func (a *sloppy) input(L *Level, dt float64) Input {
 }
 
 func runBalance(g *Game, seeds int, maxT, errSD, react float64, scens []balScenario, archs []string) []balResult {
+	sfxWarm = false // (silent levels: no sounds to get ready)
 	if len(scens) == 0 {
 		scens = balScenarios
 	}

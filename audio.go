@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"math"
 	"math/rand"
+	"runtime"
 	"sync"
 	"time"
 
@@ -20,7 +21,8 @@ type Sounds struct {
 	Music float64
 
 	cmu     sync.Mutex
-	cache   map[string][]byte // rendered clips, key "name#variant"
+	cache   map[string]*clipEntry // rendered clips, key "name#variant"
+	warmQ   chan string           // clip names for the warming workers
 	lastVar map[string]int
 	last    map[string]time.Time
 	voices  []*audio.Player
@@ -67,36 +69,85 @@ func sq(f, t float64) float64 {
 }
 
 func NewSounds() *Sounds {
-	s := &Sounds{ctx: audio.NewContext(sampleRate), cache: map[string][]byte{}, lastVar: map[string]int{}, last: map[string]time.Time{},
+	s := &Sounds{ctx: audio.NewContext(sampleRate), cache: map[string]*clipEntry{}, lastVar: map[string]int{}, last: map[string]time.Time{},
 		SFX: 0.8, Music: 0.6, curTrack: -1, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
-	go func() {
-		for _, n := range prewarmNames() {
-			s.clip(n, 0)
-		}
-	}()
+	s.warmQ = make(chan string, 1024)
+	for range max(1, min(4, runtime.NumCPU()-1)) {
+		go func() {
+			for n := range s.warmQ {
+				base, _ := parseName(n)
+				for v := 0; v < max(1, recipes[base].vars); v++ {
+					s.clip(n, v)
+				}
+			}
+		}()
+	}
+	s.warm(prewarmNames()...)
 	return s
 }
 
-// clip returns variant v of a named clip, rendering and caching it on first use.
+// sfxWarm enables warming clips ahead of use; the balance harnesses, which
+// play thousands of silent levels, turn it off.
+var sfxWarm = true
+
+// clipEntry is one rendered clip; once guards its rendering.
+type clipEntry struct {
+	once sync.Once
+	data []byte
+}
+
+// clip returns variant v of a named clip, rendering and caching it on first
+// use. A clip being rendered elsewhere (a warming worker) is waited for,
+// not rendered twice.
 func (s *Sounds) clip(name string, v int) []byte {
 	key := name + "#" + itoa(v)
 	s.cmu.Lock()
-	c, ok := s.cache[key]
-	s.cmu.Unlock()
-	if ok {
-		return c
+	e := s.cache[key]
+	if e == nil {
+		e = &clipEntry{}
+		s.cache[key] = e
 	}
-	base, params := parseName(name)
-	rc, ok := recipes[base]
-	if !ok {
-		return nil
-	}
-	seed := hashStr(key)
-	c = rc.build(params, v, rand.New(rand.NewSource(seed)))
-	s.cmu.Lock()
-	s.cache[key] = c
 	s.cmu.Unlock()
-	return c
+	e.once.Do(func() {
+		base, params := parseName(name)
+		if rc, ok := recipes[base]; ok {
+			e.data = rc.build(params, v, rand.New(rand.NewSource(hashStr(key))))
+		}
+	})
+	return e.data
+}
+
+// warm queues clips (every variant) for the warming workers, so they are
+// rendered before they are first played instead of on the frame that
+// plays them. It never blocks; a full queue drops the rest.
+func (s *Sounds) warm(names ...string) {
+	if !sfxWarm || s.SFX <= 0 {
+		return
+	}
+	for _, n := range names {
+		select {
+		case s.warmQ <- n:
+		default:
+			return
+		}
+	}
+}
+
+// warmKeyed queues the musical brick sounds for the current world and key
+// (the key follows the music, so each act and the boss have their own).
+func (s *Sounds) warmKeyed() {
+	w, k := itoa(s.World), itoa(s.Key)
+	names := []string{"tuf." + w + "." + k, "deb." + w}
+	for st := 0; st < 15; st++ {
+		names = append(names, "brk."+w+"."+k+"."+itoa(st))
+	}
+	s.warm(names...)
+}
+
+// SetWorld sets the world the musical SFX play in.
+func (s *Sounds) SetWorld(w int) {
+	s.World = w
+	s.warmKeyed()
 }
 
 // Play plays a named sound ("boom", "pick.3.1", ...) at full volume.
@@ -247,6 +298,7 @@ func (s *Sounds) SetTrack(i int) {
 	}
 	s.curTrack = i
 	s.Key = i
+	s.warmKeyed()
 	if s.old != nil {
 		s.old.Close()
 	}

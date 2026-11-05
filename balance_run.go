@@ -41,6 +41,7 @@ type campRow struct {
 var campPath = []NodeType{NCombat, NCombat, NCombat, NElite, NCombat, NCombat, NBoss}
 
 func runCampaign(g *Game, seeds int, maxT float64, archs []string, carry bool, acts int) []campRow {
+	sfxWarm = false // (silent levels: no sounds to get ready)
 	var out []campRow
 	const dt = 1.0 / 60
 	for ai := range archetypes {
