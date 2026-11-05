@@ -373,7 +373,7 @@ canvas { display: block; width: 100%; height: 100%; }
   // opera gloves, witch hat, blowing a kiss. Feet at 0,0; about 440 tall with the hat.
   var MIRA = {
     hair: S('M-22 -382 C-48 -410 4 -440 40 -416 C64 -398 60 -364 52 -340 C64 -306 68 -270 54 -236 C46 -254 42 -276 40 -294 C42 -324 38 -346 30 -360 L-12 -364 C-16 -346 -26 -328 -36 -312 C-44 -336 -38 -366 -22 -382 Z', { w: 2.2 }),
-    gown: S('M-34 -306 C-30 -318 -12 -320 -4 -308 C4 -320 24 -322 32 -306 C38 -290 34 -274 24 -262 C14 -250 10 -240 12 -230 C28 -214 52 -192 56 -164 C60 -136 48 -104 42 -74 C38 -44 44 -20 52 0 L-28 0 C-22 -36 -26 -80 -32 -116 C-38 -152 -40 -188 -26 -220 C-14 -236 -12 -248 -18 -262 C-30 -276 -38 -290 -34 -306 Z', { w: 2.4 }),
+    gown: S('M-34 -306 C-30 -318 -12 -320 -4 -308 C4 -320 24 -322 32 -306 C38 -290 34 -274 24 -262 C14 -250 10 -240 12 -230 C30 -214 58 -194 62 -164 C64 -136 50 -104 42 -74 C38 -44 44 -20 52 0 L-28 0 C-22 -36 -26 -80 -32 -116 C-40 -152 -46 -190 -28 -220 C-14 -236 -12 -248 -18 -262 C-30 -276 -38 -290 -34 -306 Z', { w: 2.4 }),
     slit: S('M46 -150 C42 -110 38 -60 38 -2', { w: 1.8, ov: 0 }),
     leg: S('M45 -150 C53 -110 55 -64 51 -16 L58 -2 L36 -2 C38 -40 38 -100 40 -146 Z', { w: 2, ov: 1 }),
     shoe: S('M35 -2 C42 -10 52 -12 60 -4 L62 2 L34 2 Z M60 2 L58 12', { w: 2, ov: 0 }),
@@ -860,7 +860,7 @@ canvas { display: block; width: 100%; height: 100%; }
     var te = eff(t), shake = 0;
     HITS.forEach(function (h, i) { var a = t - (h + i * .09); if (a > 0 && a < .4) shake += (1 - a / .4) * 16; });
     ctx.save(); ctx.translate(Math.sin(t * 77) * shake, Math.cos(t * 61) * shake);
-    var beat = Math.max(0, 1 - (t % .5) / .18); sky(t + 31); magic(800, 470, 330 * (1 + .02 * beat), t + 4, .5 + .2 * beat);
+    var beat = Math.max(0, 1 - (t % .5) / .18); sky(t + 37.5); magic(800, 470, 330 * (1 + .02 * beat), t + 4, .5 + .2 * beat);
     for (var i = 0; i < stones.length; i++) {
       var s = stones[i], age = te - s.hit;
       if (age < 0) {
@@ -884,8 +884,9 @@ canvas { display: block; width: 100%; height: 100%; }
     for (var tr = 1; tr <= 14; tr++) { var tt = te - tr * .022; if (tt < 0) break; var id2 = Math.min(path.length - 2, Math.floor(tt / SEGT)), f2 = clamp((tt - id2 * SEGT) / SEGT); var a0 = path[id2], a1 = path[id2 + 1]; ctx.globalAlpha = (15 - tr) / 15 * .5; ctx.fillStyle = '#c9b6ff'; ctx.beginPath(); ctx.arc(lerp(a0[0], a1[0], f2) + (hash(tr + Math.floor(t * 30)) - .5) * 10, lerp(a0[1], a1[1], f2) + (hash(tr * 3 + Math.floor(t * 30)) - .5) * 10, 18 - tr, 0, 6.283); ctx.fill(); }
     ctx.restore();
     orb(ox, oy, 30, t, 4);
-    HITS.forEach(function (h, i) { var a = t - (h + i * .09); var hp = path[i * 2 + 2]; shockwave(hp[0], hp[1], a, 260); if (a > 0 && a < .12) flash(.35 * (1 - a / .12), '#e8deff'); });
+    HITS.forEach(function (h, i) { var a = t - (h + i * .09); var hp = path[i * 2 + 2]; shockwave(hp[0], hp[1], a, 260); if (a > 0 && a < .12) flash(.35 * (1 - a / .12), '#e8deff'); if (a > 0 && a < .3) CHROMA = Math.max(CHROMA, 1 - a / .3); });
     finish(t); ctx.restore();
+    HITS.forEach(function (h, i) { var a = t - (h + i * .09), hp = path[i * 2 + 2]; if (a > 0 && a < .9) { ctx.save(); ctx.globalAlpha = 1 - clamp((a - .6) / .3); sfx(['SMASH!', 'KRAK!', 'BOOM!'][i], hp[0] + (hp[0] > 800 ? -90 : 90), hp[1] + 70, 74, i % 2 ? .12 : -.12, '#ffe14d', a, ['#e2566b', '#2ad0c8', '#7a4fc9'][i]); ctx.restore(); } });
   }
   // ================================================================ hero art: lit, silhouette and tint versions
   var IMG = {}, SIL = {}, TINT = {}, GLOW = {};
@@ -901,9 +902,26 @@ canvas { display: block; width: 100%; height: 100%; }
   }
   // ================================================================ scene 7: hero splash reveals (one per beat pair)
   var SLOT = 1, INTRO = .5;
+
+  var SIG = { lucky: 'FLIP!', pyro: 'FWOOSH!', storm: 'KZZT!', engineer: 'GLINT!', berserker: 'CRACK!', guardian: 'CLANG!', arcane: 'WHIRR…' };
+  function bolt(x1, y1, x2, y2, seed, wid) { ctx.beginPath(); ctx.moveTo(x1, y1); for (var s = 1; s <= 7; s++) { var f = s / 7; ctx.lineTo(lerp(x1, x2, f) + (s < 7 ? (hash(seed + s) - .5) * 60 : 0), lerp(y1, y2, f) + (s < 7 ? (hash(seed + s + 20) - .5) * 30 : 0)); } ctx.lineWidth = wid; ctx.stroke(); }
+  function signature(h, k, t) { // each hero's little flourish, after they land
+    var a = k - .32; if (a <= 0) return; var cx = 960, cy = 470;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    if (h.id === 'lucky') { var u = clamp(a / .55), x = lerp(900, 1000, u), y = 520 - Math.sin(u * Math.PI) * 300, wv = Math.abs(Math.cos(a * 30)); ctx.fillStyle = '#ffd34d'; ctx.shadowColor = '#ffd34d'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.ellipse(x, y, 26 * wv + 3, 26, 0, 0, 7); ctx.fill(); if (u >= 1 && a < .75) { ctx.globalAlpha = 1 - (a - .55) / .2; sparkleStar(1000, 520, 40, a * 4); } }
+    else if (h.id === 'pyro') { for (var f = 0; f < 14; f++) { var life = (a * 2.2 + f * .07) % 1, fx = cx + (hash(f) - .5) * 70 * (1 + life), fy = cy + 60 - life * 220; ctx.globalAlpha = (1 - life) * clamp(a / .1); ctx.fillStyle = life < .4 ? '#fff0a0' : f % 2 ? '#ff6a1a' : '#ff3d1a'; ctx.beginPath(); ctx.ellipse(fx, fy, 22 * (1 - life) + 6, 34 * (1 - life) + 8, 0, 0, 7); ctx.fill(); } }
+    else if (h.id === 'storm') { ctx.strokeStyle = '#bfeaff'; ctx.shadowColor = '#5ec4ff'; ctx.shadowBlur = 24; var fr = Math.floor(a * 16); if (fr % 3 !== 2) { bolt(cx - 120, cy - 160, cx + 40, cy + 40, fr * 7, 4); bolt(cx + 160, cy - 120, cx - 10, cy + 80, fr * 11 + 3, 3); bolt(cx - 60, cy + 120, cx + 120, cy - 40, fr * 13 + 5, 2); } }
+    else if (h.id === 'engineer') { var g = clamp(1 - Math.abs(a - .12) / .18); ctx.globalAlpha = g; sparkleStar(1090, 255, 90 * g + 10, a * 3); sparkleStar(1160, 250, 60 * g + 6, -a * 3); }
+    else if (h.id === 'berserker') { var g2 = clamp(1 - a / .4); ctx.strokeStyle = '#fff2e0'; ctx.lineWidth = 5; ctx.globalAlpha = g2; for (var l = 0; l < 10; l++) { var an = l / 10 * 6.283, r0 = 50 + a * 160; ctx.beginPath(); ctx.moveTo(cx + Math.cos(an) * r0, cy + 60 + Math.sin(an) * r0); ctx.lineTo(cx + Math.cos(an) * (r0 + 60), cy + 60 + Math.sin(an) * (r0 + 60)); ctx.stroke(); } }
+    else if (h.id === 'guardian') { var g3 = clamp(1 - a / .5); ctx.globalAlpha = g3; ctx.strokeStyle = '#fff6d0'; ctx.shadowColor = '#ffd27a'; ctx.shadowBlur = 30; ctx.lineWidth = 8; ctx.beginPath(); for (var s = 0; s <= 6; s++) { var an2 = s / 6 * 6.283 + .5, rr = 120 + a * 300; s ? ctx.lineTo(1130 + Math.cos(an2) * rr, 470 + Math.sin(an2) * rr) : ctx.moveTo(1130 + Math.cos(an2) * rr, 470 + Math.sin(an2) * rr); } ctx.stroke(); }
+    else if (h.id === 'arcane') { for (var o = 0; o < 3; o++) { var an3 = a * 9 + o * 2.094; ctx.globalAlpha = clamp(a / .15); ctx.fillStyle = '#d6c8ff'; ctx.shadowColor = '#9a72ff'; ctx.shadowBlur = 22; ctx.beginPath(); ctx.arc(cx + Math.cos(an3) * 90, cy + Math.sin(an3) * 36, 12, 0, 7); ctx.fill(); } }
+    ctx.restore();
+    var sx = { lucky: 1040, engineer: 1250, guardian: 1340 }[h.id] || 900, sy = { lucky: 230, engineer: 190 }[h.id] || 330;
+    sfx(SIG[h.id], sx, sy, 58, h.id === 'storm' ? .14 : -.12, '#ffffff', a - .05, h.col);
+  }
   function heroSplash(i, k, t) {
     var h = HEROES[i], im = IMG[h.id];
-    sky(t + 38.5, .5);
+    sky(t + 45, .5);
     var band = [[0, 520 - 240 * outCubic(k / .12)], [1600, 260 - 240 * outCubic(k / .12)], [1600, 660], [0, 940]];
     ctx.save(); ctx.beginPath(); band.forEach(function (p, j) { j ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }); ctx.closePath(); ctx.clip();
     var bg = ctx.createLinearGradient(0, 900, 1600, 200); bg.addColorStop(0, '#120b2a'); bg.addColorStop(.55, h.col); bg.addColorStop(1, '#ffffff');
@@ -911,6 +929,7 @@ canvas { display: block; width: 100%; height: 100%; }
     for (var l = 0; l < 40; l++) { var yy = 120 + hash(l * 3 + i) * 800, len = 200 + hash(l + i * 7) * 600, x = ((hash(l + 1) * 2000) - (k * 2600 * (1 + hash(l + 5)))) % 2000 + 1800; ctx.strokeStyle = 'rgba(255,255,255,' + (.08 + hash(l + 2) * .18) + ')'; ctx.lineWidth = 2 + hash(l + 9) * 5; ctx.beginPath(); ctx.moveTo(x, yy); ctx.lineTo(x + len, yy - len * .17); ctx.stroke(); }
     ctx.globalCompositeOperation = 'source-over'; ctx.font = '900 250px "Cinzel Decorative", Cinzel, serif'; ctx.fillStyle = 'rgba(255,255,255,.09)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.save(); ctx.translate(820 - k * 120, 560); ctx.rotate(-.165); ctx.fillText(h.role.replace('The ', '').toUpperCase(), 0, 0); ctx.restore();
+    ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = .22; ctx.fillStyle = halftonePat('#ffffff', 12); ctx.save(); ctx.translate(-k * 60, 0); ctx.fillRect(0, 0, W + 60, H); ctx.restore();
     ctx.restore();
     ctx.save(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.globalAlpha = .9; ctx.beginPath(); ctx.moveTo(band[0][0], band[0][1]); ctx.lineTo(band[1][0], band[1][1]); ctx.stroke(); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 940); ctx.lineTo(1600, 660); ctx.stroke(); ctx.restore();
     if (im) {
@@ -926,10 +945,12 @@ canvas { display: block; width: 100%; height: 100%; }
     var ng = ctx.createLinearGradient(0, 420, 0, 520); ng.addColorStop(0, '#ffffff'); ng.addColorStop(1, h.col); ctx.fillStyle = ng; ctx.shadowColor = h.col; ctx.shadowBlur = 24; ctx.fillText(h.name, 124, 510);
     ctx.restore();
     if (k > .3) { ctx.save(); ctx.translate(150, 590); ctx.rotate(-.04); ctx.globalAlpha = ease((k - .3) / .2); ctx.font = '700 50px Caveat, cursive'; ctx.fillStyle = '#ffffff'; ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 8; ctx.fillText('“' + h.quip + '”', 0, 0); ctx.restore(); }
+    signature(h, k, t);
+    if (k < .18) CHROMA = Math.max(CHROMA, 1 - k / .18);
     finish(t); flash((1 - k / .1) * .85);
   }
   function sHeroes(t) {
-    if (t < INTRO) { sky(t + 38.5); magic(800, 470, 330, t + 10, .5); orb(800, 470, 46 + t * 40, t, 5); flash(t / INTRO * .9); finish(t); return; }
+    if (t < INTRO) { sky(t + 45); magic(800, 470, 330, t + 10, .5); orb(800, 470, 46 + t * 40, t, 5); flash(t / INTRO * .9); finish(t); return; }
     var i = Math.min(6, Math.floor((t - INTRO) / SLOT)), k = t - INTRO - i * SLOT; heroSplash(i, k, t);
   }
   // ================================================================ scene 8: the portal march
@@ -957,7 +978,7 @@ canvas { display: block; width: 100%; height: 100%; }
   }
   function sMarch(t) {
     var lift = clamp((t - 5.2) / 1.3), tilt = inOut(lift) * 140;
-    sky(t + 46, .8);
+    sky(t + 52.5, .8);
     ctx.save(); ctx.translate(0, tilt);
     // the circle and its light column
     var open = outCubic(t / 1);

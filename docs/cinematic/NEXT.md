@@ -21,6 +21,25 @@ go. Pick from it; nothing here is decided.
 
 Tropes that fit: the imagine spot (Mirabel), the infomercial, "Yep, that's me" freeze frame, the hero assembly montage, the monkey's paw (the scroll works too well), and the post-credits button (Mirabel arrives; the tower is a brick).
 
+## Done in preview 5
+
+Exterior opening shot, Fumbleton's freeze-frame name card, Mirabel's imagine
+spot, the receipt (NO REFUNDS), the Sorcerer's Apprentice escalation (he
+chases them, BAMF, they grow and multiply), boss name captions, hero
+signature actions, the end button, and a Spider-Verse comic pass (halftone,
+SFX lettering, caption boxes, colour split). Still open below: the 45-second
+cut, model sheets, a narrator and score, localising the SFX words, and the
+Blender rebuild.
+
+**Ideas for the next pass**
+- The escalation could go one step further: a boss splits in two like the
+  brooms in Fantasia, and the copies carry the brick carpet faster.
+- The imagine spot wants a real sax sting and a soft-focus bloom in Blender.
+- The comic SFX words are English; swap them per language or keep them as
+  drawn sound shapes.
+- The end button's "…" could hold a beat longer (Gravity Falls timing), then
+  cut to black on the wah-wah.
+
 ## 2. Artistic changes to consider
 
 **Story and staging**
@@ -30,7 +49,7 @@ Tropes that fit: the imagine spot (Mirabel), the infomercial, "Yep, that's me" f
 - The scroll: either a quick infomercial flashback, or a crumpled receipt that says "Travelling Merchant · NO REFUNDS".
 - Sorcerer's Apprentice escalation: Fumbleton chases the bosses with the scroll, reads it again, and they get bigger.
 - End button: the doorbell rings, Mirabel stands at a door that's now a brick wall.
-- Consider a 45-second cut alongside the 58-second one; test which keeps attention.
+- Consider a 45-second cut alongside the full 68-second one; test which keeps attention.
 
 **Characters**
 - Fumbleton: a real model sheet (turnaround, 6–8 expressions); give him mouth shapes if we add a voice.
