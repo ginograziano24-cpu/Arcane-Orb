@@ -145,7 +145,7 @@ Twelve ideas for later updates, and a plan to work through them.
 
 - **Step 1 (lore):** done in code, not yet compiled (see HANDOFF.md). Simple story: three bosses bury the world in bricks, seven heroes use the Orb to beat them. Text in docs/lore.md; hero names Oriel, Brakka, Vell, Rivet, Sol, Cinder, Zephyr.
 - **Step 2 (quips):** text **plus** short synthesised voice blips per hero. Lines drafted in docs/quips.md (awaiting the user's read-through).
-- **Step 3 (chamber select):** direction **A, storybook map** (parchment, ink trails, a red pin for the player, a short tooltip per room). The user had no preference between the three mock-ups; A was picked to match the lore's tone. Mock-ups: the "Chamber Select Directions" design canvas.
+- **Step 3 (chamber select):** direction **B, constellation**, reworked to be more arcane (rotating rune circle, summoning circle round the boss, rune rings on the rooms you can pick, flowing magic on the next path). **Keep the existing run panel (top left) and Build panel (right) exactly as they are**; only the map in the middle changes. Mock-up: board "B2" on the "Chamber Select Directions" design canvas, awaiting the user's OK.
 - **Step 4 (cameos):** locked heroes **are** included, as a try-before-you-unlock teaser.
 - **Step 8 (gallery):** **Blender scenes only** (tools/portraits and tools/artkit), no commissioned art.
 - Still open: step 5 track names, step 9 item ideas, step 10 boss mechanics.
