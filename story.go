@@ -8,7 +8,7 @@ import (
 )
 
 // The story frames the three-act run: a prologue, a card between acts
-// and an epilogue after the final Guardian. Endless and daily runs skip it.
+// and an epilogue after the final boss. Endless and daily runs skip it.
 
 type storyCard struct {
 	Label, Title string
@@ -16,26 +16,26 @@ type storyCard struct {
 }
 
 var storyCards = []storyCard{
-	{"PROLOGUE", "The Last Warden", []string{
-		"Long ago the Weavers gathered the world's magic into a single sphere of living light, and called it the Orb.",
-		"Then the Weavers vanished. Their constructs did not. Brick by brick the Lattice rose: walls of stone, steel and crystal that spread across every realm and choked the light out of the sky.",
-		"You are the last Warden of the Orb. Where it strikes, the Lattice breaks.",
-		"Three Guardians hold the Lattice together. Break them, and the realms will breathe again.",
+	{"PROLOGUE", "The Orb", []string{
+		"Three giant bosses are burying the world in bricks. Every day, the sky gets a little darker.",
+		"But there is one thing no wall can stop: the Orb. Whatever it hits, it breaks.",
+		"Seven heroes have taken up the Orb. Today, it's your turn.",
+		"Smash the walls. Beat the bosses. Bring back the sky.",
 	}},
-	{"CHAPTER II", "Into the Deep", []string{
-		"The Prism Colossus bursts into a rain of coloured glass. For one night, the Outer Realms can see the stars.",
-		"But the Lattice is still growing. Its roots run down into the Deep Realms, where the Crucible Golem keeps the forges burning that cast every brick.",
-		"Descend. Put out the fire.",
+	{"CHAPTER II", "Into the Machine", []string{
+		"The Prism Colossus shatters into a rain of coloured glass. For the first time in years, you can see the stars.",
+		"But someone is still making the bricks. Deep in the Machine Works, the Crucible Golem keeps the forges burning.",
+		"Go down there. Put out the fire.",
 	}},
-	{"CHAPTER III", "The Ringing Above", []string{
-		"The Crucible goes cold and the great hammers stop. In the silence you hear something far above you: a long, clear note, like a struck bell.",
-		"The Crystal Warden was the Weavers' first creation and their last mistake. It is the heart of the Lattice, and it is singing.",
+	{"CHAPTER III", "The Top of the Wall", []string{
+		"The forges go cold. The hammers stop.",
+		"High above, in the Crystal Caverns, the last boss is waiting: the Crystal Warden, the toughest of them all.",
 		"Climb.",
 	}},
-	{"EPILOGUE", "Light Returns", []string{
-		"The Warden's heart cracks, and the Lattice cracks with it. Across every realm the walls crumble to dust, and light pours back into the sky.",
-		"The Orb dims in your hand, tired and warm.",
-		"But the Weavers built deep. Somewhere beneath the rubble, a single brick shifts... and the Lattice begins to grow again.",
+	{"EPILOGUE", "The Sky Is Back", []string{
+		"The Crystal Warden cracks, and every wall in the world crumbles with it. Sunlight pours back in.",
+		"The heroes are tired, a bit singed, and very proud.",
+		"Then, somewhere, a single brick wiggles... Looks like the Orb isn't done yet.",
 	}},
 }
 

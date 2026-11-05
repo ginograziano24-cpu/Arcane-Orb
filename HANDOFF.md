@@ -13,7 +13,7 @@ Read this first in a new session, then `ROADMAP.md` for what's next.
   pyro, storm). A run is three acts of four worlds each, with items carried
   between acts (biome.go `acts`). There are also endless, daily, classic,
   challenge chambers (challenges.go) and online duels (duel*.go).
-- Story cards: story.go. Translations: 7 languages (en zh ja ru es pt de).
+- Story cards: story.go. Hero Lore pages: lore.go (the story itself is in docs/lore.md). Translations: 7 languages (en zh ja ru es pt de).
 
 ## Building
 
@@ -110,6 +110,8 @@ Each frame, the world is drawn as CPU-projected quads, sorted by depth and drawn
 - **Every new player-facing string needs all 7 languages.**
 
 ## Waiting on the user
+
+- **Roadmap step 1 (lore) is written but not yet compiled.** Go module downloads were blocked in the session that wrote it (proxy.golang.org 403), so story.go, classsel.go, progress_ui.go, game.go and the new lore.go have only passed `gofmt -e`. First thing next session: vet both targets, then screenshot `classsel`, the Lore page and the story cards in all 7 languages, and fix anything that turns up.
 
 - **PC benchmark of the current build.** Compare against perf4 (2560×1440, DX11). The bench files are on the PC but are an older build; copy the current exe (split as above) there first.
 

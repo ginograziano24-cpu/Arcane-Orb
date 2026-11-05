@@ -161,6 +161,8 @@ type Game struct {
 	heartT       float64
 
 	codexTab    int
+	loreOpen    bool // the hero Lore page is up (class select or codex)
+	loreSel     int  // which origin it shows
 	endlessMode bool // next run starts in Endless
 	storyIdx    int
 	storySkip   float64
@@ -253,6 +255,7 @@ func (g *Game) demoLevel() *Level {
 }
 
 func (g *Game) setState(s State) {
+	g.loreOpen = false
 	if s == StSettings && g.state != StSettings {
 		g.prevState = g.state
 	}
@@ -402,7 +405,9 @@ func (g *Game) Update() error {
 		}
 		debugMenuKeys(g)
 		if backPressed() {
-			if g.state == StMenu {
+			if g.loreOpen {
+				g.loreOpen = false
+			} else if g.state == StMenu {
 				// point at Quit rather than closing the game outright
 				g.ui.nav.mode, g.ui.nav.focus = true, g.menuQuit
 			} else if g.state == StArch && g.challengeSel != "" {

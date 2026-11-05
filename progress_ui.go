@@ -94,6 +94,10 @@ func (g *Game) drawSanctum(s *ebiten.Image) {
 func (g *Game) drawCodex(s *ebiten.Image) {
 	u := g.ui
 	u.heading(s, "THE CODEX", 72, 40, cGold, 1)
+	if g.loreOpen {
+		g.drawLore(s)
+		return
+	}
 	tabs := []string{"Upgrades", "Relics", "Fusions", "Achievements", "Endless", "Run History", "Origins"}
 	// Q/E or the shoulder buttons flip tabs
 	if g.navLatch.pageL {
@@ -382,7 +386,10 @@ func (g *Game) drawOriginsTab(s *ebiten.Image, y0 float64) {
 		x := x0 + float64(i)*(cw+gap)
 		y := y0
 		locked := a.Cost > 0 && !g.save.Unlocked[a.ID]
-		hv, _ := u.hit("corig"+a.ID, x, y, cw, ch)
+		hv, clk := u.hit("corig"+a.ID, x, y, cw, ch)
+		if clk {
+			g.openLore(i)
+		}
 		k := u.anim("corig"+a.ID, hv, 10)
 		y -= 8 * k
 		body := boxPath(u.X(x), u.Y(y), cw*S, ch*S, 16*S, false)
@@ -436,7 +443,7 @@ func (g *Game) drawOriginsTab(s *ebiten.Image, y0 float64) {
 			u.text(s, fmt.Sprintf("Mastery %d", lv), fBold, 16, x+cw/2, y+ch-36, lighten(ci.Col, 0.3), alignCenter)
 		}
 		if hv {
-			g.tooltip = trJoin(a.Name, " — ", a.Desc, "  ", a.Ability, ": ", a.AbilityDesc)
+			g.tooltip = trJoin(a.Name, " — ", a.Desc, "  ", a.Ability, ": ", a.AbilityDesc, "  ", "Click to read their story.")
 		}
 	}
 }

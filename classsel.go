@@ -85,13 +85,13 @@ var classInfo = map[string]struct {
 	Col   color.RGBA
 	Glyph string
 }{
-	"guardian":  {"A sworn shield of the old Wardens. Where others fall, the Guardian endures.", rgba(255, 210, 122, 255), "shield"},
-	"berserker": {"Raised in the forge-pits of the Deep Realms. Strikes first, and strikes hardest.", rgba(255, 70, 50, 255), "sword"},
-	"arcane":    {"A scholar of the Weavers' lost art, attuned to whichever element answers.", rgba(150, 110, 255, 255), "orb"},
-	"engineer":  {"A tinkerer from the Crucible's ruins who taught old machines to fire light.", rgba(255, 160, 64, 255), "gear"},
-	"lucky":     {"Fortune favours the bold, and the Gambler has never once been timid.", rgba(70, 214, 154, 255), "coin"},
-	"pyro":      {"Keeper of the Crucible's last ember. Everything burns, eventually.", rgba(255, 106, 26, 255), "flame"},
-	"storm":     {"Born the night the sky split open. The lightning still remembers.", rgba(94, 196, 255, 255), "bolt"},
+	"guardian":  {"Dame Oriel, a knight sworn to protect people. The walls are getting in the way of that.", rgba(255, 210, 122, 255), "shield"},
+	"berserker": {"Brakka. Someone built a wall through her house while she napped. Now every brick pays.", rgba(255, 70, 50, 255), "sword"},
+	"arcane":    {"Professor Vell could never pick a favourite element, so his Orb uses all four.", rgba(150, 110, 255, 255), "orb"},
+	"engineer":  {"Rivet grew up in the Machine Works and built her own laser paddle out of spare parts.", rgba(255, 160, 64, 255), "gear"},
+	"lucky":     {"Lucky Sol counts the Orb as part of his winning hand. He owes everyone money.", rgba(70, 214, 154, 255), "coin"},
+	"pyro":      {"Cinder loves fire more than anything. She says she's in it for the explosions.", rgba(255, 106, 26, 255), "flame"},
+	"storm":     {"Zephyr misses the open sky and can't sit still. Keep moving, and the storm follows.", rgba(94, 196, 255, 255), "bolt"},
 }
 
 func (g *Game) drawArch(s *ebiten.Image) {
@@ -100,6 +100,10 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	n := len(archetypes)
 	if g.archSel < 0 || g.archSel >= n {
 		g.archSel = 0
+	}
+	if g.loreOpen {
+		g.drawLore(s)
+		return
 	}
 	// keyboard
 	defer func() { g.archActivate = false }()
@@ -418,6 +422,10 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		g.drawAscCompact(s, rx, 900, rw)
 	} else {
 		g.challengeBanner(s)
+	}
+	if u.button(s, "archlore", "Lore", 280, 990, 200, 56, cGold, true) {
+		g.openLore(g.archSel)
+		return
 	}
 	if u.button(s, "back", "Back", 60, 990, 200, 56, cAcc, true) {
 		if g.challengeSel != "" {
