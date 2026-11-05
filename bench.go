@@ -72,8 +72,10 @@ func benchParse() {
 			planRunsOn = false
 		case a == "-notextcache":
 			textOff = true
-		case a == "-noglowaside":
-			glowAsideOn = false
+		case a == "-glowaside":
+			glowAsideOn = true
+		case a == "-ebitenaa":
+			aaOwn = false
 		case a == "-nopresort":
 			presortOn = false
 		case strings.HasPrefix(a, "-benchwin="):

@@ -967,7 +967,7 @@ func (b *Batch) planList(segs [][]quad, list int) ([]*quad, []quadRun) {
 
 // drawRuns submits planned runs: one DrawTriangles per run, at most maxQ
 // quads each.
-func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend ebiten.Blend) {
+func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend ebiten.Blend, scale float32) {
 	if flushTrace != nil {
 		for i := 1; i < len(runs); i++ {
 			flushTrace(runs[i-1].tex, runs[i].tex, float64(len(runs[i].ids)))
@@ -975,7 +975,7 @@ func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend eb
 	}
 	for ri := range runs {
 		rn := &runs[ri]
-		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: worldAA}
+		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: worldAA && !aaOwn}
 		src := atlas
 		if rn.tex != 0 {
 			src = texImages[rn.tex]
@@ -989,6 +989,12 @@ func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend eb
 			b.verts = b.verts[:0]
 			for _, oi := range ids[:n] {
 				b.verts = append(b.verts, qs[oi].v[:]...)
+			}
+			if scale != 1 {
+				for k := range b.verts {
+					b.verts[k].DstX *= scale
+					b.verts[k].DstY *= scale
+				}
 			}
 			dst.DrawTriangles(b.verts, quadIndices[:n*6], src, op)
 			perf.cur.world++
@@ -1043,8 +1049,12 @@ func quadWraps(q *quad, sz [2]float32) bool {
 
 func quadMipLevel(q *quad) int {
 	v := &q.v
+	k := float32(1) // the scale the quad is drawn at (see aaBegin)
+	if worldAA {
+		k = aaScale
+	}
 	edge := func(a, b int) int {
-		return mipLevelFromDistance(2*v[a].DstX, 2*v[a].DstY, 2*v[b].DstX, 2*v[b].DstY, v[a].SrcX, v[a].SrcY, v[b].SrcX, v[b].SrcY)
+		return mipLevelFromDistance(k*v[a].DstX, k*v[a].DstY, k*v[b].DstX, k*v[b].DstY, v[a].SrcX, v[a].SrcY, v[b].SrcX, v[b].SrcY)
 	}
 	// the two triangles (0 1 2) and (0 2 3), every edge of each
 	l := edge(0, 1)
@@ -1089,10 +1099,54 @@ func mipLevelFromDistance(dx0, dy0, dx1, dy1, sx0, sy0, sx1, sy1 float32) int {
 	return min(level, maxLevel)
 }
 
-// worldAA draws the 3D world anti-aliased: Ebitengine renders it at twice
-// the resolution and filters it down, four times the pixels. The Low preset
-// turns it off (settings: Anti-aliasing).
+// worldAA draws the 3D world anti-aliased: it is rendered at twice the
+// resolution and filtered down, four times the pixels. The Low preset turns
+// it off (settings: Anti-aliasing).
+//
+// The supersampled target is kept here rather than left to Ebitengine's
+// AntiAlias option: that one measures every draw call's vertices to find
+// the region it touches, scales them in a second pass, and resolves and
+// re-copies the whole region each time the blend mode changes. Here the
+// region is the destination, the scale is folded into the vertex copy
+// drawRuns already makes, and the opaque and additive lists share a single
+// copy up and a single resolve.
 var worldAA = true
+
+const aaScale = 2
+
+// aaOwn selects the supersampled target kept here over Ebitengine's
+// AntiAlias option (bench: -ebitenaa).
+var aaOwn = true
+
+var aaImg *ebiten.Image
+
+// aaBegin returns the supersampled target for dst, holding dst's current
+// picture (so blending onto it is unchanged).
+func aaBegin(dst *ebiten.Image) *ebiten.Image {
+	r := dst.Bounds()
+	w, h := r.Dx()*aaScale, r.Dy()*aaScale
+	if aaImg == nil || aaImg.Bounds().Dx() != w || aaImg.Bounds().Dy() != h {
+		if aaImg != nil {
+			aaImg.Deallocate()
+		}
+		aaImg = ebiten.NewImageWithOptions(image.Rect(0, 0, w, h), &ebiten.NewImageOptions{Unmanaged: true})
+	}
+	op := &ebiten.DrawImageOptions{Blend: ebiten.BlendCopy}
+	op.GeoM.Translate(-float64(r.Min.X), -float64(r.Min.Y))
+	op.GeoM.Scale(aaScale, aaScale)
+	aaImg.DrawImage(dst, op)
+	return aaImg
+}
+
+// aaEnd resolves the supersampled target into dst: each pixel the average
+// of its 2x2 block (a bilinear sample at the block's centre).
+func aaEnd(dst *ebiten.Image) {
+	r := dst.Bounds()
+	op := &ebiten.DrawImageOptions{Blend: ebiten.BlendCopy, Filter: ebiten.FilterLinear, DisableMipmaps: true}
+	op.GeoM.Scale(1.0/aaScale, 1.0/aaScale)
+	op.GeoM.Translate(float64(r.Min.X), float64(r.Min.Y))
+	dst.DrawImage(aaImg, op)
+}
 
 // planRunsOn enables run planning (-noruns turns it off, for benchmarks).
 var planRunsOn = true
@@ -1599,6 +1653,11 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 		nGlow += len(b.extG[i])
 	}
 	b.prepMeta()
+	tgt, sc := dst, float32(1)
+	own := worldAA && aaOwn
+	if own {
+		tgt, sc = aaBegin(dst), aaScale
+	}
 	segQ := append(b.extQ, b.quads)
 	segG := append(b.extG, b.glow)
 	if nGlow >= glowPlanAside && glowAsideOn {
@@ -1616,18 +1675,21 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 			gqs, gruns = gp.planList(segG, 1)
 		}()
 		qs, runs := b.planList(segQ, 0)
-		b.drawRuns(dst, qs, runs, ebiten.BlendSourceOver)
+		b.drawRuns(tgt, qs, runs, ebiten.BlendSourceOver, sc)
 		<-done
 		if crash != nil {
 			panic(crash)
 		}
 		b.switches[1], b.planned[1] = gp.switches[1], gp.planned[1]
-		gp.drawRuns(dst, gqs, gruns, ebiten.BlendLighter)
+		gp.drawRuns(tgt, gqs, gruns, ebiten.BlendLighter, sc)
 	} else {
 		qs, runs := b.planList(segQ, 0)
-		b.drawRuns(dst, qs, runs, ebiten.BlendSourceOver)
+		b.drawRuns(tgt, qs, runs, ebiten.BlendSourceOver, sc)
 		qs, runs = b.planList(segG, 1)
-		b.drawRuns(dst, qs, runs, ebiten.BlendLighter)
+		b.drawRuns(tgt, qs, runs, ebiten.BlendLighter, sc)
+	}
+	if own {
+		aaEnd(dst)
 	}
 	b.extQ, b.extG, b.extB = b.extQ[:0], b.extG[:0], b.extB[:0]
 }
@@ -1636,9 +1698,10 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 // goroutine of its own.
 const glowPlanAside = 1500
 
-// glowAsideOn enables planning the glow list on its own goroutine
-// (bench: -noglowaside).
-var glowAsideOn = true
+// glowAsideOn enables planning the glow list on its own goroutine (bench:
+// -glowaside). Off: measured on a 32-thread PC it saved nothing, the
+// goroutine hand-off costing what the overlap won.
+var glowAsideOn = false
 
 // glowPlanner returns the scratch batch the glow list is planned in, set up
 // to read the same side batches and grid as b.
