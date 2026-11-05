@@ -43,3 +43,4 @@ the overall art direction.
 - The wide sleeves are the same sheer black material as the high neck (no red sleeves).
 - Pose: fitted sheer sleeves that end at the wrists, right hand resting on her hip (the arm is fitted to each body's hip width), staff gripped in the left hand and clear to her feet.
 - Polish: the staff ends in a carved spiral curl (as in the reference); the hat is layered brim, cone with a band, then the brim's front lip, so head lines no longer show through. New test model **C++** = C+ with a 15% fuller bust; the "Body" button cycles C, C+, C++.
+- The neckline cups, under-bust curves, sheen and the sheer top now scale with the bust width, so larger bodies (C++) fill their outline.
