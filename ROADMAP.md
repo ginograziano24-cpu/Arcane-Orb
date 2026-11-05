@@ -141,6 +141,15 @@ Twelve ideas for later updates, and a plan to work through them.
 - **Checks:** campaign sims per boss, for clear rate and time-to-kill in each act and difficulty; capture videos for you to playtest; a PC bench of the boss scene.
 - ❓ **Your call:** pick or adjust the mechanics per boss before I start.
 
+## Decisions so far (2026-11-05)
+
+- **Step 1 (lore):** done in code, not yet compiled (see HANDOFF.md). Simple story: three bosses bury the world in bricks, seven heroes use the Orb to beat them. Text in docs/lore.md; hero names Oriel, Brakka, Vell, Rivet, Sol, Cinder, Zephyr.
+- **Step 2 (quips):** text **plus** short synthesised voice blips per hero. Lines drafted in docs/quips.md (awaiting the user's read-through).
+- **Step 3 (chamber select):** direction **A, storybook map** (parchment, ink trails, a red pin for the player, a short tooltip per room). The user had no preference between the three mock-ups; A was picked to match the lore's tone. Mock-ups: the "Chamber Select Directions" design canvas.
+- **Step 4 (cameos):** locked heroes **are** included, as a try-before-you-unlock teaser.
+- **Step 8 (gallery):** **Blender scenes only** (tools/portraits and tools/artkit), no commissioned art.
+- Still open: step 5 track names, step 9 item ideas, step 10 boss mechanics.
+
 ## Order at a glance
 
 1 Lore → 2 Quips → 3 Chamber select → 4 Cameos → 5 Soundtrack → 6 Duel stage select → 7 Showcases → 8 Gallery → 9 Items → 10 Bosses
