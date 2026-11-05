@@ -31,3 +31,11 @@ the overall art direction.
   end scene and the title cameo. A redrawn vector version is behind the
   "Mirabel: redrawn" toggle, but the user said it doesn't look like the
   reference, so use the illustration.
+
+## Mirabel decided (2026-11-05)
+
+- Look: **ink & watercolour**, used only on the drawn segments (the pencil half and the
+  paper in the burn shot). The magic half is unchanged.
+- Mirabel: the **redrawn** model, body **C · Curvy** with hips 15% wider and **no leg slit**
+  (`mirabel_drawn_C.png`). It is the default on the style test page; the illustration
+  is still available behind the "Mirabel" toggle as the reference.
