@@ -3,6 +3,7 @@ module orb
 go 1.24.7
 
 replace (
+	github.com/hajimehoshi/ebiten/v2 => ./third_party/ebiten
 	golang.org/x/exp => github.com/golang/exp v0.0.0-20240909161429-701f63a606c0
 	golang.org/x/image => github.com/golang/image v0.20.0
 	golang.org/x/mobile => github.com/golang/mobile v0.0.0-20240909163608-642950227fb3
