@@ -40,3 +40,4 @@ the overall art direction.
   (`mirabel_drawn_C.png`). It is the default on the style test page; the illustration
   is still available behind the "Mirabel" toggle as the reference.
 - Test model **C+** (10% curvier) is behind the "Body" button on the style test page; C stays the default until the user picks. Arms were cleaned up (the sleeves wrap the forearms) and the staff is thicker.
+- The wide sleeves are the same sheer black material as the high neck (no red sleeves).
