@@ -1088,7 +1088,11 @@ func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend eb
 	b.fillVerts(qs, scale)
 	for ri := range runs {
 		rn := &runs[ri]
-		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: worldAA && !aaOwn}
+		// The quads' colour scales are straight alpha (rgb times alpha
+		// once more on the way in); fillVerts applies that, so the draws
+		// say premultiplied and DrawTriangles32 takes the vertices as they
+		// are.
+		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: worldAA && !aaOwn, ColorScaleMode: ebiten.ColorScaleModePremultipliedAlpha}
 		src := atlas
 		if rn.tex != 0 {
 			src = texImages[rn.tex]
@@ -1124,10 +1128,16 @@ func (b *Batch) fillVerts(qs []*quad, scale float32) {
 		for i, oi := range ids[lo:hi] {
 			copy(vs[i*4:i*4+4], qs[oi].v[:])
 		}
-		if scale != 1 {
-			for k := range vs {
-				vs[k].DstX *= scale
-				vs[k].DstY *= scale
+		// the colour scale premultiplied here (what Ebitengine would do
+		// per vertex for straight alpha; see drawRuns), and the scale
+		for k := range vs {
+			v := &vs[k]
+			v.ColorR *= v.ColorA
+			v.ColorG *= v.ColorA
+			v.ColorB *= v.ColorA
+			if scale != 1 {
+				v.DstX *= scale
+				v.DstY *= scale
 			}
 		}
 	}

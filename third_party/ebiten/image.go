@@ -660,9 +660,16 @@ func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image,
 
 	colorm, cr, cg, cb, ca := colorMToScale(options.ColorM.affineColorM())
 
-	vs := i.ensureTmpVertices(len(vertices) * graphics.VertexFloatCount)
+	var vs []float32
 	dst := i
-	if options.ColorScaleMode == ColorScaleModeStraightAlpha {
+	if len(vertices) > 0 && options.ColorScaleMode == ColorScaleModePremultipliedAlpha && cr == 1 && cg == 1 && cb == 1 && ca == 1 &&
+		!dst.isSubImage() && !img.isSubImage() && dst.Bounds().Min == (image.Point{}) && img.Bounds().Min == (image.Point{}) {
+		// Arcane Orb patch: here the conversion below changes nothing, and
+		// Vertex is laid out as the internal vertex is, so the caller's
+		// vertices are used in place, which is why DrawTriangles32 may
+		// overwrite them.
+		vs = unsafe.Slice((*float32)(unsafe.Pointer(&vertices[0])), len(vertices)*graphics.VertexFloatCount)
+	} else if vs = i.ensureTmpVertices(len(vertices) * graphics.VertexFloatCount); options.ColorScaleMode == ColorScaleModeStraightAlpha {
 		// Avoid using `for i, v := range vertices` as adding `v` creates a copy from `vertices` unnecessarily on each loop (#3103).
 		for i := range vertices {
 			dx, dy := dst.adjustPositionF32(vertices[i].DstX, vertices[i].DstY)

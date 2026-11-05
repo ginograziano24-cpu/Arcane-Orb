@@ -24,7 +24,11 @@ game's go.mod. Changes, each marked "Arcane Orb patch" in the source:
    there and is dropped before the restorable layer). The game's planned
    runs are keyed by mip level, so they set it.
 5. `Image.DrawTriangles32` (new, as in later Ebitengine versions): 32-bit
-   indices passed on as they are, without the per-call conversion.
+   indices passed on as they are, without the per-call conversion. With
+   premultiplied colour scales, no colour matrix and whole (not sub-)
+   images, where its per-vertex conversion would change nothing, it uses
+   the caller's vertices in place (Vertex has the internal layout), so it
+   may overwrite them.
 
 To move to a newer Ebitengine: copy its module here the same way (no
 examples, tests or testdata) and re-apply the patches above.
