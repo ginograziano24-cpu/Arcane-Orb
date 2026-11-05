@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2/audio"
@@ -25,6 +26,7 @@ type Sounds struct {
 	warmQ   chan string           // clip names for the warming workers
 	lastVar map[string]int
 	last    map[string]time.Time
+	vmu     sync.Mutex // guards voices (clips not yet rendered start from other goroutines)
 	voices  []*audio.Player
 	rng     *rand.Rand
 
@@ -93,6 +95,7 @@ var sfxWarm = true
 // clipEntry is one rendered clip; once guards its rendering.
 type clipEntry struct {
 	once sync.Once
+	done atomic.Bool // data is set
 	data []byte
 }
 
@@ -113,6 +116,7 @@ func (s *Sounds) clip(name string, v int) []byte {
 		if rc, ok := recipes[base]; ok {
 			e.data = rc.build(params, v, rand.New(rand.NewSource(hashStr(key))))
 		}
+		e.done.Store(true)
 	})
 	return e.data
 }
@@ -174,6 +178,7 @@ func (s *Sounds) play(name string, vol float64) {
 	}
 	s.last[name] = now
 	// voice management: drop finished players, cap the total
+	s.vmu.Lock()
 	live := s.voices[:0]
 	for _, p := range s.voices {
 		if p.IsPlaying() {
@@ -181,8 +186,10 @@ func (s *Sounds) play(name string, vol float64) {
 		}
 	}
 	s.voices = live
+	nv := len(s.voices)
+	s.vmu.Unlock()
 	important := base != "brk" && base != "deb" && base != "wall" && base != "coin" && base != "tuf" && base != "thump"
-	if len(s.voices) >= 26 && !important {
+	if nv >= 26 && !important {
 		return
 	}
 	// pick a variant different from the last one
@@ -200,14 +207,36 @@ func (s *Sounds) play(name string, vol float64) {
 	if pk := punchFor[base]; pk > 0 {
 		s.Punch(pk * vol)
 	}
-	c := s.clip(name, v)
+	gain := s.SFX * vol
+	if !s.rendered(name, v) {
+		// not ready (nor warmed in time): render it on another goroutine
+		// and start it from there, a few milliseconds late, rather than
+		// stall this frame
+		go func() { s.start(s.clip(name, v), gain) }()
+		return
+	}
+	s.start(s.clip(name, v), gain)
+}
+
+// start plays a rendered clip at the given volume.
+func (s *Sounds) start(c []byte, gain float64) {
 	if c == nil {
 		return
 	}
 	p := s.ctx.NewPlayerFromBytes(c)
-	p.SetVolume(s.SFX * vol)
+	p.SetVolume(gain)
 	p.Play()
+	s.vmu.Lock()
 	s.voices = append(s.voices, p)
+	s.vmu.Unlock()
+}
+
+// rendered reports whether a clip is ready to play.
+func (s *Sounds) rendered(name string, v int) bool {
+	s.cmu.Lock()
+	e := s.cache[name+"#"+itoa(v)]
+	s.cmu.Unlock()
+	return e != nil && e.done.Load()
 }
 
 // punchFor is how far big impacts dip the music for an instant, so they
