@@ -23,6 +23,8 @@ game's go.mod. Changes, each marked "Arcane Orb patch" in the source:
    triangle (a new restorable hint, HintUniformMipmapLevel, carries it
    there and is dropped before the restorable layer). The game's planned
    runs are keyed by mip level, so they set it.
+5. `Image.DrawTriangles32` (new, as in later Ebitengine versions): 32-bit
+   indices passed on as they are, without the per-call conversion.
 
 To move to a newer Ebitengine: copy its module here the same way (no
 examples, tests or testdata) and re-apply the patches above.

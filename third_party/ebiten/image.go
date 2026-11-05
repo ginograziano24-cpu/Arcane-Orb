@@ -618,6 +618,107 @@ func (i *Image) DrawTriangles(vertices []Vertex, indices []uint16, img *Image, o
 	i.image.DrawTriangles(srcs, vs, is, blend, i.adjustedBounds(), [graphics.ShaderSrcImageCount]image.Rectangle{img.adjustedBounds()}, shader.shader, i.tmpUniforms, graphicsdriver.FillRule(options.FillRule), skipMipmap, options.AntiAlias, hint)
 }
 
+// DrawTriangles32 is DrawTriangles with 32-bit indices, which are passed on
+// as they are instead of being converted on every call. (Arcane Orb patch,
+// after the method of the same name in later Ebitengine versions.)
+func (i *Image) DrawTriangles32(vertices []Vertex, indices []uint32, img *Image, options *DrawTrianglesOptions) {
+	i.copyCheck()
+
+	if img != nil && img.isDisposed() {
+		panic("ebiten: the given image to DrawTriangles must not be disposed")
+	}
+	if i.isDisposed() {
+		return
+	}
+
+	if len(vertices) > graphicscommand.MaxVertexCount {
+		// The last part cannot be specified by indices. Just omit them.
+		vertices = vertices[:graphicscommand.MaxVertexCount]
+	}
+	if len(indices)%3 != 0 {
+		panic("ebiten: len(indices) % 3 must be 0")
+	}
+	for i, idx := range indices {
+		if int(idx) >= len(vertices) {
+			panic(fmt.Sprintf("ebiten: indices[%d] must be less than len(vertices) (%d) but was %d", i, len(vertices), idx))
+		}
+	}
+
+	if options == nil {
+		options = &DrawTrianglesOptions{}
+	}
+
+	var blend graphicsdriver.Blend
+	if options.CompositeMode == CompositeModeCustom {
+		blend = options.Blend.internalBlend()
+	} else {
+		blend = options.CompositeMode.blend().internalBlend()
+	}
+
+	address := builtinshader.Address(options.Address)
+	filter := builtinshader.Filter(options.Filter)
+
+	colorm, cr, cg, cb, ca := colorMToScale(options.ColorM.affineColorM())
+
+	vs := i.ensureTmpVertices(len(vertices) * graphics.VertexFloatCount)
+	dst := i
+	if options.ColorScaleMode == ColorScaleModeStraightAlpha {
+		// Avoid using `for i, v := range vertices` as adding `v` creates a copy from `vertices` unnecessarily on each loop (#3103).
+		for i := range vertices {
+			dx, dy := dst.adjustPositionF32(vertices[i].DstX, vertices[i].DstY)
+			vs[i*graphics.VertexFloatCount] = dx
+			vs[i*graphics.VertexFloatCount+1] = dy
+			sx, sy := img.adjustPositionF32(vertices[i].SrcX, vertices[i].SrcY)
+			vs[i*graphics.VertexFloatCount+2] = sx
+			vs[i*graphics.VertexFloatCount+3] = sy
+			vs[i*graphics.VertexFloatCount+4] = vertices[i].ColorR * vertices[i].ColorA * cr
+			vs[i*graphics.VertexFloatCount+5] = vertices[i].ColorG * vertices[i].ColorA * cg
+			vs[i*graphics.VertexFloatCount+6] = vertices[i].ColorB * vertices[i].ColorA * cb
+			vs[i*graphics.VertexFloatCount+7] = vertices[i].ColorA * ca
+		}
+	} else {
+		// See comment above (#3103).
+		for i := range vertices {
+			dx, dy := dst.adjustPositionF32(vertices[i].DstX, vertices[i].DstY)
+			vs[i*graphics.VertexFloatCount] = dx
+			vs[i*graphics.VertexFloatCount+1] = dy
+			sx, sy := img.adjustPositionF32(vertices[i].SrcX, vertices[i].SrcY)
+			vs[i*graphics.VertexFloatCount+2] = sx
+			vs[i*graphics.VertexFloatCount+3] = sy
+			vs[i*graphics.VertexFloatCount+4] = vertices[i].ColorR * cr
+			vs[i*graphics.VertexFloatCount+5] = vertices[i].ColorG * cg
+			vs[i*graphics.VertexFloatCount+6] = vertices[i].ColorB * cb
+			vs[i*graphics.VertexFloatCount+7] = vertices[i].ColorA * ca
+		}
+	}
+	is := indices
+
+	srcs := [graphics.ShaderSrcImageCount]*ui.Image{img.image}
+
+	useColorM := !colorm.IsIdentity()
+	shader := builtinShader(filter, address, useColorM)
+	i.tmpUniforms = i.tmpUniforms[:0]
+	if useColorM {
+		var body [16]float32
+		var translation [4]float32
+		colorm.Elements(body[:], translation[:])
+		i.tmpUniforms = shader.appendUniforms(i.tmpUniforms, map[string]any{
+			builtinshader.UniformColorMBody:        body[:],
+			builtinshader.UniformColorMTranslation: translation[:],
+		})
+	}
+
+	skipMipmap := options.DisableMipmaps
+	if !skipMipmap {
+		skipMipmap = filter != builtinshader.FilterLinear
+	}
+	hint := restorable.HintNone
+	if options.UniformMipmapLevel {
+		hint = restorable.HintUniformMipmapLevel
+	}
+	i.image.DrawTriangles(srcs, vs, is, blend, i.adjustedBounds(), [graphics.ShaderSrcImageCount]image.Rectangle{img.adjustedBounds()}, shader.shader, i.tmpUniforms, graphicsdriver.FillRule(options.FillRule), skipMipmap, options.AntiAlias, hint)
+}
+
 // DrawTrianglesShaderOptions represents options for DrawTrianglesShader.
 type DrawTrianglesShaderOptions struct {
 	// CompositeMode is a composite mode to draw.

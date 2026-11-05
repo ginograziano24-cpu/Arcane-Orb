@@ -1100,7 +1100,7 @@ func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend eb
 		vs := b.verts[rn.first*4 : rn.last*4]
 		for len(vs) > 0 {
 			n := min(len(vs)/4, maxQ)
-			dst.DrawTriangles(vs[:n*4], quadIndices[:n*6], src, op)
+			dst.DrawTriangles32(vs[:n*4], quadIndices32[:n*6], src, op)
 			perf.cur.world++
 			vs = vs[n*4:]
 		}
@@ -1514,6 +1514,16 @@ var quadIndices = func() []uint16 {
 	for i := 0; i < maxQ; i++ {
 		b := uint16(i * 4)
 		ix = append(ix, b, b+1, b+2, b, b+2, b+3)
+	}
+	return ix
+}()
+
+// quadIndices32 is quadIndices as 32-bit indices, which DrawTriangles32
+// passes on without converting them every call.
+var quadIndices32 = func() []uint32 {
+	ix := make([]uint32, len(quadIndices))
+	for i, v := range quadIndices {
+		ix[i] = uint32(v)
 	}
 	return ix
 }()
