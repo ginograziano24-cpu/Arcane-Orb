@@ -404,7 +404,7 @@ canvas { display: block; width: 100%; height: 100%; }
   // opera gloves, witch hat, blowing a kiss. Feet at 0,0; about 440 tall with the hat.
   // ================================================================ Mirabel (model sheet: the user's final design)
   // Adult sorceress: long wavy violet-black hair, purple witch hat with a star, strapless red gown with a
-  // heart notch, sheer black high-neck top and sleeves, wide red bell sleeves, high leg slit, spiral staff.
+  // heart notch, sheer black high-neck top and fitted sleeves to the wrist, one hand on her hip, spiral staff.
   // Local space: feet at (0, 0), about 470 tall with the hat. The head is drawn 0.86x about the neck.
   var MO = { j: .45, ov: .6 };
   function MS(d, w, ov) { return S(d, { j: MO.j, ov: ov == null ? MO.ov : ov, w: w, step: 4 }); }
@@ -428,11 +428,16 @@ canvas { display: block; width: 100%; height: 100%; }
   }
   function mirror(P) { return P.map(function (p) { return p.length > 2 ? [-p[0], p[1], p[2]] : [-p[0], p[1]]; }); }
   // a tapered limb from a to b, rounded at both ends
-  function limbD(a, b, wa, wb) {
-    var dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy), nx = -dy / l, ny = dx / l, ra = wa / 2, rb = wb / 2;
-    var f = function (v) { return v.toFixed(2); };
-    return 'M' + f(a[0] + nx * ra) + ' ' + f(a[1] + ny * ra) + ' L' + f(b[0] + nx * rb) + ' ' + f(b[1] + ny * rb) + ' A' + f(rb) + ' ' + f(rb) + ' 0 0 1 ' + f(b[0] - nx * rb) + ' ' + f(b[1] - ny * rb) +
-      ' L' + f(a[0] - nx * ra) + ' ' + f(a[1] - ny * ra) + ' A' + f(ra) + ' ' + f(ra) + ' 0 0 1 ' + f(a[0] + nx * ra) + ' ' + f(a[1] + ny * ra) + ' Z';
+  function limbOpenD(a, b, wa, wb) { // a forearm: no outline across the elbow, where it overlaps the upper arm
+    var d = limbD(a, b, wa, wb); return d.slice(0, d.lastIndexOf(' C'));
+  }
+  function limbD(a, b, wa, wb) { // round caps bulge outward along the limb
+    var dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy), tx = dx / l, ty = dy / l, nx = -ty, ny = tx, ra = wa / 2, rb = wb / 2, k = 1.33;
+    var f = function (x, y) { return x.toFixed(2) + ' ' + y.toFixed(2); };
+    return 'M' + f(a[0] + nx * ra, a[1] + ny * ra) + ' L' + f(b[0] + nx * rb, b[1] + ny * rb) +
+      ' C' + f(b[0] + nx * rb + tx * rb * k, b[1] + ny * rb + ty * rb * k) + ' ' + f(b[0] - nx * rb + tx * rb * k, b[1] - ny * rb + ty * rb * k) + ' ' + f(b[0] - nx * rb, b[1] - ny * rb) +
+      ' L' + f(a[0] - nx * ra, a[1] - ny * ra) +
+      ' C' + f(a[0] - nx * ra - tx * ra * k, a[1] - ny * ra - ty * ra * k) + ' ' + f(a[0] + nx * ra - tx * ra * k, a[1] + ny * ra - ty * ra * k) + ' ' + f(a[0] + nx * ra, a[1] + ny * ra) + ' Z';
   }
   function buildBody(v) {
     var B = v.B, W = v.W, Hh = v.Hh, Hb = v.Hb || v.Hh, L = v.lift, t = v.tilt; // Hh: hips, Hb: knees and hem
@@ -442,6 +447,14 @@ canvas { display: block; width: 100%; height: 100%; }
     var gown = neck.concat(right, left);
     var cupL = [[-(B - 3), -306], [-(B - 11), -296], [-14, -293], [-5, -297]];
     var chest = [[-34, -336, 1], [-40, -343], [-26, -350], [-9, -354], [-7.5, -370, 1], [7.5, -370, 1], [9, -354], [26, -350], [40, -343], [34, -336, 1], [24, -330], [14, -329], [5, -323], [0, -318, 1], [-5, -323], [-14, -329], [-24, -330]];
+    var arm = (function () { // elbow out to the side, wrist above the hip, fingers draped over the hip
+      var el = [Hh + 10, -288], wr = [Hh * .84 + 4, -236], dx = wr[0] - el[0], dy = wr[1] - el[1], l = Math.hypot(dx, dy), a = Math.atan2(dy, dx) + .38, d = [Math.cos(a), Math.sin(a)], n = [-d[1], d[0]];
+      var P = function (u, v) { return [wr[0] + u * d[0] + v * n[0], wr[1] + u * d[1] + v * n[1]]; }, f = function (q) { return q[0].toFixed(2) + ' ' + q[1].toFixed(2); };
+      var hand = [P(-1, -4.6), P(5, -5.2), P(11, -5), P(16.5, -3.4), P(19, -.6), P(18.4, 2.6), P(13, 4.6), P(6, 5), P(-1, 4.4)];
+      var fingers = 'M' + f(P(10, -2.4)) + ' L' + f(P(17.6, -1.6)) + ' M' + f(P(10, 0)) + ' L' + f(P(18.6, .7)) + ' M' + f(P(10, 2.4)) + ' L' + f(P(17, 2.6));
+      var c1 = [wr[0] - (dx / l) * 2, wr[1] - (dy / l) * 2], nn = [-dy / l, dx / l], cuff = 'M' + f([c1[0] + nn[0] * 3.8, c1[1] + nn[1] * 3.8]) + ' L' + f([c1[0] - nn[0] * 3.8, c1[1] - nn[1] * 3.8]);
+      return { el: el, wr: wr, hand: hand, fingers: fingers, cuff: cuff, nails: [P(18, -2), P(18.8, .4), P(18, 2.4), P(16, 3.9)] };
+    })();
     var legP = [[7, -176], [20, -180], [24, -150], [22, -104], [21, -74], [20, -40], [18, -14], [11, -14], [9, -40], [8, -74], [7, -104], [5, -150]];
     return {
       gownP: gown,
@@ -455,15 +468,13 @@ canvas { display: block; width: 100%; height: 100%; }
       slit: MS(crD([[6, -178], [4, -100], [2, -2]], false) + ' ' + crD([[22, -176], [26, -120], [30, -60], [36, -2]], false), 1.8, 0),
       shoe: MS('M11 -1 C14 -5 20 -5 23 -1 L24 2 L10 2 Z', 1.4, 0),
       upperL: MS(limbD([-33, -340], [-55, -296], 12.5, 9.5), 1.5, 0),
-      foreL: MS(limbD([-55, -296], [-60, -347], 9, 7), 1.5, 0),
-      upperR: MS(limbD([33, -340], [50, -292], 12.5, 9.5), 1.5, 0),
-      foreR: MS(limbD([50, -292], [63, -247], 9, 7), 1.5, 0),
-      sleeveL: MS(crD([[-71, -341, 1], [-50, -339, 1], [-49, -318], [-48.5, -298], [-52, -286], [-58, -268], [-64, -238], [-70, -204], [-73, -180], [-79, -166, 1], [-84, -190], [-86, -232], [-83, -282], [-77, -318]], true), 1.7),
-      cuffL: MS('M-71 -341 C-66 -344 -55 -343 -50 -339', 1.2, 0),
-      sleeveR: MS(crD([[52, -301], [59, -295], [66, -274], [72, -251, 1], [76, -222], [80, -184], [76, -160, 1], [70, -177], [64, -206], [60, -232], [57, -247, 1], [53, -264], [47, -282], [45, -295]], true), 1.7),
-      cuffR: MS('M57 -247 C61 -246 67 -248 72 -251', 1.2, 0),
-      handR: MS(crD([[61.5, -248], [72, -249.5], [80, -246.5], [87.5, -242.5], [88, -240.4], [79, -241.6], [88.6, -236.4], [88, -234.2], [78.4, -237.4], [85.8, -230.6], [84.8, -228.6], [76.4, -233.2], [81.8, -224.8], [80, -223.6], [72.6, -230], [67, -233], [64.6, -240.5]], true), 1.25, 0),
-      thumbR: MS('M67 -247 C71 -248 75 -246.5 78.5 -243.5', 1, 0),
+      foreL: MS(limbOpenD([-55, -296], [-60, -347], 9, 7), 1.5, 0),
+      upperR: MS(limbD([33, -340], arm.el, 12.5, 9.5), 1.5, 0),
+      foreR: MS(limbOpenD(arm.el, arm.wr, 9, 7), 1.5, 0),
+      handR: MS(crD(arm.hand, true), 1.25, 0),
+      thumbR: MS(arm.fingers, .9, 0),
+      cuffs: MS(arm.cuff + ' M-64.2 -341.2 C-61 -342.4 -58 -342.3 -55.6 -341', 1.3, 0),
+      nailsR: arm.nails,
       fistL: MS(crD([[-67.5, -358], [-58, -360.5], [-54.5, -355], [-54.5, -347.5], [-58.5, -344], [-66, -344.5], [-68.5, -351]], true) + ' M-66 -355 C-62 -355.6 -59 -355.8 -56 -355.5 M-66.4 -351 C-62 -351.4 -59 -351.4 -55.6 -351 M-66 -347 C-62 -347.4 -59 -347.4 -56.6 -347.2', 1.3, 0)
     };
   }
@@ -535,10 +546,8 @@ canvas { display: block; width: 100%; height: 100%; }
     // 2. arms (sheer black over skin): upper arms, then forearms
     var meshFill = function (list) { if (F <= .5) return; var ck = clamp(cF(.5, .25)); ctx.save(); ctx.globalAlpha *= ck; ctx.fillStyle = '#fbf5e8'; list.forEach(function (p) { ctx.fill(p.path); }); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = MCOL.skin; list.forEach(function (p) { ctx.fill(p.path); }); ctx.globalAlpha *= STYLE === 'sketch' ? .6 : .52; ctx.fillStyle = MCOL.mesh; list.forEach(function (p) { ctx.fill(p.path); }); ctx.restore(); };
     [[Bd.upperL, Bd.foreL], [Bd.upperR, Bd.foreR]].forEach(function (a) { meshFill([a[0]]); draw(a[0], F / .6 * 1.4, lw); meshFill([a[1]]); draw(a[1], F / .6 * 1.4, lw); });
-    // 3. wide sheer sleeves over the forearms, darker at each cuff
-    meshFill([Bd.sleeveL, Bd.sleeveR]); shade(Bd.sleeveL, cF(.7, .3), 6, -.5); shade(Bd.sleeveR, cF(.7, .3), 6, -.5); // the same sheer black as the high neck
-    if (F > .6) { ctx.save(); ctx.globalAlpha *= .45 * clamp(cF(.6, .2)); ctx.fillStyle = '#120a14'; ctx.beginPath(); ctx.ellipse(-60.5, -339.5, 10.5, 2.6, .08, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(64.5, -248.5, 7.8, 2.4, -.35, 0, 7); ctx.fill(); ctx.restore(); }
-    group([Bd.sleeveL, Bd.sleeveR, Bd.cuffL, Bd.cuffR], F / .6 * 2, lw);
+    // 3. the sleeves end at the wrists
+    group([Bd.cuffs], F / .6 * 2, lw);
     // 4. shoulders, neck and the sheer top over the chest
     meshFill([Bd.chest]);
     // 5. the gown, the leg through the slit, shoe
@@ -555,7 +564,7 @@ canvas { display: block; width: 100%; height: 100%; }
     // 6. hands: the fist on the staff, the open hand
     base([Bd.fistL, Bd.handR]); colour(Bd.fistL, MCOL.skin, cF(.56, .25), .95); colour(Bd.handR, MCOL.skin, cF(.56, .25), .95);
     group([Bd.fistL, Bd.handR, Bd.thumbR], F / .6 * 1.4, lw);
-    if (F > .74) { ctx.save(); ctx.globalAlpha *= clamp(cF(.74, .15)); ctx.fillStyle = '#9a1530'; [[-55.5, -355.5], [-55.5, -351], [87, -241.4], [88, -235.3], [85.2, -229.5], [81, -224.2]].forEach(function (n) { ctx.beginPath(); ctx.arc(n[0], n[1], 1.05, 0, 7); ctx.fill(); }); ctx.restore(); }
+    if (F > .74) { ctx.save(); ctx.globalAlpha *= clamp(cF(.74, .15)); ctx.fillStyle = '#9a1530'; [[-55.5, -355.5], [-55.5, -351]].concat(Bd.nailsR).forEach(function (n) { ctx.beginPath(); ctx.arc(n[0], n[1], 1.05, 0, 7); ctx.fill(); }); ctx.restore(); }
     // 7. a lock of hair over her left shoulder
     ctx.save(); ctx.translate(0, -16); base([M.lockR]); colour(M.lockR, MCOL.hair, cF(.62, .25), dk, -.4); draw(M.lockR, F / .6, lw); ctx.restore();
     // 8. the head: chin onto the neck, 0.86x

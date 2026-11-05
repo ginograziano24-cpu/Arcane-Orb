@@ -41,3 +41,4 @@ the overall art direction.
   is still available behind the "Mirabel" toggle as the reference.
 - Test model **C+** (10% curvier) is behind the "Body" button on the style test page; C stays the default until the user picks. Arms were cleaned up (the sleeves wrap the forearms) and the staff is thicker.
 - The wide sleeves are the same sheer black material as the high neck (no red sleeves).
+- Pose: fitted sheer sleeves that end at the wrists, right hand resting on her hip (the arm is fitted to each body's hip width), staff gripped in the left hand and clear to her feet.
