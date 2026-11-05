@@ -115,6 +115,8 @@ Each frame, the world is drawn as CPU-projected quads, sorted by depth and drawn
 
 - **Roadmap step 1 (lore) is written but not yet compiled.** Go module downloads were blocked in the session that wrote it (proxy.golang.org 403), so story.go, classsel.go, progress_ui.go, game.go and the new lore.go have only passed `gofmt -e`. First thing next session: vet both targets, then screenshot `classsel`, the Lore page and the story cards in all 7 languages, and fix anything that turns up.
 
+- **Performance plan.** `docs/PERF_NEXT.md`: Go 1.26 (Green Tea GC), PGO from the bench pprofs, Ebitengine 2.10 (Proton fix, shader precompile), frame cap and idle throttling, dual-Kawase bloom, cached distant layers. Start with section A.
+
 - **PC benchmark of the current build.** Compare against perf4 (2560×1440, DX11). The bench files are on the PC but are an older build; copy the current exe (split as above) there first.
 
   | Scene | fps (1% low) |
