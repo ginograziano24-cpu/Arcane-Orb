@@ -1,5 +1,7 @@
 # Arcane Orb: opening cinematic (preview 5)
 
+> **On hold, work in progress.** Not part of playtests; waiting for a new brief. See `docs/cinematic/wip/README.md`.
+
 About 68 seconds, before the first run. Skippable (hold), plays once on first
 launch, rewatchable from the Codex. The approved motion and timing
 blueprint is `docs/cinematic/opening_preview.html` (open it in a browser);
