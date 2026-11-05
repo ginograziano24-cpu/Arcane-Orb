@@ -133,7 +133,7 @@ canvas { display: block; width: 100%; height: 100%; }
   // pressure-tapered strokes with overshoot, a second sketchy pass and "boil".
   var boil = 0, ink = 0, tip = null, CLOCK = 0, HQ = /hq/.test(location.hash);
   // look of the sketch half: 'sketch' (pencil), 'ink' (ink and watercolour), 'comic' (bold ink, flat colour, halftone), 'flat' (clean TV cartoon)
-  var STYLE = (function () { try { var m = /style=(\w+)/.exec(location.hash + location.search); if (m && /^(sketch|ink|comic|flat)$/.test(m[1])) return m[1]; } catch (e) { } return 'sketch'; })();
+  var STYLE = (function () { try { var m = /style=(\w+)/.exec(location.hash + location.search); if (m && /^(sketch|ink|comic|flat)$/.test(m[1])) return m[1]; } catch (e) { } return 'ink'; })();
   var svgNS = 'http://www.w3.org/2000/svg', probe = document.createElementNS(svgNS, 'path');
   var probeSvg = document.createElementNS(svgNS, 'svg'); probeSvg.setAttribute('width', '0'); probeSvg.setAttribute('height', '0'); probeSvg.style.position = 'absolute'; probeSvg.appendChild(probe); document.body.appendChild(probeSvg);
   function sample(d, step) {
@@ -195,7 +195,7 @@ canvas { display: block; width: 100%; height: 100%; }
   function draw(shape, prog, wMul, col) {
     if (prog <= 0 || !shape) return;
     var st = STYLE, inky = ink || st !== 'sketch', wm = st === 'comic' ? 1.9 : st === 'ink' ? 1.55 : st === 'flat' ? 1.3 : ink ? 1.7 : 1;
-    var lineC = st === 'comic' ? '14,10,22' : st === 'flat' ? '58,34,52' : st === 'ink' ? '28,20,16' : ink ? '24,19,16' : PENCIL;
+    var lineC = PENCIL !== '50,43,38' ? PENCIL : st === 'comic' ? '14,10,22' : st === 'flat' ? '58,34,52' : st === 'ink' ? '28,20,16' : ink ? '24,19,16' : PENCIL;
     var n = shape.parts.length, w = shape.w * (wMul || 1) * wm, c = 'rgb(' + (col || lineC) + ')', bi = st === 'flat' ? 0 : boil % 3;
     ctx.lineCap = 'round'; ctx.strokeStyle = c; ctx.fillStyle = c;
     for (var k = 0; k < n; k++) {
@@ -405,38 +405,79 @@ canvas { display: block; width: 100%; height: 100%; }
   // Adult sorceress: long wavy violet-black hair, purple witch hat with a star, strapless red gown with a
   // heart notch, sheer black high-neck top and sleeves, wide red bell sleeves, high leg slit, spiral staff.
   // Local space: feet at (0, 0), about 470 tall with the hat. The head is drawn 0.86x about the neck.
-  var MO = { j: .6, ov: 1 };
-  function MS(d, w, ov) { return S(d, { j: MO.j, ov: ov == null ? MO.ov : ov, w: w }); }
+  var MO = { j: .45, ov: .6 };
+  function MS(d, w, ov) { return S(d, { j: MO.j, ov: ov == null ? MO.ov : ov, w: w, step: 4 }); }
+  // ---------------------------------------------------------------- Mirabel's body, built from a few measurements
+  // An 8-heads figure (head about 52 units, chin at -362, feet at 0). Five variants differ only slightly.
+  var MVARS = [
+    { name: 'A · Slender', B: 34, W: 15.5, Hh: 40, lift: 0, tilt: 3 },
+    { name: 'B · Classic', B: 36.5, W: 16, Hh: 43.5, lift: 0, tilt: 4 },
+    { name: 'C · Curvy', B: 38, W: 17, Hh: 48, lift: 0, tilt: 5 },
+    { name: 'D · Long legs', B: 36, W: 15, Hh: 43, lift: 9, tilt: 4 },
+    { name: 'E · Hourglass', B: 38.5, W: 14.5, Hh: 46, lift: 3, tilt: 4 }
+  ];
+  var MVAR = 1, MB = null, MBK = -1;
+  // smooth closed/open SVG path through points; a third value of 1 marks a corner
+  function crD(P, closed) {
+    var n = P.length, m = closed ? n : n - 1, d = 'M' + P[0][0].toFixed(2) + ' ' + P[0][1].toFixed(2);
+    function tg(i) { var p = P[i]; if (p[2]) return [0, 0]; var a = P[closed ? (i - 1 + n) % n : Math.max(0, i - 1)], b = P[closed ? (i + 1) % n : Math.min(n - 1, i + 1)], k = closed || (i > 0 && i < n - 1) ? .5 : 1; return [(b[0] - a[0]) * k / 3, (b[1] - a[1]) * k / 3]; }
+    for (var i = 0; i < m; i++) { var j = (i + 1) % n, t0 = tg(i), t1 = tg(j); d += ' C' + (P[i][0] + t0[0]).toFixed(2) + ' ' + (P[i][1] + t0[1]).toFixed(2) + ' ' + (P[j][0] - t1[0]).toFixed(2) + ' ' + (P[j][1] - t1[1]).toFixed(2) + ' ' + P[j][0].toFixed(2) + ' ' + P[j][1].toFixed(2); }
+    return d + (closed ? ' Z' : '');
+  }
+  function mirror(P) { return P.map(function (p) { return p.length > 2 ? [-p[0], p[1], p[2]] : [-p[0], p[1]]; }); }
+  // a tapered limb from a to b, rounded at both ends
+  function limbD(a, b, wa, wb) {
+    var dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy), nx = -dy / l, ny = dx / l, ra = wa / 2, rb = wb / 2;
+    var f = function (v) { return v.toFixed(2); };
+    return 'M' + f(a[0] + nx * ra) + ' ' + f(a[1] + ny * ra) + ' L' + f(b[0] + nx * rb) + ' ' + f(b[1] + ny * rb) + ' A' + f(rb) + ' ' + f(rb) + ' 0 0 1 ' + f(b[0] - nx * rb) + ' ' + f(b[1] - ny * rb) +
+      ' L' + f(a[0] - nx * ra) + ' ' + f(a[1] - ny * ra) + ' A' + f(ra) + ' ' + f(ra) + ' 0 0 1 ' + f(a[0] + nx * ra) + ' ' + f(a[1] + ny * ra) + ' Z';
+  }
+  function buildBody(v) {
+    var B = v.B, W = v.W, Hh = v.Hh, L = v.lift, t = v.tilt;
+    var neck = [[-34, -336, 1], [-24, -330], [-14, -329], [-5, -323], [0, -318, 1], [5, -323], [14, -329], [24, -330], [34, -336, 1]];
+    var right = [[B, -313], [W + 10, -292], [W, -258 + L], [Hh - 2, -212 + L + t], [Hh * .88, -170 + L * .6], [Hh * .6, -104], [Hh * .63, -78], [Hh + 16, -4, 1], [Hh * .45, 2], [0, 0]];
+    var left = [[-Hh * .45, 2], [-(Hh + 18), -4, 1], [-Hh * .63, -78], [-Hh * .6, -104], [-Hh * .9, -172 + L * .6], [-(Hh + 2), -212 + L - t], [-W, -258 + L], [-(W + 10), -292], [-B, -313]];
+    var gown = neck.concat(right, left);
+    var cupL = [[-(B - 3), -306], [-(B - 11), -296], [-14, -293], [-5, -297]];
+    var chest = [[-34, -336, 1], [-40, -343], [-26, -350], [-9, -354], [-7.5, -370, 1], [7.5, -370, 1], [9, -354], [26, -350], [40, -343], [34, -336, 1], [24, -330], [14, -329], [5, -323], [0, -318, 1], [-5, -323], [-14, -329], [-24, -330]];
+    var legP = [[7, -176], [20, -180], [24, -150], [22, -104], [21, -74], [20, -40], [18, -14], [11, -14], [9, -40], [8, -74], [7, -104], [5, -150]];
+    return {
+      gownP: gown,
+      gown: MS(crD(gown, true), 2.3),
+      bust: MS(crD(cupL, false) + ' ' + crD(mirror(cupL), false) + ' M0 -318 C0 -313 .4 -310 .8 -307', 1.4, 0),
+      seams: MS(crD([[-14, -292], [-9, -258 + L], [-16, -212 + L], [-22, -160]], false) + ' ' + crD([[14, -292], [9, -258 + L], [15, -214 + L], [17, -178]], false) + ' ' + crD([[-28, -120], [-33, -60], [-40, -4]], false) + ' ' + crD([[0, -150], [-1, -80], [-3, -2]], false), 1, 0),
+      chestP: chest,
+      chest: MS(crD(chest, true), 1.4, 0),
+      shoulders: MS(crD([[-40, -343], [-26, -350], [-9, -354], [-7.5, -368]], false) + ' ' + crD([[40, -343], [26, -350], [9, -354], [7.5, -368]], false) + ' M-20 -342 C-15 -340 -10 -339 -5 -339.5 M20 -342 C15 -340 10 -339 5 -339.5', 1.3, 0),
+      leg: MS(crD(legP, true), 1.6),
+      slit: MS(crD([[6, -178], [4, -100], [2, -2]], false) + ' ' + crD([[22, -176], [26, -120], [30, -60], [36, -2]], false), 1.8, 0),
+      shoe: MS('M11 -1 C14 -5 20 -5 23 -1 L24 2 L10 2 Z', 1.4, 0),
+      upperL: MS(limbD([-33, -340], [-55, -296], 12.5, 9.5), 1.5, 0),
+      foreL: MS(limbD([-55, -296], [-60, -347], 9, 7), 1.5, 0),
+      upperR: MS(limbD([33, -340], [50, -292], 12.5, 9.5), 1.5, 0),
+      foreR: MS(limbD([50, -292], [63, -247], 9, 7), 1.5, 0),
+      sleeveL: MS(crD([[-50, -306], [-63, -310], [-70, -296], [-76, -260], [-82, -214], [-80, -180], [-74, -168, 1], [-66, -188], [-58, -226], [-52, -270], [-49, -292]], true), 1.7),
+      sleeveR: MS(crD([[46, -300], [56, -299], [64, -281], [70, -246], [76, -206], [78, -176], [72, -160, 1], [66, -184], [60, -220], [54, -256], [47, -284]], true), 1.7),
+      handR: MS(crD([[61.5, -248], [72, -249.5], [80, -246.5], [87.5, -242.5], [88, -240.4], [79, -241.6], [88.6, -236.4], [88, -234.2], [78.4, -237.4], [85.8, -230.6], [84.8, -228.6], [76.4, -233.2], [81.8, -224.8], [80, -223.6], [72.6, -230], [67, -233], [64.6, -240.5]], true), 1.25, 0),
+      thumbR: MS('M67 -247 C71 -248 75 -246.5 78.5 -243.5', 1, 0),
+      fistL: MS(crD([[-67.5, -358], [-58, -360.5], [-54.5, -355], [-54.5, -347.5], [-58.5, -344], [-66, -344.5], [-68.5, -351]], true) + ' M-66 -355 C-62 -355.6 -59 -355.8 -56 -355.5 M-66.4 -351 C-62 -351.4 -59 -351.4 -55.6 -351 M-66 -347 C-62 -347.4 -59 -347.4 -56.6 -347.2', 1.3, 0)
+    };
+  }
+  function body() { if (MBK !== MVAR) { MB = buildBody(MVARS[MVAR]); MBK = MVAR; } return MB; }
   var MIRA = {
-    hairBack: MS('M-18 -396 Q-34 -390 -38 -368 Q-46 -350 -40 -332 Q-52 -314 -44 -294 Q-56 -274 -48 -254 Q-58 -232 -48 -212 Q-56 -196 -50 -178 Q-42 -188 -40 -200 Q-36 -214 -34 -230 L40 -230 Q44 -206 52 -186 Q58 -168 64 -150 Q72 -170 64 -190 Q74 -210 62 -228 Q72 -250 60 -268 Q68 -290 56 -308 Q62 -330 52 -348 Q54 -380 34 -394 Q20 -402 8 -400 Q-6 -400 -18 -396 Z', 2),
-    hairWave: MS('M-38 -330 Q-44 -312 -40 -296 Q-48 -276 -44 -260 M56 -330 Q62 -312 58 -296 Q66 -276 60 -258 M62 -232 Q68 -214 62 -196', 1.1, 0),
-    staff: MS('M-63 -416 C-65 -360 -69 -260 -74 -160 C-77 -90 -80 -40 -82 -2 L-77 -2 C-75 -40 -72 -90 -69 -160 C-64 -260 -60 -360 -57 -416 Z', 1.6, 0),
-    staffHead: MS('M-62 -414 C-74 -420 -78 -436 -74 -452 C-70 -466 -52 -470 -40 -462 C-30 -454 -30 -436 -38 -424 C-44 -416 -54 -412 -62 -414 Z', 1.8, 0),
-    spiral: MS('M-54 -430 C-66 -432 -68 -450 -56 -454 C-46 -457 -40 -446 -45 -439 C-49 -434 -56 -437 -55 -443 C-54 -447 -49 -446 -50 -442', 1.3, 0),
-    sleeveL: MS('M-54 -304 C-60 -306 -70 -304 -72 -294 C-76 -270 -84 -230 -86 -200 C-87 -184 -84 -172 -80 -164 C-72 -176 -64 -190 -60 -206 C-56 -230 -54 -262 -52 -290 Z', 1.8),
-    sleeveR: MS('M50 -290 C58 -288 64 -278 66 -264 C72 -236 78 -200 80 -170 C80 -160 76 -152 70 -148 C66 -170 60 -200 54 -226 C50 -246 46 -270 46 -284 Z', 1.8),
-    upperL: MS('M-34 -328 C-46 -322 -56 -308 -64 -292 C-68 -284 -60 -278 -54 -282 C-46 -294 -38 -306 -28 -314 Z', 1.6),
-    foreL: MS('M-55 -300 C-53 -314 -55 -328 -57 -338 L-69 -340 C-71 -326 -71 -310 -67 -292 Z', 1.6),
-    fistL: MS('M-71 -346 C-71 -353 -59 -355 -56 -349 C-54 -343 -56 -335 -60 -333 C-66 -331 -71 -337 -71 -346 Z M-69 -345 L-58 -346 M-69 -341 L-58 -341', 1.4, 0),
-    upperR: MS('M32 -328 C44 -320 52 -304 56 -284 C58 -276 50 -270 45 -278 C41 -292 35 -304 27 -314 Z', 1.6),
-    foreR: MS('M45 -282 C51 -266 57 -248 63 -232 L71 -236 C65 -252 59 -270 55 -286 Z', 1.6),
-    handR: MS('M64 -234 C70 -240 76 -236 76 -228 C76 -222 72 -218 68 -218 C64 -222 62 -228 64 -234 Z M74 -222 C78 -216 81 -212 84 -208 M72 -219 C75 -213 78 -208 80 -204 M70 -218 C72 -212 74 -207 75 -203 M76 -229 C79 -228 82 -226 85 -224', 1.3, 0),
-    gown: MS('M-34 -322 C-32 -334 -18 -338 -6 -326 L-2 -321 L2 -326 C14 -338 32 -336 34 -324 C46 -312 47 -292 32 -282 C24 -276 18 -262 17 -246 C22 -226 46 -206 49 -178 C52 -150 44 -120 40 -86 C38 -54 50 -26 62 -4 C40 2 20 -2 0 2 C-20 -2 -38 2 -54 -4 C-46 -26 -40 -54 -40 -86 C-42 -120 -52 -150 -50 -180 C-48 -206 -24 -226 -20 -248 C-20 -262 -26 -276 -34 -282 C-48 -292 -48 -312 -34 -322 Z', 2.4),
-    bust: MS('M-42 -300 C-34 -285 -16 -282 -6 -291 M2 -292 C12 -282 30 -284 38 -298 M-2 -321 C-2 -314 -1.5 -310 -1 -306', 1.5),
-    seams: MS('M-16 -284 C-14 -262 -12 -246 -14 -220 C-18 -190 -24 -160 -26 -120 M14 -284 C12 -262 10 -246 12 -222 C13 -200 16 -176 18 -158 M-30 -110 C-32 -80 -36 -44 -42 -6 M2 -150 C0 -100 -2 -50 -4 -2', 1.1, 0),
-    leg: MS('M18 -156 C26 -158 32 -154 34 -140 C36 -116 32 -96 30 -80 C30 -60 30 -36 28 -14 L20 -14 C18 -36 18 -60 16 -80 C14 -104 13 -130 18 -156 Z', 1.7),
-    slit: MS('M18 -158 C14 -110 12 -60 10 -2 M33 -150 C36 -100 42 -50 50 -3', 1.9),
-    shoe: MS('M18 -14 C22 -20 30 -20 32 -12 L34 0 L16 0 Z M30 -6 L28 4', 1.6, 0),
-    shoulders: MS('M-34 -324 C-38 -333 -26 -342 -6 -344 L16 -344 C30 -342 38 -334 34 -324', 1.6, 0),
-    neck: MS('M-2 -352 L-3 -342 M14 -352 L15 -342 M-4 -346 C2 -343 10 -343 16 -346', 1.4, 0),
+    hairBack: MS('M-18 -396 Q-32 -390 -36 -370 Q-42 -352 -38 -336 Q-46 -318 -40 -300 Q-46 -282 -38 -264 Q-42 -250 -36 -238 Q-30 -246 -28 -256 L36 -256 Q38 -246 44 -236 Q52 -250 46 -264 Q54 -282 48 -300 Q56 -318 48 -336 Q52 -356 46 -372 Q40 -394 24 -398 Q14 -402 8 -400 Q-6 -400 -18 -396 Z', 2),
+    hairWave: MS('M-34 -330 Q-40 -312 -36 -296 M44 -330 Q50 -312 46 -296', 1.1, 0),
+    staff: MS('M-60.5 -420 C-63 -340 -70 -200 -82.5 -2 L-77.5 -2 C-65 -200 -58 -340 -55.5 -420 Z', 1.6, 0),
+    staffHead: MS('M-58 -420 C-70 -426 -74 -442 -70 -458 C-66 -472 -48 -476 -36 -468 C-26 -460 -26 -442 -34 -430 C-40 -422 -50 -418 -58 -420 Z', 1.8, 0),
+    spiral: MS('M-50 -436 C-62 -438 -64 -456 -52 -460 C-42 -463 -36 -452 -41 -445 C-45 -440 -52 -443 -51 -449 C-50 -453 -45 -452 -46 -448', 1.3, 0),
     lockR: MS('M24 -372 C34 -360 38 -344 36 -326 C35 -312 40 -300 44 -286 C36 -292 30 -306 28 -322 C26 -338 22 -352 18 -364 Z', 1.4),
     // head parts (drawn scaled about the neck)
-    face: MS('M-15 -388 C-16 -400 -4 -404 6 -404 C18 -404 28 -400 27 -388 C27 -374 24 -362 17 -353 C13 -348 9 -345 6 -344 C3 -345 -1 -348 -5 -353 C-12 -362 -15 -374 -15 -388 Z', 1.8, 0),
+    face: MS('M-15 -388 C-16 -400 -4 -404 6 -404 C18 -404 28 -400 27 -388 C27 -375 23 -363 16 -354 C12 -349 9 -346 6 -344 C3 -346 0 -349 -4 -354 C-11 -363 -15 -375 -15 -388 Z', 1.8, 0),
     bangs: MS('M-17 -396 C-8 -406 20 -408 31 -396 C32 -388 30 -382 28 -376 C26 -382 23 -385 19 -381 C16 -387 12 -389 8 -383 C5 -389 1 -390 -2 -384 C-5 -389 -9 -388 -11 -382 C-14 -386 -17 -390 -17 -396 Z', 1.6, 0),
     side: MS('M-15 -392 C-20 -378 -22 -360 -19 -346 C-18 -338 -20 -330 -16 -324 C-12 -338 -12 -356 -12 -374 Z M27 -392 C32 -380 33 -364 30 -350 C29 -342 31 -334 27 -328 C24 -342 24 -358 24 -374 Z', 1.4, 0),
     hat: MS('M-66 -394 C-42 -414 56 -420 82 -398 C56 -386 -38 -382 -66 -394 Z M-20 -400 C-24 -438 -10 -470 18 -488 C26 -484 26 -478 18 -470 C24 -444 30 -420 34 -402', 2.2),
     hatStar: MS('M8 -430 L11 -423 L18 -422 L13 -417 L14 -410 L8 -414 L2 -410 L3 -417 L-2 -422 L5 -423 Z', 1.2, 0),
-    brow: MS('M-11 -382 C-6 -385.5 -1 -385.6 3 -384 M10 -384 C14 -385.6 19 -385.5 23 -382', 1.2, 0),
+    brow: MS('M-11 -383 C-6 -386 -1 -386 3 -384 M10 -385.5 C14 -388.6 19 -388.2 23 -384.4', 1.2, 0),
     lips: S('M2 -355.6 C4.2 -357.8 6 -357.4 7 -356.6 C8 -357.4 9.8 -357.8 12 -355.6 C10 -352 4 -352 2 -355.6 Z', { w: 1, ov: 0, j: .2 })
   };
   var MWINK = false;
@@ -479,41 +520,40 @@ canvas { display: block; width: 100%; height: 100%; }
     ctx.restore();
   }
   function mirabelDrawn(x, y, sc, F, T) {
-    ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); var lw = 1 / sc * .9, M = MIRA, dk = STYLE === 'sketch' ? 2.4 : 1.5;
+    ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); var lw = 1 / sc * .9, M = MIRA, Bd = body(), dk = STYLE === 'sketch' ? 2.4 : 1.5;
     var base = function (list) { if (F > .45) { ctx.save(); ctx.globalAlpha *= clamp((F - .45) / .2); ctx.fillStyle = '#fbf5e8'; list.forEach(function (p) { ctx.fill(p.path); }); ctx.restore(); } };
     var cF = function (a, b) { return (F - a) / b; };
-    // 1. back hair and the staff, with their own lines (behind everything)
-    base([M.hairBack]); colour(M.hairBack, MCOL.hair, cF(.5, .3), dk, -.4); group([M.hairBack, M.hairWave], F / .6 * 2, lw);
+    // 1. back hair (follows the head up), the staff
+    ctx.save(); ctx.translate(0, -16); base([M.hairBack]); colour(M.hairBack, MCOL.hair, cF(.5, .3), dk, -.4); group([M.hairBack, M.hairWave], F / .6 * 2, lw); ctx.restore();
     base([M.staff, M.staffHead]); colour(M.staff, MCOL.wood, cF(.55, .25), 1.3); colour(M.staffHead, MCOL.wood, cF(.55, .25), 1.4); shade(M.staffHead, cF(.7, .3), 4, -.5);
     group([M.staff, M.staffHead, M.spiral], F / .6 * 3, lw);
-    // 2. sleeves hang behind the arms
-    base([M.sleeveL, M.sleeveR]); colour(M.sleeveL, MCOL.gown, cF(.52, .3), 1.3); colour(M.sleeveR, MCOL.gown, cF(.52, .3), 1.3); shade(M.sleeveL, cF(.7, .3), 6, -.5); shade(M.sleeveR, cF(.7, .3), 6, -.5);
-    group([M.sleeveL, M.sleeveR], F / .6 * 2, lw);
-    // 3. skin under the sheer black top: neck, chest, arms
-    var chest = new Path2D(); chest.moveTo(-34, -324); chest.bezierCurveTo(-38, -333, -26, -342, -6, -344); chest.lineTo(16, -344); chest.bezierCurveTo(30, -342, 38, -334, 34, -324); chest.bezierCurveTo(32, -336, 14, -338, 2, -326); chest.lineTo(-2, -321); chest.lineTo(-6, -326); chest.bezierCurveTo(-18, -338, -32, -334, -34, -324); chest.closePath(); chest.rect(-4, -354, 20, 12);
-    if (F > .5) { var ck = clamp(cF(.5, .25)); ctx.save(); ctx.globalAlpha *= ck; ctx.fillStyle = '#fbf5e8'; ctx.fill(chest); [M.upperL, M.foreL, M.upperR, M.foreR].forEach(function (p) { ctx.fill(p.path); });
-      ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = MCOL.skin; ctx.fill(chest); [M.upperL, M.foreL, M.upperR, M.foreR].forEach(function (p) { ctx.fill(p.path); });
-      ctx.globalAlpha *= STYLE === 'sketch' ? .62 : .55; ctx.fillStyle = MCOL.mesh; ctx.fill(chest); [M.upperL, M.foreL, M.upperR, M.foreR].forEach(function (p) { ctx.fill(p.path); }); ctx.restore(); }
-    // 4. the gown, the leg through the slit, shoe
-    base([M.gown]); colour(M.gown, MCOL.gown, cF(.52, .3), 1.3); shade(M.gown, cF(.7, .3), 6, -.5);
-    if (F > .6) { var gk = clamp(cF(.6, .2)); ctx.save(); ctx.clip(M.gown.path); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha *= .4 * gk; ctx.fillStyle = MCOL.gownDk; ctx.beginPath(); ctx.ellipse(-22, -284, 18, 5, .1, 0, 7); ctx.ellipse(19, -285, 18, 5, -.1, 0, 7); ctx.fill(); ctx.restore(); }
-    base([M.leg, M.shoe]); colour(M.leg, MCOL.skin, cF(.55, .25), .95); colour(M.shoe, '#1c1222', cF(.58, .2), 1.6);
-    // satin sheen: hip, bust, thigh
-    if (F > .7) { var sk = clamp(cF(.7, .2)); ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha *= .5 * sk; ctx.strokeStyle = '#ff9fb0'; ctx.lineCap = 'round'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(-30, -224); ctx.quadraticCurveTo(-42, -200, -40, -168); ctx.moveTo(-26, -150); ctx.quadraticCurveTo(-28, -100, -30, -40); ctx.moveTo(36, -214); ctx.quadraticCurveTo(44, -196, 42, -170); ctx.stroke();
-      ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(-32, -312); ctx.quadraticCurveTo(-26, -322, -17, -322); ctx.moveTo(8, -322); ctx.quadraticCurveTo(16, -326, 24, -318); ctx.stroke();
-      ctx.lineWidth = 1.6; ctx.strokeStyle = '#fff2e8'; ctx.beginPath(); ctx.moveTo(22, -136); ctx.quadraticCurveTo(25, -110, 23, -90); ctx.stroke(); ctx.restore(); }
-    // hearts: the notch and the waist
-    if (F > .72) { var hk = clamp(cF(.72, .15)); heartAt(-2, -317, 6, MCOL.gownDk, .9 * hk); heartAt(0, -252, 12, MCOL.gownDk, .8 * hk); }
-    group([M.gown, M.bust, M.seams, M.leg, M.slit, M.shoe], F / .6 * 1.2, lw);
-    // 5. arms in front, the fist on the staff, the open hand
-    base([M.fistL, M.handR]); colour(M.fistL, MCOL.skin, cF(.56, .25), .95); colour(M.handR, MCOL.skin, cF(.56, .25), .95);
-    group([M.upperL, M.foreL, M.fistL, M.upperR, M.foreR, M.handR, M.shoulders, M.neck], F / .6 * 1.4, lw);
-    if (F > .74) { ctx.save(); ctx.globalAlpha *= clamp(cF(.74, .15)); ctx.fillStyle = '#9a1530'; [[-70, -347], [83, -207], [79, -203], [74, -202], [84, -223]].forEach(function (n) { ctx.beginPath(); ctx.arc(n[0], n[1], 1.2, 0, 7); ctx.fill(); }); ctx.restore(); } // red nails
-    // a lock of hair over her left shoulder
-    base([M.lockR]); colour(M.lockR, MCOL.hair, cF(.62, .25), dk, -.4); draw(M.lockR, F / .6, lw);
-    // 6. the head, 0.86x about the neck
-    ctx.save(); ctx.translate(6, -344); ctx.scale(.86, .86); ctx.translate(-6, 344); var hl = lw / .86;
+    // 2. sleeves hang behind
+    base([Bd.sleeveL, Bd.sleeveR]); colour(Bd.sleeveL, MCOL.gown, cF(.52, .3), 1.3); colour(Bd.sleeveR, MCOL.gown, cF(.52, .3), 1.3); shade(Bd.sleeveL, cF(.7, .3), 6, -.5); shade(Bd.sleeveR, cF(.7, .3), 6, -.5);
+    group([Bd.sleeveL, Bd.sleeveR], F / .6 * 2, lw);
+    // 3. arms (sheer black over skin): upper arms first, forearms over them
+    var meshFill = function (list) { if (F <= .5) return; var ck = clamp(cF(.5, .25)); ctx.save(); ctx.globalAlpha *= ck; ctx.fillStyle = '#fbf5e8'; list.forEach(function (p) { ctx.fill(p.path); }); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = MCOL.skin; list.forEach(function (p) { ctx.fill(p.path); }); ctx.globalAlpha *= STYLE === 'sketch' ? .6 : .52; ctx.fillStyle = MCOL.mesh; list.forEach(function (p) { ctx.fill(p.path); }); ctx.restore(); };
+    [[Bd.upperL, Bd.foreL], [Bd.upperR, Bd.foreR]].forEach(function (a) { meshFill([a[0]]); draw(a[0], F / .6 * 1.4, lw); meshFill([a[1]]); draw(a[1], F / .6 * 1.4, lw); });
+    // 4. shoulders, neck and the sheer top over the chest
+    meshFill([Bd.chest]);
+    // 5. the gown, the leg through the slit, shoe
+    base([Bd.gown]); colour(Bd.gown, MCOL.gown, cF(.52, .3), 1.3); shade(Bd.gown, cF(.7, .3), 6, -.5);
+    base([Bd.shoe]); colour(Bd.shoe, '#1c1222', cF(.58, .2), 1.6);
+    var v = MVARS[MVAR];
+    if (F > .7) { var sk = clamp(cF(.7, .2)); ctx.save(); ctx.clip(Bd.gown.path); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha *= .3 * sk; ctx.fillStyle = MCOL.gownDk; ctx.beginPath(); ctx.ellipse(-(v.B * .5), -291, v.B * .42, 3.2, .08, 0, 7); ctx.ellipse(v.B * .5, -291, v.B * .42, 3.2, -.08, 0, 7); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha *= .5 * sk; ctx.strokeStyle = '#ff9fb0'; ctx.lineCap = 'round'; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(-(v.B - 6), -318); ctx.quadraticCurveTo(-(v.B * .6), -326, -12, -324); ctx.moveTo(10, -324); ctx.quadraticCurveTo(v.B * .55, -326, v.B - 8, -318);
+      ctx.moveTo(-(v.Hh - 8), -232 + v.lift); ctx.quadraticCurveTo(-(v.Hh - 2), -210 + v.lift, -(v.Hh - 6), -180); ctx.moveTo(-22, -150); ctx.quadraticCurveTo(-24, -100, -28, -40); ctx.moveTo(14, -112); ctx.quadraticCurveTo(17, -100, 16, -88); ctx.stroke();
+      ctx.restore(); }
+    if (F > .72) { var hk = clamp(cF(.72, .15)); heartAt(0, -314.5, 5.5, MCOL.gownDk, .9 * hk); heartAt(0, -250 + v.lift, 11, MCOL.gownDk, .8 * hk); }
+    group([Bd.gown, Bd.bust, Bd.seams, Bd.shoe, Bd.chest, Bd.shoulders], F / .6 * 1.2, lw);
+    // 6. hands: the fist on the staff, the open hand
+    base([Bd.fistL, Bd.handR]); colour(Bd.fistL, MCOL.skin, cF(.56, .25), .95); colour(Bd.handR, MCOL.skin, cF(.56, .25), .95);
+    group([Bd.fistL, Bd.handR, Bd.thumbR], F / .6 * 1.4, lw);
+    if (F > .74) { ctx.save(); ctx.globalAlpha *= clamp(cF(.74, .15)); ctx.fillStyle = '#9a1530'; [[-55.5, -355.5], [-55.5, -351], [87, -241.4], [88, -235.3], [85.2, -229.5], [81, -224.2]].forEach(function (n) { ctx.beginPath(); ctx.arc(n[0], n[1], 1.05, 0, 7); ctx.fill(); }); ctx.restore(); }
+    // 7. a lock of hair over her left shoulder
+    ctx.save(); ctx.translate(0, -16); base([M.lockR]); colour(M.lockR, MCOL.hair, cF(.62, .25), dk, -.4); draw(M.lockR, F / .6, lw); ctx.restore();
+    // 8. the head: chin onto the neck, 0.86x
+    ctx.save(); ctx.translate(0, -362); ctx.scale(.86, .86); ctx.translate(-6, 344); var hl = lw / .86;
     base([M.face]); colour(M.face, MCOL.skin, cF(.6, .25), .9);
     base([M.side, M.bangs]); colour(M.side, MCOL.hair, cF(.62, .25), dk, -.4); colour(M.bangs, MCOL.hair, cF(.62, .25), dk, -.4);
     base([M.hat]); colour(M.hat, MCOL.vio, cF(.62, .3), 1.35); shade(M.hat, cF(.75, .25), 5, -.6);
@@ -521,20 +561,21 @@ canvas { display: block; width: 100%; height: 100%; }
     group([M.face, M.side, M.bangs, M.hat, M.hatStar], F / .6 * 1.3, hl);
     if (F > .66) {
       var k = clamp(cF(.66, .2));
-      ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.lineCap = 'round'; ctx.strokeStyle = MCOL.hairHi + (.55 * k) + ')'; ctx.lineWidth = 1.8;
-      ctx.beginPath(); ctx.moveTo(-8, -399); ctx.quadraticCurveTo(4, -402.5, 18, -400); ctx.stroke(); ctx.restore();
+      ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.lineCap = 'round'; ctx.strokeStyle = MCOL.hairHi + (.55 * k) + ')'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(-8, -399); ctx.quadraticCurveTo(4, -402.5, 18, -400); ctx.stroke(); ctx.restore();
+      ctx.save(); ctx.globalAlpha *= .5 * k; ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = '#9a5ab0'; ctx.beginPath(); ctx.ellipse(-3.5, -375.6, 7, 2.6, -.08, 0, 7); ctx.ellipse(16.5, -375.6, 7, 2.6, .08, 0, 7); ctx.fill(); ctx.restore(); // eyeshadow
       animeEye(-3, -371, -1, k, false); animeEye(16, -371, 1, k, MWINK);
       group([M.brow], k, hl);
-      ctx.save(); ctx.globalAlpha *= k; ctx.strokeStyle = 'rgba(120,60,50,.85)'; ctx.lineWidth = .9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(8.6, -366); ctx.lineTo(9.6, -362.6); ctx.lineTo(7.8, -362); ctx.stroke();
-      ctx.fillStyle = MCOL.lip; ctx.fill(M.lips.path); ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.beginPath(); ctx.ellipse(5.6, -353.6, 1.6, .55, 0, 0, 7); ctx.fill();
-      ctx.strokeStyle = '#6e1022'; ctx.lineWidth = .8; ctx.beginPath(); ctx.moveTo(1.6, -356.4); ctx.quadraticCurveTo(7, -354.2, 12.4, -356.4); ctx.stroke();
-      ctx.fillStyle = 'rgba(232,90,120,.28)'; ctx.beginPath(); ctx.ellipse(-6, -362, 4.5, 2.2, 0, 0, 7); ctx.ellipse(19.5, -362, 4.5, 2.2, 0, 0, 7); ctx.fill();
+      ctx.save(); ctx.globalAlpha *= k; ctx.strokeStyle = 'rgba(120,60,50,.8)'; ctx.lineWidth = .8; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(8.8, -365); ctx.lineTo(9.4, -362.6); ctx.lineTo(8, -362.2); ctx.stroke();
+      // a smirk: fuller lower lip, the right corner lifted
+      var lip = new Path2D('M2.4 -355.4 C4.4 -357.6 6.2 -357.2 7.2 -356.5 C8.2 -357.4 10.4 -358 12.6 -356.8 C10.6 -352.6 4.4 -352.2 2.4 -355.4 Z');
+      ctx.fillStyle = MCOL.lip; ctx.fill(lip); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.ellipse(6.4, -353.5, 1.5, .5, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#6e1022'; ctx.lineWidth = .75; ctx.beginPath(); ctx.moveTo(2, -355.6); ctx.quadraticCurveTo(7.2, -354.3, 13, -357.3); ctx.stroke();
+      ctx.fillStyle = 'rgba(232,90,120,.24)'; ctx.beginPath(); ctx.ellipse(-6, -362, 4.5, 2, 0, 0, 7); ctx.ellipse(19.5, -362, 4.5, 2, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#2a1620'; ctx.beginPath(); ctx.arc(21, -360.5, .6, 0, 7); ctx.fill(); // beauty mark
       ctx.restore();
     }
     ctx.restore();
-    // a glow and sparkles around the staff head
-    if (F > .8) { var gk2 = clamp(cF(.8, .2)); ctx.save(); ctx.globalCompositeOperation = 'screen'; var sgl = ctx.createRadialGradient(-54, -442, 2, -54, -442, 50); sgl.addColorStop(0, 'rgba(255,214,120,' + (.55 * gk2) + ')'); sgl.addColorStop(1, 'rgba(255,214,120,0)'); ctx.fillStyle = sgl; ctx.fillRect(-110, -490, 110, 110); ctx.restore();
-      [[-84, -452, 6], [-30, -462, 4], [-88, -412, 3.5], [-26, -416, 3]].forEach(function (s2, i) { var tw = .6 + .4 * Math.sin((T || 0) * 5 + i * 2); ctx.save(); ctx.globalAlpha *= gk2 * tw; ctx.fillStyle = '#fff2b0'; ctx.translate(s2[0], s2[1]); ctx.beginPath(); for (var q = 0; q < 8; q++) { var rr = q % 2 ? s2[2] * .25 : s2[2]; ctx.lineTo(Math.cos(q / 8 * 6.283) * rr, Math.sin(q / 8 * 6.283) * rr); } ctx.closePath(); ctx.fill(); ctx.restore(); }); }
+    if (F > .8) { var gk2 = clamp(cF(.8, .2)); ctx.save(); ctx.globalCompositeOperation = 'screen'; var sgl = ctx.createRadialGradient(-50, -448, 2, -50, -448, 50); sgl.addColorStop(0, 'rgba(255,214,120,' + (.55 * gk2) + ')'); sgl.addColorStop(1, 'rgba(255,214,120,0)'); ctx.fillStyle = sgl; ctx.fillRect(-105, -500, 110, 110); ctx.restore(); }
     ctx.restore();
   }
   var HEART = 'M0 6 C-10 -6 -22 4 0 20 C22 4 10 -6 0 6 Z';
@@ -1178,6 +1219,8 @@ canvas { display: block; width: 100%; height: 100%; }
   var frameCache = document.createElement('canvas'); frameCache.width = W; frameCache.height = H; var fcKey = -1, fcChroma = 0;
   function fit() { var w = (cv.clientWidth || 800) * Math.min(2, window.devicePixelRatio || 1), q = Math.max(.5, Math.min(HQ ? 2 : 1, w / W)); q = Math.round(q * 20) / 20; if (q === Q && cv.width === Math.round(W * q)) return; Q = q; cv.width = frameCache.width = Math.round(W * Q); cv.height = frameCache.height = Math.round(H * Q); snap = {}; LC = {}; fcKey = -1; }
   window.addEventListener('resize', function () { fit(); if (ready) render(now, true); });
+  function inkFilm(time, k) { // old-film warmth and grain over the drawn segments
+    ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = k * (.1 + .04 * hash(Math.floor(time * 24))); ctx.fillStyle = '#b08850'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = .16 * k; var gx = -hash(Math.floor(time * 24)) * 256, gy = -hash(Math.floor(time * 24) + 7) * 256; ctx.fillStyle = ctx.createPattern(grain, 'repeat'); ctx.translate(gx, gy); ctx.fillRect(-gx, -gy, W, H); ctx.restore(); }
   function render(time, force) {
     CLOCK = time; var s = 0; for (var i = 0; i < SCENES.length; i++) if (time >= SCENES[i][0]) s = i;
     var local = time - SCENES[s][0], sketch = SCENES[s][2];
@@ -1193,11 +1236,12 @@ canvas { display: block; width: 100%; height: 100%; }
         pencilSprite(); fcKey = key; ctx = main;
       }
       ctx = main; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(frameCache, 0, 0); chromaSplit(fcChroma); ctx.setTransform(Q, 0, 0, Q, 0, 0);
-      if (STYLE === 'ink') { ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = .1 + .04 * hash(Math.floor(time * 24)); ctx.fillStyle = '#b08850'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = .16; var gx = -hash(Math.floor(time * 24)) * 256, gy = -hash(Math.floor(time * 24) + 7) * 256; ctx.fillStyle = ctx.createPattern(grain, 'repeat'); ctx.translate(gx, gy); ctx.fillRect(-gx, -gy, W, H); ctx.restore(); }
+      if (STYLE === 'ink') inkFilm(time, 1);
     } else {
       fcKey = -1; ctx = main; ctx.setTransform(Q, 0, 0, Q, 0, 0); ctx.clearRect(0, 0, W, H);
       boil = Math.floor(time * 8); tip = null;
       CHROMA = 0; ctx.save(); SCENES[s][1](local); ctx.restore(); chromaSplit(CHROMA);
+      if (STYLE === 'ink' && SCENES[s][1] === sTurn) inkFilm(time, 1 - clamp((local - 2.6) / .8)); // the page is still paper until it burns
     }
     if (time < .7) flash(1 - time / .7, '#000');
     // letterbox: eases in at the start, out at the very end
@@ -1317,6 +1361,9 @@ canvas { display: block; width: 100%; height: 100%; }
   var miraBtn = document.getElementById('miraArt');
   miraBtn.addEventListener('click', function () { MART = !MART; miraBtn.setAttribute('aria-pressed', String(MART)); miraBtn.textContent = MART ? 'Mirabel: your art' : 'Mirabel: redrawn'; LC = {}; snap = {}; fcKey = -1; if (ready) render(now, true); });
   window.__miraArt = function (on) { if (MART !== on) miraBtn.click(); };
+  window.__variants = function (sc, st) { setPlaying(false); var keep = MART, kv = MVAR; MART = false; ctx = main; ctx.setTransform(Q, 0, 0, Q, 0, 0); ctx.drawImage(paper, 0, 0); boil = 0; tip = null;
+    for (var i = 0; i < 5; i++) { MVAR = i; mirabel(220 + i * 290, 800, sc, 1, 0); ctx.save(); ctx.font = '700 30px Caveat, cursive'; ctx.textAlign = 'center'; ctx.fillStyle = '#3a2a20'; ctx.fillText(MVARS[i].name, 210 + i * 290, 842); ctx.restore(); } MART = keep; MVAR = kv; };
+  window.__portrait = function (sc, cx, cy, art) { setPlaying(false); var keep = MART; MART = !!art; ctx = main; ctx.setTransform(Q, 0, 0, Q, 0, 0); ctx.drawImage(paper, 0, 0); boil = 0; tip = null; mirabel(cx, cy, sc, 1, 0); MART = keep; };
   window.__seek = function (t) { setPlaying(false); setTime(t, true); };
 })();
 </script>
