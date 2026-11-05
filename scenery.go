@@ -35,7 +35,7 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 		for i := 0; i+1 < len(xs); i++ {
 			for j := 0; j+1 < len(zs); j++ {
 				B.Quad([4]V3{{xs[i], -0.6, zs[j+1]}, {xs[i+1], -0.6, zs[j+1]}, {xs[i+1], -0.6, zs[j]}, {xs[i], -0.6, zs[j]}}, sprWhite, col, [4]float32{1, 1, 1, 1}, false)
-				B.quads[len(B.quads)-1].depth = 1e9
+				B.lastQuad().depth = 1e9
 			}
 		}
 	}

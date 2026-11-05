@@ -63,6 +63,7 @@ type shopItem struct {
 type Game struct {
 	sideJobs         []func(*Batch) // drawWorld: the static parts built on their own goroutines
 	sideBatches      []*Batch
+	pieceCost        [3]float64 // drawWorld: last frame's cost of the scenery, its dressing and the arena floor (beginPiece)
 	state, prevState State
 	stateT           float64
 	run              *Run

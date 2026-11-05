@@ -86,6 +86,15 @@ func (m Mat3) Mul(v V3) V3 {
 
 // Draw renders the mesh with scale, rotation and translation.
 func (b *Batch) Draw(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emissive float32) {
+	if b.cut.on {
+		// a mesh is one primitive (see keep), costed by its triangles
+		if !b.keep(0.5 * float64(len(m.Tris))) {
+			return
+		}
+		cut := b.cut
+		b.cut.on = false
+		defer func() { b.cut = cut }()
+	}
 	if t := m.topo; t != nil && t.n == len(m.Tris) {
 		b.drawShared(m, pos, scale, rot, tint, emissive)
 		return

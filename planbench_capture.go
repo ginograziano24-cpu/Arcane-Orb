@@ -4,14 +4,72 @@ package main
 
 import (
 	"fmt"
+	"hash/fnv"
+	"math"
 	"syscall/js"
 	"time"
+	"unsafe"
 )
 
 // __planBench(reps) times the flush planner on the next frame's lists:
 // planList for both lists, then the vertex gather, each repeated reps
 // times. The means land in __planBenchRes as text.
 func init() {
+	forcePieces = true
+	js.Global().Set("__jobBench", js.FuncOf(func(this js.Value, args []js.Value) any {
+		frames := args[0].Int()
+		var sum [32]time.Duration
+		n := 0
+		sideJobHook = func(job int, d time.Duration) {
+			if job == 0 {
+				n++
+			}
+			if job < len(sum) {
+				sum[job] += d
+			}
+			if n > frames {
+				sideJobHook = nil
+				out := ""
+				for i, t := range sum {
+					if t > 0 {
+						out += fmt.Sprintf(" j%d:%.3f", i, t.Seconds()*1000/float64(frames))
+					}
+				}
+				js.Global().Set("__jobBenchRes", out)
+			}
+		}
+		return nil
+	}))
+	// __hashFrame() hashes the next frame's drawn quads, in draw order,
+	// and lists its runs (__hashRes): two builds that should draw the same
+	// thing must match.
+	js.Global().Set("__hashFrame", js.FuncOf(func(this js.Value, args []js.Value) any {
+		flushBenchHook = func(b *Batch, segQ, segG [][]quad) {
+			flushBenchHook = nil
+			out := ""
+			for l, seg := range [][][]quad{segQ, segG} {
+				qs, runs := b.planList(seg, l)
+				h := fnv.New64a()
+				for _, oi := range b.runIdx {
+					q := qs[oi]
+					h.Write(unsafe.Slice((*byte)(unsafe.Pointer(&q.v[0])), int(unsafe.Sizeof(q.v))))
+					var d [8]byte
+					*(*uint64)(unsafe.Pointer(&d[0])) = math.Float64bits(q.depth)
+					h.Write(d[:])
+				}
+				rs := ""
+				for _, r := range runs {
+					rs += fmt.Sprintf("%d:%d,", r.tex, r.last-r.first)
+				}
+				for _, q := range seg {
+					out += fmt.Sprint(len(q), " ")
+				}
+				out += fmt.Sprintf("list%d n=%d hash=%x runs=%d [%s]\n", l, len(qs), h.Sum64(), len(runs), rs)
+			}
+			js.Global().Set("__hashRes", out)
+		}
+		return nil
+	}))
 	js.Global().Set("__planBench", js.FuncOf(func(this js.Value, args []js.Value) any {
 		reps := args[0].Int()
 		flushBenchHook = func(b *Batch, segQ, segG [][]quad) {

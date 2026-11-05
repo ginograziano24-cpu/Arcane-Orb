@@ -113,10 +113,10 @@ func drawBakedFloor(B *Batch, L *Level, t *bakedTex, gp float64) {
 				c = B.lit(c, V3{0, 1, 0})
 			}
 			B.QuadUV(pts, t.id, uv, c, [4]float32{1, 1, 1, 1}, false)
-			B.quads[len(B.quads)-1].depth += 2000
+			B.lastQuad().depth += 2000
 			if bio.Neon {
 				B.QuadUV(pts, t.id, uv, alpha(c, 0.3*gp), [4]float32{1, 1, 1, 1}, true)
-				B.glow[len(B.glow)-1].depth += 2000
+				B.lastGlow().depth += 2000
 			}
 		}
 	}
@@ -171,7 +171,7 @@ func drawBakedGround(B *Batch, t *bakedTex, tint color.RGBA, y float64) {
 				default:
 					continue
 				}
-				B.quads[len(B.quads)-1].depth = 1e9
+				B.lastQuad().depth = 1e9
 			}
 		}
 	}

@@ -536,7 +536,10 @@ type Batch struct {
 	mk       [2][]uint64  // mergeSorted scratch: keys and indices, ping-pong
 	mi       [2][]int32
 	runIdx   []int32
-	qtex     []uint8 // planList: each quad's texture, by index (beside qp)
+	cut      cutWindow // drawing one piece of a job (beginPiece)
+	skipped  bool      // the last primitive fell outside the piece's window
+	scratch  quad      // lastQuad/lastGlow after a skipped primitive
+	qtex     []uint8   // planList: each quad's texture, by index (beside qp)
 	runCell  [runCols * runRows]int16
 	meta     []uint64 // per quad (submission order): cells and run key
 	switches [2]int   // texture switches in last frame's opaque and glow lists
@@ -664,6 +667,79 @@ func (b *Batch) side(i int) *Batch {
 	return s
 }
 
+// A piece of a job: one job (the scenery, say) run on several goroutines,
+// each drawing a share of it. Every piece runs the job's code in full
+// (layout, random numbers, everything that decides what is drawn) but only
+// emits the primitives whose running cost falls in its window, so the
+// pieces' lists, laid end to end, are exactly what the job alone draws.
+// The windows split last frame's total cost evenly.
+type cutWindow struct {
+	on     bool
+	lo, hi float64 // emit primitives starting in [lo, hi)
+	at     float64 // the running cost so far
+}
+
+// keep advances the running cost by c and reports whether the primitive
+// starting there is this piece's to emit. A skipped primitive leaves the
+// lists untouched, so code that edits the quad it just added checks
+// skipped first.
+func (b *Batch) keep(c float64) bool {
+	at := b.cut.at
+	b.cut.at += c
+	b.skipped = at < b.cut.lo || at >= b.cut.hi
+	return !b.skipped
+}
+
+// beginPiece sets b up to draw piece k of n of a job whose whole cost was
+// total last frame (0: unknown, so piece 0 draws it all).
+func (b *Batch) beginPiece(k, n int, total float64) {
+	b.skipped = false
+	if n <= 1 {
+		b.cut = cutWindow{}
+		return
+	}
+	lo, hi := math.Inf(-1), math.Inf(1)
+	switch {
+	case total <= 0:
+		if k > 0 {
+			lo = hi // nothing
+		}
+	default:
+		if k > 0 {
+			lo = total * float64(k) / float64(n)
+		}
+		if k < n-1 {
+			hi = total * float64(k+1) / float64(n)
+		}
+	}
+	b.cut = cutWindow{on: true, lo: lo, hi: hi}
+}
+
+// endPiece turns the window off and returns the job's whole running cost.
+func (b *Batch) endPiece() float64 {
+	t := b.cut.at
+	b.cut = cutWindow{}
+	b.skipped = false
+	return t
+}
+
+// lastQuad is the opaque quad just added, or a scratch one when this piece
+// skipped it (see keep).
+func (b *Batch) lastQuad() *quad {
+	if b.skipped || len(b.quads) == 0 {
+		return &b.scratch
+	}
+	return &b.quads[len(b.quads)-1]
+}
+
+// lastGlow is lastQuad for the glow list.
+func (b *Batch) lastGlow() *quad {
+	if b.skipped || len(b.glow) == 0 {
+		return &b.scratch
+	}
+	return &b.glow[len(b.glow)-1]
+}
+
 // insertSides puts the side batches' quads into b's lists at positions
 // nq (opaque) and ng (glow), in argument order: exactly where they would
 // have landed had they been drawn into b at that point.
@@ -706,6 +782,9 @@ func (b *Batch) vtx(p V3, u, v float32, col [4]float32, shade float32) (ebiten.V
 // Quad adds a 4-point polygon (p0..p3 in order) with uniform colour and
 // per-corner shade multipliers.
 func (b *Batch) Quad(p [4]V3, spr Sprite, col color.RGBA, shades [4]float32, glow bool) {
+	if b.cut.on && !b.keep(1) {
+		return
+	}
 	var q quad
 	uv := [4][2]float32{{spr.X0, spr.Y0}, {spr.X1, spr.Y0}, {spr.X1, spr.Y1}, {spr.X0, spr.Y1}}
 	c := cf(col)
@@ -726,6 +805,9 @@ func (b *Batch) Quad(p [4]V3, spr Sprite, col color.RGBA, shades [4]float32, glo
 // QuadUV is Quad with explicit texture coordinates (in pixels) into a
 // registered texture, sampled with wrap-around.
 func (b *Batch) QuadUV(p [4]V3, tex uint8, uv [4][2]float32, col color.RGBA, shades [4]float32, glow bool) {
+	if b.cut.on && !b.keep(1) {
+		return
+	}
 	q := quad{tex: tex}
 	c := cf(col)
 	sum := 0.0
@@ -1594,7 +1676,7 @@ func insertionFix(order []int32, keys []uint64, budget int) bool {
 var presortOn = true
 
 // maxMerge is the most lists mergeSorted merges (side batches plus own).
-const maxMerge = 12
+const maxMerge = 20
 
 // mergeSorted orders the flush's segments far first: the side batches'
 // presorted lists merged with the batch's own quads, sorted here. Ties go

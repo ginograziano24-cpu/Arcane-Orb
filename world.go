@@ -4,7 +4,9 @@ import (
 	"image/color"
 	"math"
 	"math/rand"
+	"runtime"
 	"sync"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -12,6 +14,10 @@ import (
 )
 
 // drawWorld renders the 3D arena for the current level.
+// sideJobHook, when set (capture builds), is told how long each of the
+// world's side jobs took, presort included.
+var sideJobHook func(job int, d time.Duration)
+
 func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	gridShift = L.shift
 	sw, sh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
@@ -128,15 +134,35 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	// the jobs, in the order their quads always had: scenery, its dressing,
 	// the arena floor, the walls in pieces, the posts
 	jobs := g.sideJobs[:0]
-	jobs = append(jobs, func(s *Batch) {
+	// last frame's costs, read here: piece 0 writes this frame's while the
+	// other pieces may not have started
+	cost := g.pieceCost
+	pieced := func(slot, n int, draw func(s *Batch)) {
+		for k := 0; k < n; k++ {
+			jobs = append(jobs, func(s *Batch) {
+				s.beginPiece(k, n, cost[slot])
+				draw(s)
+				if c := s.endPiece(); k == 0 {
+					g.pieceCost[slot] = c
+				}
+			})
+		}
+	}
+	np, nd, nb := piecesFor(scenePieces), piecesFor(dressPieces), piecesFor(basePieces)
+	if classic {
+		np, nd = 1, 1 // (nothing to draw)
+	}
+	pieced(0, np, func(s *Batch) {
 		if !classic {
 			g.drawScenery(s, L)
 		}
-	}, func(s *Batch) {
+	})
+	pieced(1, nd, func(s *Batch) {
 		if !classic {
 			g.drawDressing(s, L, L.T+g.stateT, sceneSide(L))
 		}
-	}, func(s *Batch) { g.drawArenaBase(s, L, classic) })
+	})
+	pieced(2, nb, func(s *Batch) { g.drawArenaBase(s, L, classic) })
 	nw := arenaWallSections(L)
 	for k := 0; k < wallPieces; k++ {
 		from, to := nw*k/wallPieces, nw*(k+1)/wallPieces
@@ -148,9 +174,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	// boss's eyes, so every quad keeps its place in the submission order)
 	jobs = append(jobs, func(s *Batch) { g.drawBarrierLights(s, L) })
 	tb := L.T + g.stateT
-	nb := len(L.Bricks)
+	nbr := len(L.Bricks)
 	for k := 0; k < brickPieces; k++ {
-		from, to := nb*k/brickPieces, nb*(k+1)/brickPieces
+		from, to := nbr*k/brickPieces, nbr*(k+1)/brickPieces
 		jobs = append(jobs, func(s *Batch) {
 			for _, b := range L.Bricks[from:to] {
 				if b.Alive {
@@ -173,8 +199,12 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		go func() {
 			defer wg.Done()
 			defer func() { crash[i] = recover() }()
+			t0 := time.Now()
 			job(sides[i])
 			sides[i].presort()
+			if sideJobHook != nil {
+				sideJobHook(i, time.Since(t0))
+			}
 		}()
 	}
 	defer func() {
@@ -192,9 +222,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		for i, sd := range sides {
 			n += len(sd.quads) + len(sd.glow)
 			switch i {
-			case 1:
+			case np + nd - 1:
 				perfMark(0, n) // scenery and dressing
-			case 3 + wallPieces:
+			case np + nd + nb + wallPieces:
 				perfMark(1, n) // and the arena
 			}
 		}
@@ -384,9 +414,32 @@ func (g *Game) drawBarrierLights(B *Batch, L *Level) {
 // brickPieces is how many goroutines share the bricks.
 const brickPieces = 2
 
+// scenePieces, dressPieces and basePieces split the scenery, its dressing
+// and the arena floor, the biggest jobs, across goroutines (see
+// beginPiece).
+const (
+	scenePieces = 3
+	dressPieces = 3
+	basePieces  = 2
+)
+
+// piecesFor scales a split to the machine: every piece runs its job's
+// layout code in full, so splitting only pays where cores sit idle
+// (about one piece per four threads; none on four or fewer).
+func piecesFor(n int) int {
+	if forcePieces {
+		return n
+	}
+	return max(1, min(n, runtime.GOMAXPROCS(0)/4))
+}
+
+// forcePieces splits jobs whatever the machine (the capture build, single
+// threaded, checks the split draws exactly what one job does).
+var forcePieces = false
+
 // wallPieces is how many goroutines share the arena walls, the costliest
 // static part of a frame (modelled wall sections, thousands of quads).
-const wallPieces = 3
+const wallPieces = 4
 
 // randPool recycles the seeded generators the scenery draws its props
 // from every frame (a fresh one allocates ~5 KB).
@@ -460,7 +513,7 @@ func (g *Game) drawArenaBase(B *Batch, L *Level, classic bool) {
 			}
 			pts := [4]V3{{x, 0, z + 2}, {x + 2, 0, z + 2}, {x + 2, 0, z}, {x, 0, z}}
 			B.Quad(pts, fspr, B.lit(c, V3{0, 1, 0}), [4]float32{1, 1, 1, 1}, false)
-			B.quads[len(B.quads)-1].depth += 2000
+			B.lastQuad().depth += 2000
 			if bio.Neon {
 				B.Quad(pts, fspr, alpha(c, 0.3*gp), [4]float32{1, 1, 1, 1}, true)
 			}
