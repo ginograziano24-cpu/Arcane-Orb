@@ -75,7 +75,7 @@ func (g *Game) drawMenuScene(screen *ebiten.Image, dt float64) {
 	B.fogColor = [3]float32{float32(b.Fog.R) / 255, float32(b.Fog.G) / 255, float32(b.Fog.B) / 255}
 	B.fogNear, B.fogFar = 20, 150
 	B.Quad([4]V3{{-400, 0, 600}, {400, 0, 600}, {400, 0, -20}, {-400, 0, -20}}, sprWhite, b.Outer, [4]float32{1, 1, 1, 1}, false)
-	B.quads[len(B.quads)-1].depth = 1e9
+	B.lastQuad().depth = 1e9
 	scroll := math.Mod(m.t*6, 5)
 	for x := -150.0; x <= 150; x += 5 {
 		B.Quad([4]V3{{x - 0.07, 0.01, 600}, {x + 0.07, 0.01, 600}, {x + 0.07, 0.01, -20}, {x - 0.07, 0.01, -20}}, sprWhite, alpha(b.Floor, 0.8), [4]float32{1, 1, 1, 1}, true)

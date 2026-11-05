@@ -873,7 +873,7 @@ drawn:
 			icCol = color.RGBA{255, 210, 90, 255}
 		}
 		B.Decal(x, z, h+0.004, 1.0, 0.9, sprIcons[ic], icCol, false)
-		B.quads[len(B.quads)-1].depth -= 0.02
+		B.lastQuad().depth -= 0.02
 	}
 	if b.Kind == levelgen.Crystal {
 		bob := h + 0.7 + 0.15*math.Sin(t*3+x)

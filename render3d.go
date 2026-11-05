@@ -723,8 +723,34 @@ func (b *Batch) endPiece() float64 {
 	return t
 }
 
-// lastQuad is the opaque quad just added, or a scratch one when this piece
-// skipped it (see keep).
+// add appends a finished quad to the opaque or glow list, unless it lies
+// wholly off the screen. The test runs on the very corners that will be
+// drawn (after the camera's near clamp), so a dropped quad would not have
+// covered a single pixel. A dropped quad counts as skipped (see lastQuad).
+func (b *Batch) add(q *quad, glow bool) {
+	if offScreen(&q.v, float32(b.cam.W), float32(b.cam.H)) {
+		b.skipped = true
+		return
+	}
+	b.skipped = false
+	if glow {
+		b.glow = append(b.glow, *q)
+	} else {
+		b.quads = append(b.quads, *q)
+	}
+}
+
+// offScreen reports whether all four corners lie beyond one edge of a w x h
+// screen.
+func offScreen(v *[4]ebiten.Vertex, w, h float32) bool {
+	return (v[0].DstX < 0 && v[1].DstX < 0 && v[2].DstX < 0 && v[3].DstX < 0) ||
+		(v[0].DstX > w && v[1].DstX > w && v[2].DstX > w && v[3].DstX > w) ||
+		(v[0].DstY < 0 && v[1].DstY < 0 && v[2].DstY < 0 && v[3].DstY < 0) ||
+		(v[0].DstY > h && v[1].DstY > h && v[2].DstY > h && v[3].DstY > h)
+}
+
+// lastQuad is the opaque quad just added, or a scratch one when it was
+// skipped: outside this piece's window (keep) or off the screen (add).
 func (b *Batch) lastQuad() *quad {
 	if b.skipped || len(b.quads) == 0 {
 		return &b.scratch
@@ -795,11 +821,7 @@ func (b *Batch) Quad(p [4]V3, spr Sprite, col color.RGBA, shades [4]float32, glo
 		sum += d
 	}
 	q.depth = sum / 4
-	if glow {
-		b.glow = append(b.glow, q)
-	} else {
-		b.quads = append(b.quads, q)
-	}
+	b.add(&q, glow)
 }
 
 // QuadUV is Quad with explicit texture coordinates (in pixels) into a
@@ -817,11 +839,7 @@ func (b *Batch) QuadUV(p [4]V3, tex uint8, uv [4][2]float32, col color.RGBA, sha
 		sum += d
 	}
 	q.depth = sum / 4
-	if glow {
-		b.glow = append(b.glow, q)
-	} else {
-		b.quads = append(b.quads, q)
-	}
+	b.add(&q, glow)
 }
 
 // SetLight configures the world's key light direction and colours.
@@ -1017,7 +1035,7 @@ func (b *Batch) Decal(x, z, h, w, d float64, spr Sprite, col color.RGBA, glow bo
 // (for shadows and floor marks).
 func (b *Batch) DecalBelow(x, z, h, w, d float64, spr Sprite, col color.RGBA) {
 	b.Decal(x, z, h, w, d, spr, col, false)
-	b.quads[len(b.quads)-1].depth += 1000
+	b.lastQuad().depth += 1000
 }
 
 // planList orders a list's quads far first and groups them into draw-call

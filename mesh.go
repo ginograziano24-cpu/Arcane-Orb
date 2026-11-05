@@ -145,6 +145,7 @@ func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA,
 	}
 	useTint := tint.A > 0
 	fc := b.fogColor
+	fw, fh := float32(cam.W), float32(cam.H)
 	for ti := range m.Tris {
 		tr := &m.Tris[ti]
 		ix := t.tri[ti]
@@ -187,6 +188,9 @@ func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA,
 		sum += c.d
 		sum += c.d
 		q.depth = sum / 4
+		if offScreen(&q.v, fw, fh) {
+			continue
+		}
 		b.quads = append(b.quads, q)
 	}
 }

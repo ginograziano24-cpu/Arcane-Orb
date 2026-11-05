@@ -70,6 +70,36 @@ func init() {
 		}
 		return nil
 	}))
+	js.Global().Set("__offBench", js.FuncOf(func(this js.Value, args []js.Value) any {
+		flushBenchHook = func(b *Batch, segQ, segG [][]quad) {
+			flushBenchHook = nil
+			W, H := float32(b.cam.W), float32(b.cam.H)
+			out := ""
+			for l, seg := range [][][]quad{segQ, segG} {
+				for si, qs := range seg {
+					off, tiny := 0, 0
+					for i := range qs {
+						v := &qs[i].v
+						x0, x1, y0, y1 := v[0].DstX, v[0].DstX, v[0].DstY, v[0].DstY
+						for k := 1; k < 4; k++ {
+							x0, x1 = min(x0, v[k].DstX), max(x1, v[k].DstX)
+							y0, y1 = min(y0, v[k].DstY), max(y1, v[k].DstY)
+						}
+						if x1 < 0 || y1 < 0 || x0 > W || y0 > H {
+							off++
+						} else if (x1-x0)*(y1-y0) < 0.25 {
+							tiny++
+						}
+					}
+					if off+tiny > 0 {
+						out += fmt.Sprintf(" L%d/s%d:%d/%d off %d tiny %d;", l, si, len(qs), 0, off, tiny)
+					}
+				}
+			}
+			js.Global().Set("__offRes", out)
+		}
+		return nil
+	}))
 	js.Global().Set("__planBench", js.FuncOf(func(this js.Value, args []js.Value) any {
 		reps := args[0].Int()
 		flushBenchHook = func(b *Batch, segQ, segG [][]quad) {
