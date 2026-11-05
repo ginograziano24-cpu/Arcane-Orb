@@ -1614,6 +1614,7 @@ type presorted struct {
 	order  []int32
 	meta   []uint64 // per quad: what planRuns needs (quadMeta)
 	tex    []uint8  // per quad, in submission order
+	skeys  []uint64 // keys in sorted order (skeys[j] = keys[order[j]])
 	metaOK bool     // false: some texture's size was unknown; recompute
 	valid  bool
 }
@@ -1654,16 +1655,26 @@ func (b *Batch) presortList(p *presorted, qs []quad, cw, ch float32, wantMeta bo
 	p.valid = true
 	if n == 0 {
 		p.order = p.order[:0]
+		p.skeys = p.skeys[:0]
 		return
 	}
-	if len(p.order) == n && insertionFix(p.order, keys, 8*n+1024) {
-		return
+	if len(p.order) != n || !insertionFix(p.order, keys, 8*n+1024) {
+		// first frame, a change in what is drawn, or too much movement:
+		// sort afresh
+		b.growSort(n)
+		copy(b.keys[0][:n], keys)
+		o := b.radixOrder(n)
+		p.order = append(p.order[:0], o...)
 	}
-	// first frame, a change in what is drawn, or too much movement: sort afresh
-	b.growSort(n)
-	copy(b.keys[0][:n], keys)
-	o := b.radixOrder(n)
-	p.order = append(p.order[:0], o...)
+	// the keys in order, gathered here on the batch's own goroutine so the
+	// flush's merge reads them straight through
+	if cap(p.skeys) < n {
+		p.skeys = make([]uint64, n, n+n/4)
+	}
+	p.skeys = p.skeys[:n]
+	for j, oi := range p.order {
+		p.skeys[j] = keys[oi]
+	}
 }
 
 // insertionFix sorts order by (key, index) in place, giving up (false,
@@ -1765,9 +1776,10 @@ func (b *Batch) mergeSorted(segs [][]quad, list int, plan bool) []int32 {
 		}
 		bounds[nl] = off
 		nl++
+		copy(mk[off:off+len(s)], p.skeys)
+		o32 := int32(off)
 		for j, oi := range p.order {
-			mk[off+j] = p.keys[oi]
-			mi[off+j] = int32(off) + oi
+			mi[off+j] = o32 + oi
 		}
 		off += len(s)
 	}
