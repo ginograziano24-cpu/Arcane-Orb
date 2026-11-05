@@ -45,3 +45,4 @@ the overall art direction.
 - Polish: the staff ends in a carved spiral curl (as in the reference); the hat is layered brim, cone with a band, then the brim's front lip, so head lines no longer show through. New test model **C++** = C+ with a 15% fuller bust; the "Body" button cycles C, C+, C++.
 - The neckline cups, under-bust curves, sheen and the sheer top now scale with the bust width, so larger bodies (C++) fill their outline.
 - No ink lines run under the bust: only short outer accents and soft shading. **C++** is now C+ with a 25% fuller bust.
+- Test models added: **C+++** (bust even with the hips: the agreed ceiling, never wider) and **C★** (the C++ bust sitting higher, stronger satin sheen, posed: bigger hip cock, slight lean, head tilt). The Body button cycles C, C+, C++, C+++, C★.
