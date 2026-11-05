@@ -9,6 +9,8 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"runtime"
+	"sync"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -973,6 +975,7 @@ func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend eb
 			flushTrace(runs[i-1].tex, runs[i].tex, float64(len(runs[i].ids)))
 		}
 	}
+	b.fillVerts(qs, scale)
 	for ri := range runs {
 		rn := &runs[ri]
 		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: worldAA && !aaOwn}
@@ -983,25 +986,60 @@ func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend eb
 			op.Filter = ebiten.FilterLinear
 			op.DisableMipmaps = rn.noMip
 		}
-		ids := b.runIdx[rn.first:rn.last]
-		for len(ids) > 0 {
-			n := min(len(ids), maxQ)
-			b.verts = b.verts[:0]
-			for _, oi := range ids[:n] {
-				b.verts = append(b.verts, qs[oi].v[:]...)
-			}
-			if scale != 1 {
-				for k := range b.verts {
-					b.verts[k].DstX *= scale
-					b.verts[k].DstY *= scale
-				}
-			}
-			dst.DrawTriangles(b.verts, quadIndices[:n*6], src, op)
+		vs := b.verts[rn.first*4 : rn.last*4]
+		for len(vs) > 0 {
+			n := min(len(vs)/4, maxQ)
+			dst.DrawTriangles(vs[:n*4], quadIndices[:n*6], src, op)
 			perf.cur.world++
-			ids = ids[n:]
+			vs = vs[n*4:]
 		}
 	}
 }
+
+// fillVerts gathers the planned quads' vertices, in run order, into
+// b.verts (scaled to the target). The quads are scattered through memory
+// and this copy is cache-miss bound, so a big list is split across
+// goroutines; Ebitengine copies the vertices it is given, so the buffer is
+// free again as soon as each draw call returns.
+func (b *Batch) fillVerts(qs []*quad, scale float32) {
+	ids := b.runIdx
+	n := len(ids) * 4
+	if cap(b.verts) < n {
+		b.verts = make([]ebiten.Vertex, n, n+n/4)
+	}
+	b.verts = b.verts[:n]
+	fill := func(lo, hi int) {
+		vs := b.verts[lo*4 : hi*4]
+		for i, oi := range ids[lo:hi] {
+			copy(vs[i*4:i*4+4], qs[oi].v[:])
+		}
+		if scale != 1 {
+			for k := range vs {
+				vs[k].DstX *= scale
+				vs[k].DstY *= scale
+			}
+		}
+	}
+	parts := min(len(ids)/fillChunk, runtime.GOMAXPROCS(0), 8)
+	if parts < 2 {
+		fill(0, len(ids))
+		return
+	}
+	var wg sync.WaitGroup
+	step := (len(ids) + parts - 1) / parts
+	for lo := step; lo < len(ids); lo += step {
+		wg.Add(1)
+		go func(lo, hi int) {
+			defer wg.Done()
+			fill(lo, hi)
+		}(lo, min(lo+step, len(ids)))
+	}
+	fill(0, min(step, len(ids)))
+	wg.Wait()
+}
+
+// fillChunk is the fewest quads worth handing to another goroutine.
+const fillChunk = 3000
 
 // Runs: painter's order only matters where quads overlap on screen. A quad
 // may therefore join the most recent run of its own texture (and mip
@@ -1255,7 +1293,9 @@ func (b *Batch) planRuns(qs []*quad, order []int32, plan bool) ([]quadRun, int) 
 		isBig := (c1-c0+1)*(r1-r0+1) > runBig
 		bx0, bx1, by0, by1 := c0/runBlock, c1/runBlock, r0/runBlock, r1/runBlock
 		at := int(lastOf[key])
-		if at >= 0 && isBig {
+		if at == len(runs)-1 {
+			// joining the newest run: no later run can be in the way
+		} else if at >= 0 && isBig {
 		scanB:
 			for y := by0; y <= by1; y++ {
 				for x := bx0; x <= bx1; x++ {
