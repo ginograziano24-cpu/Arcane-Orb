@@ -151,14 +151,17 @@ func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA,
 		ix := t.tri[ti]
 		a, bb, c := &pr[ix[0]], &pr[ix[1]], &pr[ix[2]]
 		n := bb.p.Sub(a.p).Cross(c.p.Sub(a.p))
-		if n.Len() < 1e-9 {
+		l := n.Len()
+		if l < 1e-9 {
 			continue
 		}
-		n = n.Norm()
+		// facing test before normalising (the sign is the same), so a
+		// back face costs one square root, not two
 		ctr := a.p.Add(bb.p).Add(c.p).Mul(1.0 / 3)
 		if n.Dot(eye.Sub(ctr)) <= 0 {
 			continue
 		}
+		n = V3{n.X / l, n.Y / l, n.Z / l} // (what Norm computes)
 		col := tr.Col
 		if useTint && !tr.Fixed {
 			col = color.RGBA{uint8(int(col.R) * int(tint.R) / 255), uint8(int(col.G) * int(tint.G) / 255), uint8(int(col.B) * int(tint.B) / 255), col.A}
