@@ -1,6 +1,6 @@
 # Handoff: where Arcane Orb stands
 
-Read this first in a new session, then `ROADMAP.md` for what's next.
+Read this first in a new session, then `ROADMAP.md` for what's next. (`HANDOFF_CHATGPT.md` is a self-contained brief for continuing in another AI assistant.)
 
 ## The project
 
@@ -111,7 +111,8 @@ Each frame, the world is drawn as CPU-projected quads, sorted by depth and drawn
 
 ## Waiting on the user
 
-- **Opening cinematic: ON HOLD.** It is a work in progress and not part of any playtest (the game never plays it). The user didn't like the Mirabel redesign and will write a new brief. Status and files: `docs/cinematic/wip/README.md`. Don't put it in playtest zips or Steam builds until the user says so.
+- **Opening cinematic: work in progress.** Current build is `docs/cinematic/opening_preview.html` (flat cartoon look, composed score, smooth-playback work); status in `docs/cinematic/wip/README.md`.
+- **Earlier note: ON HOLD.** It is a work in progress and not part of any playtest (the game never plays it). The user didn't like the Mirabel redesign and will write a new brief. Status and files: `docs/cinematic/wip/README.md`. Don't put it in playtest zips or Steam builds until the user says so.
 
 - **Roadmap step 1 (lore) is written but not yet compiled.** Go module downloads were blocked in the session that wrote it (proxy.golang.org 403), so story.go, classsel.go, progress_ui.go, game.go and the new lore.go have only passed `gofmt -e`. First thing next session: vet both targets, then screenshot `classsel`, the Lore page and the story cards in all 7 languages, and fix anything that turns up.
 

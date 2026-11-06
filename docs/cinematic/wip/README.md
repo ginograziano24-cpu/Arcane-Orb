@@ -86,3 +86,12 @@ a night chord for the prologue; the waltz theme (C major, 120 bpm) for the date,
 march locked to the bosses' footsteps, up a semitone at the BAMF and building through the bricks; a riser into the turn; then the
 same theme in the arcane half over the kick, pads and an arpeggio; a final ringing chord on the title. Sounds are now queued
 on the audio clock slightly ahead of time, so the rhythm no longer wobbles with the frame rate. The pencil-scratch noise is gone.
+
+## Playback (2026-11-05, late)
+
+The magic half now caches its expensive pieces (magic circle rings, sky rays, title sunburst, logo letters,
+hero titles, rune glyphs), drops live shadow blurs (paddle glow, burn ring), runs the colour split at half
+resolution, and lowers its own resolution when frames run long (starting value picked during loading).
+In headless software rendering: the drawn half holds 60 fps with no drawing ever rendered on a visible
+frame; the magic half went from about 35 fps to about 50 fps. Check on a GPU.
+`docs/cinematic/opening_preview.html` is now this build.
