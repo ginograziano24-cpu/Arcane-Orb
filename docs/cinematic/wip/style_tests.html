@@ -458,9 +458,11 @@ canvas { display: block; width: 100%; height: 100%; }
     var B = v.B, W = v.W, Hh = v.Hh, Hb = v.Hb || v.Hh, L = v.lift, t = v.tilt, U = -292 + (v.ub || 0) - (v.hi || 0), HI = v.hi || 0; // U: underbust line; HI lifts the bust // Hh: hips, Hb: knees and hem
     var bs = B / 36.5, cupR = [[B * .14, -323 - 4 * (bs - 1) - HI * .4], [B * .38, -329 - 10 * (bs - 1) - HI * .4], [Math.min(31.5, B * .66), -330 - 8 * (bs - 1) - HI * .4]]; // right cup, centre outward
     var cupLn = cupR.slice().reverse().map(function (p) { return [-p[0], p[1]]; });
-    var neck = [[-34, -336, 1]].concat(cupLn, [[0, -318, 1]], cupR, [[34, -336, 1]]);
-    var right = [[B, -313 + (v.ub || 0) * .5 - HI], [W + 10, U], [W, -258 + L], [Hh - 2, -212 + L + t], [Hh * .88, -170 + L * .6], [Hb * .6, -104], [Hb * .63, -78], [Hb + 16, -4, 1], [Hb * .45, 2], [0, 0]];
-    var left = [[-Hb * .45, 2], [-(Hb + 18), -4, 1], [-Hb * .63, -78], [-Hb * .6, -104], [-Hh * .9, -172 + L * .6], [-(Hh + 2), -212 + L - t], [-W, -258 + L], [-(W + 10), U], [-B, -313 + (v.ub || 0) * .5 - HI]];
+    var big = B > 44, ay = -313 + (v.ub || 0) * .5 - HI; // big busts get a rounded outline: upper curve, apex, lower curve, tuck
+    var neck = (big ? [[-35.5, -335.5]] : [[-34, -336, 1]]).concat(cupLn, [[0, -318, 1]], cupR, big ? [[35.5, -335.5]] : [[34, -336, 1]]);
+    var bustR = big ? [[B * .86, ay - 10], [B, ay], [B * .92, ay + 10], [Math.max(W + 13, B * .6), U - 1.5]] : [[B, ay]];
+    var right = bustR.concat([[W + 10, U]]).concat([[W, -258 + L], [Hh - 2, -212 + L + t], [Hh * .88, -170 + L * .6], [Hb * .6, -104], [Hb * .63, -78], [Hb + 16, -4, 1], [Hb * .45, 2], [0, 0]]);
+    var left = [[-Hb * .45, 2], [-(Hb + 18), -4, 1], [-Hb * .63, -78], [-Hb * .6, -104], [-Hh * .9, -172 + L * .6], [-(Hh + 2), -212 + L - t], [-W, -258 + L], [-(W + 10), U]].concat(mirror(bustR).reverse());
     var gown = neck.concat(right, left);
     var cupL = [[-(B - 2.5), -307 + (v.ub || 0) * .6 - HI], [-(B - 9), U - 3.5], [-(B * .5), U - 1.8]]; // outer half of each cup's underside
     var chest = [[-34, -336, 1], [-40, -343], [-26, -350], [-9, -354], [-7.5, -370, 1], [7.5, -370, 1], [9, -354], [26, -350], [40, -343], [34, -336, 1]].concat(cupR.slice().reverse(), [[0, -318, 1]], cupLn.slice().reverse());
@@ -581,6 +583,10 @@ canvas { display: block; width: 100%; height: 100%; }
       var bq = v.B / 36.5, yq = -8 * (bq - 1) + (v.ub || 0) * .5 - (v.hi || 0); ctx.beginPath(); ctx.moveTo(-(v.B - 6), -316 + yq); ctx.quadraticCurveTo(-(v.B * .6), -325 + yq, -12 * bq, -323 + yq); ctx.moveTo(10 * bq, -323 + yq); ctx.quadraticCurveTo(v.B * .55, -325 + yq, v.B - 8, -316 + yq);
       ctx.moveTo(-(v.Hh - 8), -232 + v.lift); ctx.quadraticCurveTo(-(v.Hh - 2), -210 + v.lift, -(v.Hh - 6), -180); ctx.moveTo(-22, -150); ctx.quadraticCurveTo(-24, -100, -28, -40); if (v.sheen) { ctx.moveTo(v.Hh - 10, -236 + v.lift); ctx.quadraticCurveTo(v.Hh - 3, -214, v.Hh - 8, -186); ctx.moveTo(-(v.B * .62), -306 - (v.hi || 0)); ctx.quadraticCurveTo(-(v.B * .72), -296 - (v.hi || 0), -(v.B * .6), -290 - (v.hi || 0)); ctx.moveTo(v.B * .62, -306 - (v.hi || 0)); ctx.quadraticCurveTo(v.B * .72, -296 - (v.hi || 0), v.B * .6, -290 - (v.hi || 0)); } ctx.moveTo(14, -112); ctx.quadraticCurveTo(17, -100, 16, -88); ctx.stroke();
       ctx.restore(); }
+    if (F > .7 && v.B > 44) { var rk = clamp(cF(.7, .2)), cy2 = -313 + (v.ub || 0) * .5 - (v.hi || 0) - 2; ctx.save(); ctx.clip(Bd.gown.path); // round volume on each side: a soft glow in the middle, darker toward the edge
+      [-1, 1].forEach(function (sd) { var cx2 = sd * v.B * .52, rr = v.B * .5, g = ctx.createRadialGradient(cx2 - sd * rr * .2, cy2 - rr * .25, rr * .1, cx2, cy2, rr * 1.05);
+        g.addColorStop(0, 'rgba(255,200,220,' + (.4 * rk) + ')'); g.addColorStop(.55, 'rgba(255,200,220,0)'); g.addColorStop(.8, 'rgba(90,10,40,0)'); g.addColorStop(1, 'rgba(90,10,40,' + (.28 * rk) + ')');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx2, cy2, rr * 1.05, 0, 7); ctx.fill(); }); ctx.restore(); }
     if (F > .72) { var hk = clamp(cF(.72, .15)); heartAt(0, -314.5, 5.5, MCOL.gownDk, .9 * hk); heartAt(0, -250 + v.lift, 11, MCOL.gownDk, .8 * hk); }
     group([Bd.gown, Bd.bust, Bd.seams, Bd.shoe, Bd.chest, Bd.shoulders], F / .6 * 1.2, lw);
     // 6. hands: the fist on the staff, the open hand

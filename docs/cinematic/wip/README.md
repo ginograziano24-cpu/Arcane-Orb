@@ -52,3 +52,4 @@ the overall art direction.
 **Final** = the C★ pose (bigger hip cock, slight lean, head tilt), stronger satin sheen and
 higher-set bust, with the C+++ proportions (bust as wide as the hips). It is the default on the
 style test page (`mirabel_final.png`); the Body button still cycles the earlier test models.
+- Large busts (wider than 44 units) get a rounded outline (upper curve, apex, lower curve, tuck into the underbust) and soft round shading on each side.
