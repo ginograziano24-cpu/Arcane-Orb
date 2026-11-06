@@ -465,14 +465,14 @@ canvas { display: block; width: 100%; height: 100%; }
     { name: 'Bob + long front locks', back: [[-20, -412], [-34, -404], [-40, -386], [-40, -366], [-38, -350], [-30, -344, 1], [-24, -352], [24, -352], [30, -344, 1], [38, -350], [40, -366], [40, -386], [34, -404], [20, -412]],
       strands: [[[-32, -382], [-34, -360]], [[32, -382], [34, -360]]], shine: [[-28, -396], [-36, -376]] }
   ];
-  MHAIRS.unshift({ name: 'Sleek ponytail', pony: 1, back: [[-20, -412], [-31, -405], [-35, -390], [-34, -372], [-31, -358, 1], [-22, -353], [22, -353], [31, -358, 1], [34, -372], [35, -390], [31, -405], [20, -412]], strands: [], shine: [[-27, -398], [-32, -380]] });
+  MHAIRS.unshift({ name: 'Sleek ponytail', pony: 1, back: [[0.0, -415.0], [7.0, -414.1], [13.5, -411.4], [19.1, -407.1], [23.4, -401.5], [26.1, -395.0], [27.0, -388.0], [26.0, -380.0], [19.9, -372.5], [13.2, -366.1], [7.6, -361.2], [3.3, -358.1], [0.0, -357.0], [-3.3, -358.1], [-7.6, -361.2], [-13.2, -366.1], [-19.9, -372.5], [-26.0, -380.0], [-27.0, -388.0], [-26.1, -395.0], [-23.4, -401.5], [-19.1, -407.1], [-13.5, -411.4], [-7.0, -414.1]], strands: [], shine: [[-26, -401], [-31, -378]] });
   var PONIES = [ // back view only: hangs from the nape behind her back (body units, back view)
     { name: 'Low sleek ponytail', d: [[-6, -356], [6, -356], [12, -334], [15, -304], [13, -276], [7, -252, 1], [0, -262], [-7, -252, 1], [-13, -276], [-15, -304], [-12, -334]], tie: -352 },
     { name: 'Low wavy ponytail', d: [[-6, -356], [6, -356], [14, -336], [10, -316], [18, -294], [12, -272], [16, -252], [6, -236, 1], [0, -248], [-8, -238, 1], [-16, -254], [-11, -274], [-18, -296], [-10, -318], [-14, -338]], tie: -352 },
     { name: 'Braided ponytail', braid: 1, tie: -352 },
     { name: 'Mid ponytail with volume', d: [[-7, -372], [7, -372], [18, -350], [20, -316], [16, -284], [8, -262, 1], [0, -272], [-8, -262, 1], [-16, -284], [-20, -316], [-18, -350]], tie: -368 }
   ];
-  var MHAIR = 0, MPONY = 0, MHB = null, MHBK = -1;
+  var MHAIR = 0, MPONY = 1, MHB = null, MHBK = -1;
   function hairShapes() { if (MHBK !== MHAIR) { var h = MHAIRS[MHAIR]; MHB = { back: MS(crD(h.back, true), 2), strands: MS(h.strands.map(function (st) { return crD(st, false); }).join(' '), 1, 0), shine: h.shine }; MHBK = MHAIR; } return MHB; }
   var MVARS = [
     { name: 'A · Slender', B: 34, W: 15.5, Hh: 40, lift: 0, tilt: 3 },
@@ -530,7 +530,7 @@ canvas { display: block; width: 100%; height: 100%; }
     var legP = [[7, -176], [20, -180], [24, -150], [22, -104], [21, -74], [20, -40], [18, -14], [11, -14], [9, -40], [8, -74], [7, -104], [5, -150]];
     return {
       gownP: gown,
-      back: (function () { var br = [[36, -336, 1], [39, -320], [W + 13, U]].concat(right.slice(bustR.length + 1, -1)); var P = [[-36, -336, 1], [0, -333]].concat(br, [[0, 0]], mirror(br).reverse()); return { gown: new Path2D(crD(P, true)), top: new Path2D(crD([[-36, -336, 1], [-40, -343], [-26, -350], [-9, -354], [-7.5, -370, 1], [7.5, -370, 1], [9, -354], [26, -350], [40, -343], [36, -336, 1], [0, -333]], true)) }; })(),
+      back: (function () { var br = [[36, -336, 1], [41, -326], [40.5, -312], [35, -296], [26, -278], [W + 3, -258 + L], [W + 9, -246 + L], [Hh * .66, -234 + L], [Hh * .9, -220 + L], [Hh + 1, -202 + L + t], [Hh * .96, -182 + L], [Hh * .85, -162 + L * .5], [Hb * .72, -136], [Hb * .62, -110], [Hb * .63, -78], [Hb + 16, -4, 1], [Hb * .45, 2]]; var P = [[-36, -336, 1], [0, -333]].concat(br, [[0, 0]], mirror(br).reverse()); return { gown: new Path2D(crD(P, true)), top: new Path2D(crD([[-36, -336, 1], [-40, -343], [-26, -350], [-9, -354], [-7.5, -370, 1], [7.5, -370, 1], [9, -354], [26, -350], [40, -343], [36, -336, 1], [0, -333]], true)) }; })(),
       gown: MS(crD(gown, true), 2.3),
       bust: MS('M0 -318 C0 -313 .4 -310 .8 -307', 1.15, 0), // only the short cleavage line; no lines under the bust
       seams: MS(crD([[-14, -292], [-9, -258 + L], [-16, -212 + L], [-22, -160]], false) + ' ' + crD([[14, -292], [9, -258 + L], [15, -214 + L], [17, -178]], false) + ' ' + crD([[-28, -120], [-33, -60], [-40, -4]], false) + ' ' + crD([[0, -150], [-1, -80], [-3, -2]], false), 1, 0),
@@ -571,11 +571,11 @@ canvas { display: block; width: 100%; height: 100%; }
     hatLip: MS('M-66 -394 C-40 -401 56 -405 82 -398 C56 -386 -38 -382 -66 -394 Z', 2.2, 0),
     hatLipEdge: MS('M82 -398 C56 -386 -38 -382 -66 -394', 2.2, 0),
     hatStar: MS('M8 -430 L11 -423 L18 -422 L13 -417 L14 -410 L8 -414 L2 -410 L3 -417 L-2 -422 L5 -423 Z', 1.2, 0),
-    brow: MS('M-11 -383 C-6 -386 -1 -386 3 -384 M10 -385.5 C14 -388.6 19 -388.2 23 -384.4', 1.2, 0),
+    brow: MS('M-10 -378.2 C-6.2 -381 -2 -381.2 2.4 -379.6 M9.8 -379.6 C14.2 -381.2 18.4 -381 22.2 -378.2', 1.6, 0),
     lips: S('M2 -355.6 C4.2 -357.8 6 -357.4 7 -356.6 C8 -357.4 9.8 -357.8 12 -355.6 C10 -352 4 -352 2 -355.6 Z', { w: 1, ov: 0, j: .2 })
   };
   var MWINK = false;
-  var MCOL = { hair: '#241a3c', hairHi: 'rgba(150,130,225,', gown: '#6a3aa8', gownDk: '#2e1660', vio: '#3a2466', skin: '#f3c3a2', mesh: '#160c18', lip: '#d4243f', eye: '#4a2a7a', gold: '#ffd34d', wood: '#9a6634' };
+  var MCOL = { hair: '#241a3c', hairHi: 'rgba(150,130,225,', gown: '#6a3aa8', gownDk: '#2e1660', vio: '#3a2466', skin: '#f3c3a2', mesh: '#160c18', lip: '#d4243f', eye: '#2e1c18', gold: '#ffd34d', wood: '#9a6634' };
   function animeEye(cx, cy, side, k, closed) { // side -1: outer corner on the left; sultry, half-lidded
     ctx.save(); ctx.translate(cx, cy); ctx.scale(1.3, 1.3); ctx.translate(-cx, -cy); ctx.globalAlpha = k; var o = side, ink2 = '#1a0f1e';
     if (closed) {
@@ -584,7 +584,7 @@ canvas { display: block; width: 100%; height: 100%; }
     }
     var wp = new Path2D(); wp.moveTo(cx - 5.6, cy + .4); wp.bezierCurveTo(cx - 3.6, cy - 3.6, cx + 3.6, cy - 3.8, cx + 5.8, cy - .6); wp.bezierCurveTo(cx + 4, cy + 3.4, cx - 3.4, cy + 3.6, cx - 5.6, cy + .4); wp.closePath();
     ctx.fillStyle = '#fbf6f2'; ctx.fill(wp); ctx.save(); ctx.clip(wp);
-    var ig = ctx.createLinearGradient(0, cy - 4.4, 0, cy + 4.4); ig.addColorStop(0, '#120822'); ig.addColorStop(.55, MCOL.eye); ig.addColorStop(1, '#9a7ad0');
+    var ig = ctx.createLinearGradient(0, cy - 4.4, 0, cy + 4.4); ig.addColorStop(0, '#0b0608'); ig.addColorStop(.55, MCOL.eye); ig.addColorStop(1, '#6a4a3e');
     ctx.fillStyle = ig; ctx.beginPath(); ctx.ellipse(cx + o * -.3, cy + .4, 3.2, 4.2, 0, 0, 7); ctx.fill();
     ctx.fillStyle = '#0a0412'; ctx.beginPath(); ctx.ellipse(cx + o * -.3, cy + .4, 1.3, 2.3, 0, 0, 7); ctx.fill();
     ctx.fillStyle = 'rgba(40,16,40,.4)'; ctx.fillRect(cx - 7, cy - 6, 14, 3.4);
@@ -595,7 +595,6 @@ canvas { display: block; width: 100%; height: 100%; }
     ctx.fillStyle = ink2; ctx.fill(lp);
     ctx.strokeStyle = ink2; ctx.lineCap = 'round'; ctx.lineWidth = .8; ctx.beginPath(); ctx.moveTo(cx + o * 5.6, cy); ctx.quadraticCurveTo(cx + o * 3, cy + 3.4, cx - o * .5, cy + 3.3); ctx.stroke();
     ctx.lineWidth = .9; ctx.beginPath(); ctx.moveTo(cx + o * 4.8, cy - 2.6); ctx.lineTo(cx + o * 6.8, cy - 5); ctx.stroke();
-    ctx.strokeStyle = 'rgba(120,60,90,.55)'; ctx.lineWidth = .6; ctx.beginPath(); ctx.moveTo(cx - o * 4, cy - 4.6); ctx.quadraticCurveTo(cx, cy - 6.2, cx + o * 4.6, cy - 4.4); ctx.stroke(); // lid crease
     ctx.restore();
   }
   function heartAt(x, y, s, col, a) { ctx.save(); ctx.translate(x, y); ctx.scale(s / 20, s / 20); ctx.globalAlpha *= a; ctx.fillStyle = col; ctx.fill(new Path2D(HEART)); ctx.restore(); }
@@ -617,8 +616,8 @@ canvas { display: block; width: 100%; height: 100%; }
     var Bd = body(), M = MIRA, P = PONIES[pony], ink = '#2a1830', lw = 1.7 / sc;
     ctx.save(); ctx.translate(x, y); ctx.scale(-sc, sc); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = ink; ctx.lineWidth = lw;
     var fs = function (p, col) { ctx.fillStyle = col; ctx.fill(p); ctx.stroke(p); };
-    fs(M.staff.path, MCOL.wood); fs(M.staffHead.path, MCOL.wood);
-    fs(Bd.back.gown, MCOL.gown); ctx.save(); ctx.clip(Bd.back.gown); ctx.fillStyle = 'rgba(30,10,60,.25)'; ctx.fillRect(10, -340, 90, 345); ctx.restore();
+    fs(M.staff.path, flatCol(MCOL.wood, 1.3)); fs(M.staffHead.path, flatCol(MCOL.wood, 1.3));
+    fs(Bd.back.gown, flatCol(MCOL.gown, 1.3)); ctx.save(); ctx.clip(Bd.back.gown); ctx.fillStyle = 'rgba(30,10,60,.25)'; ctx.fillRect(10, -340, 90, 345); ctx.restore();
     ctx.save(); ctx.lineWidth = lw * .7; ctx.beginPath(); ctx.moveTo(0, -333); ctx.lineTo(0, -2); ctx.moveTo(-14, -300); ctx.quadraticCurveTo(-10, -258, -20, -170); ctx.moveTo(14, -300); ctx.quadraticCurveTo(10, -258, 20, -170); ctx.stroke(); ctx.restore(); // zip and seams
     ctx.fillStyle = '#5a3a3e'; ctx.fill(Bd.back.top); ctx.stroke(Bd.back.top);
     [Bd.upperL, Bd.foreL, Bd.upperR, Bd.foreR].forEach(function (a) { fs(a.path, '#5a3a3e'); });
@@ -633,8 +632,75 @@ canvas { display: block; width: 100%; height: 100%; }
     [-1, 1].forEach(function (sd) { var lk = new Path2D('M' + sd * 22 + ' -380 C' + sd * 26 + ' -366 ' + sd * 25 + ' -346 ' + sd * 20 + ' -330 C' + sd * 18 + ' -344 ' + sd * 19 + ' -364 ' + sd * 18 + ' -378 Z'); fs(lk, MCOL.hair); });
     // the hat from behind, set a touch lower so the brim sits on the hair
     ctx.save(); ctx.translate(0, -362); ctx.scale(.86, .86); ctx.translate(-6, 344); ctx.lineWidth = lw / .86;
-    fs(M.hatBrim.path, MCOL.vio); fs(M.hatCone.path, MCOL.vio); fs(M.hatBand.path, '#24143f');
+    fs(M.hatBrim.path, flatCol(MCOL.vio, 1.35)); fs(M.hatCone.path, flatCol(MCOL.vio, 1.35)); fs(M.hatBand.path, '#24143f');
     ctx.restore();
+    ctx.restore();
+  }
+  function mirabelSide(x, y, sc, pony) { // profile facing right, hand on hip; the staff is left out (see the front)
+    var ink = '#2a1830', lw = 1.7 / sc, P = PONIES[pony];
+    ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = ink; ctx.lineWidth = lw;
+    var fs = function (d, col, closed) { var p = typeof d === 'string' ? new Path2D(d) : new Path2D(crD(d, closed !== false)); if (col) { ctx.fillStyle = col; ctx.fill(p); } ctx.stroke(p); return p; };
+    // ponytail behind the back
+    if (!P.braid) fs(P.d.map(function (q) { return [q[0] * .7 - 16, q[1]]; }), MCOL.hair); else for (var i = 0; i < 8; i++) { var e = new Path2D(); e.ellipse(-16 + (i % 2 ? 1.5 : -1.5), -350 + i * 12.5, 7, 7.5, 0, 0, 7); ctx.fillStyle = MCOL.hair; ctx.fill(e); ctx.stroke(e); }
+    // far arm (behind): just the elbow sticking out back
+    fs([[-4, -338], [-30, -292], [-24, -286], [2, -328]], '#4a2e32');
+    // body under the sheer top: neck and shoulders, then the dress
+    fs([[-9, -360], [9, -360], [10, -344], [16, -338], [26, -328, 1], [-14, -334, 1], [-16, -342], [-10, -350]], '#5a3a3e');
+    var dress = [[-14, -334, 1], [26, -330], [38, -324], [45, -313], [41, -300], [28, -292], [14, -287], [10, -258], [14, -236], [16, -210], [14, -160], [11, -104], [16, -60], [36, -2, 1], [0, 4], [-36, -2, 1], [-16, -60], [-13, -104], [-20, -136], [-31, -166], [-40, -188], [-42, -206], [-38, -224], [-27, -240], [-15, -254], [-12, -270], [-15, -296], [-19, -316], [-18, -328]];
+    var dp = fs(dress, flatCol(MCOL.gown, 1.3)); ctx.save(); ctx.clip(dp); ctx.fillStyle = 'rgba(30,10,60,.28)'; ctx.fillRect(-60, -340, 44, 345); ctx.globalCompositeOperation = 'screen'; ctx.strokeStyle = 'rgba(214,184,255,.8)'; ctx.lineWidth = 2.2 / sc * 1.2; ctx.beginPath(); ctx.moveTo(26, -322); ctx.quadraticCurveTo(38, -320, 40, -310); ctx.moveTo(10, -230); ctx.quadraticCurveTo(14, -200, 11, -170); ctx.moveTo(-34, -214); ctx.quadraticCurveTo(-38, -200, -34, -186); ctx.stroke(); ctx.restore();
+    heartAt(14, -250, 9, MCOL.gownDk, .9);
+    fs('M1 -2 C3 -6 11 -6 14 -2 L16 3 L-1 3 Z', '#1c1222'); // toe of the shoe under the hem
+    // near arm: hand on the hip, elbow back
+    fs(limbD([0, -338], [-26, -290], 12.5, 9.5), '#5a3a3e'); fs(limbOpenD([-26, -290], [-2, -246], 9, 7), '#5a3a3e');
+    fs([[-4, -250], [4, -252], [10, -246], [12, -238], [8, -232], [0, -234], [-4, -242]], MCOL.skin);
+    ctx.save(); ctx.lineWidth = lw * .6; ctx.beginPath(); ctx.moveTo(-6.5, -251); ctx.lineTo(1.5, -253); ctx.stroke(); ctx.restore(); // cuff
+    // head in profile
+    var face = [[19, -404], [21.5, -392], [20.5, -387], [21.5, -383], [27, -376], [22, -373, 1], [23.5, -370], [21, -368, 1], [23, -366], [20, -364.5, 1], [21.5, -362], [13, -357], [4, -360], [-4, -370], [-10, -390], [0, -406]];
+    fs(face, MCOL.skin);
+    ctx.save(); ctx.fillStyle = MCOL.lip; ctx.beginPath(); ctx.moveTo(23.5, -370); ctx.quadraticCurveTo(21, -369.5, 20.5, -368); ctx.quadraticCurveTo(21.5, -367, 23, -366); ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.fillStyle = '#fffaf5'; ctx.beginPath(); ctx.moveTo(12, -385); ctx.quadraticCurveTo(15.5, -388, 19, -386); ctx.quadraticCurveTo(16, -383, 12, -385); ctx.fill(); ctx.fillStyle = MCOL.eye; ctx.beginPath(); ctx.ellipse(16.6, -385.6, 1.6, 2.1, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = ink; ctx.lineWidth = lw * 1.3; ctx.beginPath(); ctx.moveTo(11.5, -385.4); ctx.quadraticCurveTo(15.5, -389, 19.5, -386.6); ctx.lineTo(21.5, -388.6); ctx.stroke();
+      ctx.lineWidth = lw * .7; ctx.beginPath(); ctx.moveTo(12, -391.5); ctx.quadraticCurveTo(16, -393.5, 20, -392); ctx.stroke(); ctx.fillStyle = 'rgba(232,90,120,.3)'; ctx.beginPath(); ctx.ellipse(13, -377, 4, 2, 0, 0, 7); ctx.fill(); ctx.restore();
+    // sleek hair over the skull, a front lock hanging by the cheek
+    fs([[18, -406], [10, -412], [-6, -413], [-20, -404], [-25, -390], [-21, -372], [-14, -360], [-6, -362], [-6, -378], [0, -392], [8, -400]], MCOL.hair);
+    fs([[6, -398], [11, -384], [12, -364], [13, -342], [11, -326, 1], [7, -340], [6, -364], [3, -384]], MCOL.hair);
+    var tie = new Path2D(); tie.ellipse(-14, P.tie, 4, 6, -.3, 0, 7); ctx.fillStyle = MCOL.gold; ctx.fill(tie); ctx.stroke(tie);
+    // the hat in profile: brim tipped forward, cone with a bent tip trailing back
+    ctx.save(); ctx.translate(2, -404); ctx.rotate(.06); var br = new Path2D(); br.ellipse(0, 0, 64, 4.5, 0, 0, 7); ctx.fillStyle = MCOL.vio; ctx.fill(br); ctx.stroke(br); ctx.restore();
+    fs([[-20, -407], [-18, -432], [-10, -458], [4, -478], [-6, -482], [-20, -480], [-28, -470, 1], [-14, -474], [-2, -470], [-4, -452], [8, -430], [22, -406, 1]], flatCol(MCOL.vio, 1.35));
+    fs([[-20, -407], [22, -406], [21.5, -414], [-19.5, -415]], '#24143f');
+    ctx.restore();
+  }
+  function flatCol(hex, a) { // the colour a flat-style colour() fill ends up as on paper, so side and back views match the front
+    var n = parseInt(hex.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255], base = [244, 236, 217], k = Math.min(1, .7 * (a == null ? 1 : a));
+    return 'rgb(' + c.map(function (v, i) { return Math.round(base[i] * (1 - k + k * v / 255)); }).join(',') + ')'; }
+  function fumSide(x, y, sc) { // Fumbleton in profile, facing right
+    var ink = '#2a1830', lw = 2.2 / sc;
+    ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); ctx.translate(0, -330); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = ink; ctx.lineWidth = lw;
+    var fs = function (d, col, closed) { var p = typeof d === 'string' ? new Path2D(d) : new Path2D(crD(d, closed !== false)); if (col) { ctx.fillStyle = col; ctx.fill(p); } ctx.stroke(p); return p; };
+    var robe = fs([[-30, 182], [-44, 230], [-50, 290], [-46, 330, 1], [52, 330, 1], [58, 280], [50, 224], [32, 182]], flatCol('#6c86e0', 1));
+    ctx.save(); ctx.clip(robe); ctx.fillStyle = 'rgba(20,30,90,.22)'; ctx.fillRect(-60, 170, 34, 170); ctx.restore();
+    fs([[-46, 314, 1], [52, 314, 1], [53, 330, 1], [-46, 330, 1]], flatCol('#ffd34d', 1.2)); fs([[-48, 252, 1], [55, 252, 1], [56, 266, 1], [-49, 266, 1]], flatCol('#5a3a22', 1.2));
+    fs('M30 330 C32 320 52 318 62 326 C70 322 76 326 74 332 C66 338 40 338 30 336 Z', flatCol('#8a3a6a', 1.2));
+    fs([[-6, 196], [8, 230], [16, 270], [10, 280, 1], [-6, 274, 1], [-12, 236], [-14, 200]], flatCol('#5874d4', 1.1)); // sleeve
+    fs([[6, 274], [16, 272], [20, 282], [12, 290], [4, 284]], flatCol('#f2b598', 1));
+    fs([[14, 196], [30, 206], [46, 246], [44, 286], [38, 314, 1], [26, 300], [12, 270], [4, 220]], flatCol('#ffffff', 0.6)); // beard
+    ctx.save(); ctx.lineWidth = lw * .55; ctx.beginPath(); ctx.moveTo(26, 232); ctx.quadraticCurveTo(32, 252, 30, 272); ctx.moveTo(16, 240); ctx.quadraticCurveTo(22, 262, 20, 282); ctx.stroke(); ctx.restore();
+    fs('M30 210 C44 222 54 214 56 204 C48 214 38 212 30 204 Z', flatCol('#ffffff', 0.6)); // moustache
+    var nose = new Path2D(); nose.arc(38, 200, 12, 0, 7); ctx.fillStyle = flatCol('#f2a98a', 1); ctx.fill(nose); ctx.stroke(nose);
+    ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(24, 192, 3, 0, 7); ctx.fill(); ctx.lineWidth = lw * 1.2; ctx.beginPath(); ctx.moveTo(16, 184); ctx.quadraticCurveTo(24, 178, 32, 184); ctx.stroke(); ctx.lineWidth = lw;
+    var hat = fs([[-58, 186, 1], [-40, 140], [-26, 96], [-14, 56], [-24, 44], [-42, 42], [-54, 52, 1], [-40, 34], [-20, 30], [0, 40], [8, 70], [24, 120], [48, 186, 1], [-5, 190]], flatCol('#4c62c4', 1));
+    fs([[-58, 186, 1], [48, 186, 1], [46, 172, 1], [-54, 172, 1]], flatCol('#2c3a8a', 1.3));
+    ctx.restore();
+  }
+  function fumBack(x, y, sc) { // from behind: mirrored silhouette, no face, beard edges peek out
+    var ink = '#2a1830', lw = 2.2 / sc;
+    ctx.save(); ctx.translate(x, y); ctx.scale(-sc, sc); ctx.translate(0, -330); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = ink; ctx.lineWidth = lw;
+    var fs = function (p, col) { ctx.fillStyle = col; ctx.fill(p); ctx.stroke(p); };
+    fs(FUM.slippers.path, flatCol('#8a3a6a', 1.2)); fs(FUM.robe.path, flatCol('#6c86e0', 1)); ctx.save(); ctx.clip(FUM.robe.path); ctx.fillStyle = 'rgba(20,30,90,.22)'; ctx.fillRect(10, 170, 80, 170); ctx.restore();
+    fs(FUM.hem.path, flatCol('#ffd34d', 1.2)); fs(FUM.belt.path, flatCol('#5a3a22', 1.2)); fs(FUM.sleeveL.path, flatCol('#5874d4', 1.1)); fs(FUM.sleeveR.path, flatCol('#5874d4', 1.1)); fs(FUM.handL.path, flatCol('#f2b598', 1)); fs(FUM.handR.path, flatCol('#f2b598', 1));
+    fs(new Path2D('M-50 196 C-58 214 -56 232 -48 244 L-40 208 Z M34 196 C42 214 40 232 32 244 L24 208 Z'), flatCol('#ffffff', 0.6));
+    fs(FUM.hat.path, flatCol('#4c62c4', 1)); fs(FUM.band.path, flatCol('#2c3a8a', 1.3));
     ctx.restore();
   }
   function mirabelDrawn(x, y, sc, F, T) {
@@ -691,16 +757,14 @@ canvas { display: block; width: 100%; height: 100%; }
     base([M.hatLip]); colour(M.hatLip, MCOL.vio, cF(.62, .3), 1.35); shade(M.hatLip, cF(.75, .25), 5, -.6); draw(M.hatLipEdge, F / .6 * 1.3, hl);
     if (F > .66) {
       var k = clamp(cF(.66, .2));
-      ctx.save(); ctx.globalAlpha *= .5 * k; ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = '#9a5ab0'; ctx.beginPath(); ctx.ellipse(-3.5, -375.6, 7, 2.6, -.08, 0, 7); ctx.ellipse(16.5, -375.6, 7, 2.6, .08, 0, 7); ctx.fill(); ctx.restore(); // eyeshadow
       animeEye(-3, -371, -1, k, false); animeEye(16, -371, 1, k, MWINK);
       group([M.brow], k, hl);
       ctx.save(); ctx.globalAlpha *= k; ctx.strokeStyle = 'rgba(120,60,50,.8)'; ctx.lineWidth = .8; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(8.8, -365); ctx.lineTo(9.4, -362.6); ctx.lineTo(8, -362.2); ctx.stroke();
       // a smirk: fuller lower lip, the right corner lifted
-      var lip = new Path2D('M2.4 -355.4 C4.4 -357.6 6.2 -357.2 7.2 -356.5 C8.2 -357.4 10.4 -358 12.6 -356.8 C10.6 -352.6 4.4 -352.2 2.4 -355.4 Z');
-      ctx.fillStyle = MCOL.lip; ctx.fill(lip); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.ellipse(6.4, -353.5, 1.5, .5, 0, 0, 7); ctx.fill();
+      var lip = new Path2D('M3 -355.6 C4.8 -357.4 6.3 -357 7.2 -356.4 C8.1 -357.1 9.9 -357.6 11.8 -356.6 C10 -353.2 4.8 -352.9 3 -355.6 Z');
+      ctx.fillStyle = '#b4233e'; ctx.fill(lip); ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.ellipse(6.6, -353.9, 1.2, .4, 0, 0, 7); ctx.fill();
       ctx.strokeStyle = '#6e1022'; ctx.lineWidth = .75; ctx.beginPath(); ctx.moveTo(2, -355.6); ctx.quadraticCurveTo(7.2, -354.3, 13, -357.3); ctx.stroke();
-      ctx.fillStyle = 'rgba(232,90,120,.24)'; ctx.beginPath(); ctx.ellipse(-6, -362, 4.5, 2, 0, 0, 7); ctx.ellipse(19.5, -362, 4.5, 2, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = '#2a1620'; ctx.beginPath(); ctx.arc(21, -360.5, .6, 0, 7); ctx.fill(); // beauty mark
+      ctx.fillStyle = 'rgba(225,110,120,.12)'; ctx.beginPath(); ctx.ellipse(-6, -361.5, 4.5, 2, 0, 0, 7); ctx.ellipse(19.5, -361.5, 4.5, 2, 0, 0, 7); ctx.fill();
       ctx.restore();
     }
     ctx.restore();
@@ -1499,6 +1563,16 @@ canvas { display: block; width: 100%; height: 100%; }
     var lab = function (t, x) { ctx.save(); ctx.font = '700 28px Caveat, cursive'; ctx.textAlign = 'center'; ctx.fillStyle = '#3a2a20'; ctx.fillText(t, x, 205); ctx.restore(); };
     mirabel(190, 820, sc, 1, 0); lab('Front (all ponytails)', 180);
     PONIES.forEach(function (p, n) { var cx = 500 + n * 300; mirabelBack(cx, 820, sc, n); lab(p.name, cx); }); MART = keep; MHAIR = kh; MHBK = -1; };
+  function guides(lines, x0, x1) { ctx.save(); ctx.font = '600 15px "Nunito Sans", sans-serif'; ctx.textBaseline = 'middle'; lines.forEach(function (L) { ctx.strokeStyle = 'rgba(70,90,160,.35)'; ctx.setLineDash([6, 6]); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, L[1]); ctx.lineTo(x1, L[1]); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = 'rgba(50,60,110,.8)'; ctx.fillText(L[0], x1 + 6, L[1]); }); ctx.restore(); }
+  function sheetBase(title) { setPlaying(false); ctx = main; ctx.setTransform(Q, 0, 0, Q, 0, 0); ctx.fillStyle = '#f7f3ea'; ctx.fillRect(0, 0, W, H); boil = 0; tip = null; CLOCK = .5;
+    ctx.save(); ctx.font = '700 34px Caveat, cursive'; ctx.fillStyle = '#3a2a20'; ctx.fillText(title, 40, 50); ctx.restore(); }
+  function lab(t, x, yy) { ctx.save(); ctx.font = '700 26px Caveat, cursive'; ctx.textAlign = 'center'; ctx.fillStyle = '#3a2a20'; ctx.fillText(t, x, yy || 880); ctx.restore(); }
+  window.__turnM = function (pony) { var keep = MART; MART = false; MHAIR = 0; MHBK = -1; var sc = 1.55, fy = 850; sheetBase('Mirabel · turnaround (key pose) · 8 heads');
+    var hy = function (u) { return fy + u * sc; }; guides([['crown', hy(-414)], ['chin', hy(-362)], ['shoulders', hy(-340)], ['bust', hy(-314)], ['waist', hy(-258)], ['hips', hy(-205)], ['knee', hy(-104)], ['floor', hy(0)]], 30, 1450);
+    mirabel(260, fy, sc, 1, 0); lab('Front', 250, 890); mirabelSide(760, fy, sc, pony || 0); lab('Side (right)', 760, 890); mirabelBack(1200, fy, sc, pony || 0); lab('Back', 1200, 890); MART = keep; };
+  window.__turnF = function () { var sc = 1.7, fy = 840; sheetBase('Archmage Fumbleton · turnaround');
+    var hy = function (u) { return fy + (u - 330) * sc; }; guides([['hat tip', hy(34)], ['brim', hy(184)], ['eyes', hy(194)], ['belt', hy(259)], ['hem', hy(314)], ['floor', hy(330)]], 30, 1450);
+    fumbleton(300, fy, sc, 0, 1, 'nowand'); lab('Front', 300, 890); fumSide(760, fy, sc); lab('Side (right)', 760, 890); fumBack(1200, fy, sc); lab('Back', 1200, 890); };
   window.__portrait = function (sc, cx, cy, art) { setPlaying(false); var keep = MART; MART = !!art; ctx = main; ctx.setTransform(Q, 0, 0, Q, 0, 0); ctx.drawImage(paper, 0, 0); boil = 0; tip = null; mirabel(cx, cy, sc, 1, 0); MART = keep; };
   window.__seek = function (t) { setPlaying(false); setTime(t, true); };
 })();
