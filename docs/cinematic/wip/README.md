@@ -64,3 +64,15 @@ style test page (`mirabel_final.png`); the Body button still cycles the earlier 
   beard curls, moustache, cheeks, curled slippers): `../refs/fumbleton_detailed.png`.
 - The knock-at-the-door ending is cut from the intro (runs 64.5 s) and saved as an **epilogue idea**:
   the scene function `sEnd` is still in the source, just not in the timeline.
+
+## Evening polish (2026-11-05, later)
+
+- Flat style backgrounds: a warm striped wall, wainscot and wooden floor inside; a soft sky with clouds outside.
+- Playback: drawings for the drawn half are rendered one step ahead in idle time (double buffer), and every
+  cache is built behind the loading screen (about 2 s). Measured over a full real-time play in headless
+  Chromium: zero drawings rendered on a visible frame, longest frame 10 ms in the drawn half. The magic half
+  (Orb, hero splashes, march) still has frames over 16 ms in software rendering; check on a GPU before optimising.
+- Mirabel: lighter makeup, dark brown eyes, reworked eyes (winged lash line, separate lashes, layered iris),
+  one filled brow per side, rounder jaw; bust drawn as two round forms on the ribcage with the upper bust
+  showing through the sheer top above a lower neckline; hair pulled back (sleek) with thin tapered front locks
+  (options in `../refs/mirabel_front_locks.png`); test model "Final · new staff pose" (same body).
