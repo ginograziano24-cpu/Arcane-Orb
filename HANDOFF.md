@@ -1,6 +1,6 @@
 # Handoff: where Arcane Orb stands
 
-Read this first in a new session, then `ROADMAP.md` for what's next. (`HANDOFF_CHATGPT.md` is a self-contained brief for continuing in another AI assistant.)
+Read this first in a new session, then `ROADMAP.md` for what's next. (Self-contained briefs for continuing in another AI assistant: `HANDOFF_CHATGPT_GAME.md` for the game, `HANDOFF_CHATGPT.md` for the intro.)
 
 ## The project
 

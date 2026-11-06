@@ -1,6 +1,7 @@
 Arcane Orb handoff package (2026-11-05, commit 93e01fb)
 
-1. HANDOFF_CHATGPT.md  - paste this whole file as your first message to ChatGPT.
+1. HANDOFF_CHATGPT_GAME.md - paste first: the game, performance work, roadmap.
+   HANDOFF_CHATGPT.md      - the opening intro brief.
 2. The game source: this repository (GitHub ginograziano24-cpu/Arcane-Orb, branch main).
                           Give ChatGPT the GitHub link, or download it as a zip from GitHub.
 3. HANDOFF.md, ROADMAP.md - the detailed project notes (also inside the source zip).
