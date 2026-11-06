@@ -53,3 +53,14 @@ the overall art direction.
 higher-set bust, with the C+++ proportions (bust as wide as the hips). It is the default on the
 style test page (`mirabel_final.png`); the Body button still cycles the earlier test models.
 - Large busts (wider than 44 units) get a rounded outline (upper curve, apex, lower curve, tuck into the underbust) and soft round shading on each side.
+
+## Flat cartoon pass (2026-11-05 evening)
+
+- Look: **flat cartoon** is the default; finished lines in that style are clean, steady vector strokes.
+- Mirabel: purple dress to match her hat; hair is a **sleek ponytail** (close to the head from the
+  front, the two front locks hang down; the ponytail shows only from behind). Back-view ponytail
+  options in `../refs/mirabel_ponytails.png`; earlier loose styles in `../refs/mirabel_hairstyles.png`.
+- Fumbleton: detailed model (sleeves and hands, gold hem, belt, moon-and-star robe, hat band,
+  beard curls, moustache, cheeks, curled slippers): `../refs/fumbleton_detailed.png`.
+- The knock-at-the-door ending is cut from the intro (runs 64.5 s) and saved as an **epilogue idea**:
+  the scene function `sEnd` is still in the source, just not in the timeline.
