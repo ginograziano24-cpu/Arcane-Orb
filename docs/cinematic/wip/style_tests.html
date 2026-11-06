@@ -1554,17 +1554,53 @@ canvas { display: block; width: 100%; height: 100%; }
     noiseBuf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate); var d = noiseBuf.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
   function env(g, t0, a, peak, dur) { g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(peak, t0 + a); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur); }
-  function tone(type, f0, f1, dur, vol, delay) { var t0 = AC.currentTime + (delay || 0), o = AC.createOscillator(), g = AC.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t0); if (f1) o.frequency.exponentialRampToValueAtTime(f1, t0 + dur); env(g, t0, .01, vol, dur); o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + .05); }
-  function noise(dur, vol, type, f0, f1, delay, q) { var t0 = AC.currentTime + (delay || 0), s = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain(); s.buffer = noiseBuf; fl.type = type || 'lowpass'; fl.Q.value = q || 1; fl.frequency.setValueAtTime(f0, t0); if (f1) fl.frequency.exponentialRampToValueAtTime(f1, t0 + dur); env(g, t0, .01, vol, dur); s.connect(fl); fl.connect(g); g.connect(master); s.start(t0); s.stop(t0 + dur + .05); }
+  function tone(type, f0, f1, dur, vol, delay) { var t0 = AC.currentTime + SD + (delay || 0), o = AC.createOscillator(), g = AC.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t0); if (f1) o.frequency.exponentialRampToValueAtTime(f1, t0 + dur); env(g, t0, .01, vol, dur); o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + .05); }
+  function noise(dur, vol, type, f0, f1, delay, q) { var t0 = AC.currentTime + SD + (delay || 0), s = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain(); s.buffer = noiseBuf; fl.type = type || 'lowpass'; fl.Q.value = q || 1; fl.frequency.setValueAtTime(f0, t0); if (f1) fl.frequency.exponentialRampToValueAtTime(f1, t0 + dur); env(g, t0, .01, vol, dur); s.connect(fl); fl.connect(g); g.connect(master); s.start(t0); s.stop(t0 + dur + .05); }
   var SCALE = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26];
   function bell(n, vol, delay) { var f = 523.25 * Math.pow(2, SCALE[n % SCALE.length] / 12); tone('sine', f, 0, 1.2, vol || .12, delay); tone('sine', f * 2.01, 0, .6, (vol || .12) * .3, delay); }
-  function pad(root, dur) { [0, 7, 12, 16].forEach(function (s, i) { var t0 = AC.currentTime, o = AC.createOscillator(), fl = AC.createBiquadFilter(), g = AC.createGain(); o.type = 'sawtooth'; o.frequency.value = root * Math.pow(2, s / 12) * (1 + (i - 1.5) * .002); fl.type = 'lowpass'; fl.frequency.value = 900; g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(.035, t0 + .4); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur); o.connect(fl); fl.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + .05); }); }
+  var SD = 0;
+  function pad(root, dur) { [0, 7, 12, 16].forEach(function (s, i) { var t0 = AC.currentTime + SD, o = AC.createOscillator(), fl = AC.createBiquadFilter(), g = AC.createGain(); o.type = 'sawtooth'; o.frequency.value = root * Math.pow(2, s / 12) * (1 + (i - 1.5) * .002); fl.type = 'lowpass'; fl.frequency.value = 900; g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(.035, t0 + .4); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur); o.connect(fl); fl.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + .05); }); }
   function kick() { tone('sine', 140, 40, .35, .5); }
   var CUES = [];
   (function () {
-    var melody = [4, 2, 0, 2, 4, 4, 4, 2, 2, 2, 4, 7, 7, 4, 2, 0, 2, 4, 4, 4, 2, 2, 4, 2, 0];
-    for (var i = 0; i < 33 * 2.3; i++) { var tt = i * .45; if (tt > 33) break; (function (n) { CUES.push([tt, function () { bell(n, .07); }]); })(melody[i % melody.length]); }
-    for (var p = .6; p < 33; p += .9) CUES.push([p, function () { noise(.28, .03, 'bandpass', 2400, 3200, 0, 3); }]); // pencil scratch
+    // ---------------- the score (C major, 120 bpm: one beat = .5 s) ----------------
+    var hz = function (m) { return 440 * Math.pow(2, (m - 69) / 12); };
+    var box = function (m, v, d) { return function () { tone('sine', hz(m), 0, d || .9, v || .06); tone('sine', hz(m) * 2.005, 0, (d || .9) * .5, (v || .06) * .25); tone('triangle', hz(m) * 4, 0, .08, (v || .06) * .2); }; }; // music box
+    var bass = function (m, v, d) { return function () { tone('triangle', hz(m), 0, d || .45, v || .09); }; };
+    var chord = function (ms, v, d, type) { return function () { ms.forEach(function (m) { tone(type || 'triangle', hz(m), 0, d || .35, v || .025); }); }; };
+    var at = function (t, fn) { CUES.push([t, fn]); };
+    // the theme (waltz feel, two bars per line): note numbers, beats
+    var THEME = [[76, 1], [74, .5], [72, .5], [74, 1], [76, 1], [76, 1], [76, 2], [74, 1], [74, 1], [74, 2], [76, 1], [79, 1], [79, 2],
+                 [76, 1], [74, .5], [72, .5], [74, 1], [76, 1], [76, 1], [76, 1], [74, 1], [74, 1], [76, 1], [74, 1], [72, 3]];
+    var CH = [[48, [64, 67]], [43, [62, 67]], [45, [64, 69]], [41, [65, 69]]]; // C, G, Am, F (bass, chord)
+    function themeFrom(t0, t1, transpose, vol) { // melody plus oom-pah-pah accompaniment, clipped to [t0, t1)
+      var t = t0, n = 0; while (t < t1) { var nt = THEME[n % THEME.length], d = nt[1] * .5; if (t + .05 < t1) at(t, box(nt[0] + transpose, vol)); t += d; n++; }
+      for (var b = 0, tb = t0; tb < t1 - .05; b++, tb += .5) { var c = CH[Math.floor(b / 4) % 4]; at(tb, b % 2 ? chord(c[1].map(function (m) { return m + transpose; }), .018) : bass(c[0] + transpose, .07)); }
+    }
+    // prologue: night, a held chord and a few twinkles
+    at(.1, function () { [48, 55, 64].forEach(function (m) { tone('sine', hz(m), 0, 2.6, .03); }); });
+    [.6, 1.2, 1.7, 2.1].forEach(function (t, i) { at(t, box([84, 88, 91, 96][i], .035, 1.4)); });
+    // I. The Date: the theme, freeze, the daydream in A-flat, record scratch, theme back
+    themeFrom(2.5, 6.1, 0, .06);
+    themeFrom(7.4, 9.9, -4, .045); // dreamy, a third lower
+    at(7.4, function () { [56, 63, 68, 72].forEach(function (m, i) { tone('sine', hz(m), 0, 2.6, .028, i * .05); }); });
+    themeFrom(10.1, 14, 0, .06);
+    // II. The Scroll: POOF cuts it, sparkle, then brighter (up a tone) until the door
+    themeFrom(14.6, 17.5, 2, .065);
+    // III. Outside: a stomping march in A minor locked to the footsteps (.8 s), up a semitone at the BAMF
+    function march(t0, t1, tr, vol) { var line = [69, 72, 76, 72, 74, 71, 67, 71]; for (var b = 0, t = t0; t < t1 - .05; b++, t += .4) {
+      if (b % 2 === 0) at(t, bass((b % 4 ? 40 : 45) + tr, vol * 1.4, .3)); else at(t, chord([57 + tr, 60 + tr, 64 + tr], vol * .35, .2, 'square'));
+      at(t, box(line[b % line.length] + tr, vol * .9, .35)); } }
+    march(18.7, 23.6, 0, .06); march(23.9, 26.5, 1, .075);
+    // IV. Bricks: the march keeps going and builds, then breaks for Fumbleton's idea
+    march(26.5, 32.6, 1, .07);
+    at(32.6, function () { [57, 61, 64, 69].forEach(function (m) { tone('square', hz(m + 1), hz(m + 13), .5, .02); }); }); // riser
+    // the arcane theme: the same melody, an octave down, over the kick and pads, with an arpeggio
+    for (var ab = 0, ta = 37.5; ta < 58.5; ab++, ta += .25) { var cc = [[57, 60, 64, 69], [55, 59, 62, 67], [53, 57, 60, 65], [55, 59, 62, 67]][Math.floor((ta - 37.5) / 2) % 4];
+      (function (m, v) { at(ta, function () { tone('triangle', hz(m), 0, .18, v); }); })(cc[ab % 4] + 12, ta < 45 ? .018 : .026); }
+    (function () { var t = 45, n = 0; while (t < 58.3) { var nt = THEME[n % THEME.length]; (function (m) { at(t, function () { tone('sawtooth', hz(m - 12), 0, nt[1] * .45, .022); tone('sine', hz(m), 0, nt[1] * .5, .03); }); })(nt[0] - 3); t += nt[1] * .5; n++; } })();
+    // title: resolve and ring out
+    at(63, function () { [48, 55, 60, 64, 67, 72].forEach(function (m, i) { tone('sine', hz(m), 0, 1.6, .03, i * .03); }); });
     [2.5, 11, 17.5, 26.5].forEach(function (pt) { CUES.push([pt, function () { noise(.5, .12, 'bandpass', 800, 4000, 0, .7); }]); }); // page turns
     
     CUES.push([11.4, function () { [0, 4, 7, 12].forEach(function (n, i) { tone('triangle', 523 * Math.pow(2, n / 12), 0, .3, .07, i * .07); }); }]); // ta-da
@@ -1584,7 +1620,7 @@ canvas { display: block; width: 100%; height: 100%; }
     [39.5, 41.59, 43.68].forEach(function (h) { CUES.push([h, function () { noise(.6, .35, 'highpass', 1200); tone('sine', 220, 60, .4, .3); }]); }); // shatters
     HEROES.forEach(function (h, i) { CUES.push([45 + INTRO + i * SLOT, function () { [0, 4, 7].forEach(function (s) { tone('sawtooth', 220 * Math.pow(2, (SCALE[h.note] + s) / 12), 0, .5, .05); }); noise(.3, .12, 'bandpass', 3000, 800); }]); });
     for (var m = 0; m < 7; m++) CUES.push([52.5 + 2.15 + m * .28, function () { bell(5 + Math.floor(Math.random() * 6), .08); }]); // ignitions
-    CUES.push([59, function () { [0, 4, 7, 12].forEach(function (s) { var t0 = AC.currentTime, o = AC.createOscillator(), v = AC.createOscillator(), vg = AC.createGain(), g = AC.createGain(); o.type = 'sine'; o.frequency.value = 220 * Math.pow(2, s / 12); v.frequency.value = 5; vg.gain.value = 3; v.connect(vg); vg.connect(o.frequency); g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(.09, t0 + 1); g.gain.exponentialRampToValueAtTime(.0001, t0 + 5); o.connect(g); g.connect(master); o.start(t0); v.start(t0); o.stop(t0 + 5.1); v.stop(t0 + 5.1); }); }]); // choir swell
+    CUES.push([59, function () { [0, 4, 7, 12].forEach(function (s) { var t0 = AC.currentTime + SD, o = AC.createOscillator(), v = AC.createOscillator(), vg = AC.createGain(), g = AC.createGain(); o.type = 'sine'; o.frequency.value = 220 * Math.pow(2, s / 12); v.frequency.value = 5; vg.gain.value = 3; v.connect(vg); vg.connect(o.frequency); g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(.09, t0 + 1); g.gain.exponentialRampToValueAtTime(.0001, t0 + 5); o.connect(g); g.connect(master); o.start(t0); v.start(t0); o.stop(t0 + 5.1); v.stop(t0 + 5.1); }); }]); // choir swell
     for (var sh = 0; sh < 10; sh++) (function (n) { CUES.push([59.5 + n * .08, function () { bell(n + 2, .06); }]); })(sh); // logo shimmer
     // new beats: prologue, freeze frame, imagine spot, record scratch, BAMF, the knock
     CUES.push([.4, function () { tone('sine', 392, 330, .5, .05); tone('sine', 330, 294, .6, .05, .45); }]); // owl
@@ -1595,6 +1631,13 @@ canvas { display: block; width: 100%; height: 100%; }
     CUES.push([23.6, function () { noise(.7, .45, 'lowpass', 2500, 150); tone('sine', 60, 30, .8, .5); tone('sawtooth', 110, 55, .6, .1); }]); // BAMF
     CUES.sort(function (a, b) { return a[0] - b[0]; });
   })();
+  var schedT = -1;
+  function schedule(t) { // queue every cue in (schedT, t + .15] at its exact audio time
+    if (!soundOn || !AC || !playing) { schedT = -1; return; }
+    if (schedT < 0 || schedT > t || t - schedT > .5) schedT = t;
+    var until = t + .15; for (var i = 0; i < CUES.length; i++) { var c = CUES[i][0]; if (c > schedT && c <= until) { SD = Math.max(0, c - t); try { CUES[i][1](); } catch (e) { } } }
+    SD = 0; schedT = until;
+  }
   function fireCues(t0, t1) { if (!soundOn || !AC || t1 <= t0 || t1 - t0 > .5) return; for (var i = 0; i < CUES.length; i++) { var c = CUES[i][0]; if (c > t0 && c <= t1) { try { CUES[i][1](); } catch (e) { } } } }
   var soundBtn = document.getElementById('sound');
   soundBtn.addEventListener('click', function () { audioInit(); if (!AC) return; if (AC.state === 'suspended') AC.resume(); soundOn = !soundOn; soundBtn.setAttribute('aria-pressed', String(soundOn)); soundBtn.textContent = soundOn ? 'Sound off' : 'Sound on'; });
@@ -1619,13 +1662,13 @@ canvas { display: block; width: 100%; height: 100%; }
   var now = 0, playing = false, last = null, ready = false;
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function setTime(t, force) { now = Math.max(0, Math.min(TOTAL, t)); seek.value = now; clock.textContent = fmt(now) + ' / ' + fmt(TOTAL); if (ready) { render(now, force); updateCaption(now); } }
-  function setPlaying(p) { playing = p; playBtn.textContent = p ? 'Pause' : 'Play'; last = null; }
+  function setPlaying(p) { schedT = -1; playing = p; playBtn.textContent = p ? 'Pause' : 'Play'; last = null; }
   var hold = null, skipEl = document.getElementById('skip'), ring = document.getElementById('skipRing');
   document.addEventListener('visibilitychange', function () { last = null; });
   function frame(ts) {
     if (document.hidden) { last = null; requestAnimationFrame(frame); return; }
     var w0 = performance.now();
-    if (playing) { var prev = now; if (last !== null) { now += Math.min(.25, (ts - last) / 1000); if (now >= TOTAL) { now = TOTAL; setPlaying(false); } } last = ts; fireCues(prev, now); setTime(now); }
+    if (playing) { var prev = now; if (last !== null) { now += Math.min(.25, (ts - last) / 1000); if (now >= TOTAL) { now = TOTAL; setPlaying(false); } } last = ts; schedule(now); setTime(now); }
     if (hold !== null) { var hk = clamp((performance.now() - hold) / 900); ring.setAttribute('stroke-dashoffset', String(94.25 * (1 - hk))); if (hk >= 1) { hold = null; skipEl.classList.remove('show'); setTime(59); setPlaying(true); } }
     if (PERF.on && playing) PERF.work.push([now, performance.now() - w0]);
     requestAnimationFrame(frame);

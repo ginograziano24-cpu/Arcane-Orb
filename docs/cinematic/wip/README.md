@@ -77,3 +77,12 @@ style test page (`mirabel_final.png`); the Body button still cycles the earlier 
   showing through the sheer top above a lower neckline; hair pulled back (sleek) with thin tapered front locks
   (options in `../refs/mirabel_front_locks.png`); test model "Final · new staff pose" (same body).
 - Bust fills the chest (taller, set higher, same width); fuller **Soft taper** front locks are the default. New staff pose: level hips (no tilt or lean), hips 15% wider, bust matched to the hips.
+
+## Music (2026-11-05)
+
+Mirabel: final version with the old pose is the default. The intro's music is now a composed score instead of a looping music box:
+a night chord for the prologue; the waltz theme (C major, 120 bpm) for the date, which stops on the freeze frame, turns dreamy
+(a third lower) for the daydream and cuts on the record scratch; the theme returns brighter after the POOF; a stomping A-minor
+march locked to the bosses' footsteps, up a semitone at the BAMF and building through the bricks; a riser into the turn; then the
+same theme in the arcane half over the kick, pads and an arpeggio; a final ringing chord on the title. Sounds are now queued
+on the audio clock slightly ahead of time, so the rhythm no longer wobbles with the frame rate. The pencil-scratch noise is gone.
