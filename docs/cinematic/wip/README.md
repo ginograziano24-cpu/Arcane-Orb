@@ -76,3 +76,4 @@ style test page (`mirabel_final.png`); the Body button still cycles the earlier 
   one filled brow per side, rounder jaw; bust drawn as two round forms on the ribcage with the upper bust
   showing through the sheer top above a lower neckline; hair pulled back (sleek) with thin tapered front locks
   (options in `../refs/mirabel_front_locks.png`); test model "Final · new staff pose" (same body).
+- Bust fills the chest (taller, set higher, same width); fuller **Soft taper** front locks are the default. New staff pose: level hips (no tilt or lean), hips 15% wider, bust matched to the hips.
