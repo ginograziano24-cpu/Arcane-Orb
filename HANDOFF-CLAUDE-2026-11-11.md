@@ -138,6 +138,19 @@ In `sfx.go`:
 
 - #2 Anti-stall (`antistall.go`, test in `antistall_test.go`).
 - #44 Hero voices volume slider (Settings > Audio).
+- **Music per chamber (the user asked for this, Magic Ball style).** Each
+  act now has a family of three songs that take turns from chamber to
+  chamber: the act song for the 1st, 4th, 7th chamber, then two new
+  siblings. Siblings keep the act's key (the musical brick SFX still fit),
+  stay within a few BPM and use the same instruments, with their own chord
+  loop, groove, bass and lead:
+  - Act 1 (A minor): Orb Rush, **Lantern Steps** (136), **Kite Weather** (142)
+  - Act 2 (G minor): Acid Cascade, **Copper Gears** (144), **Steam Choir** (148)
+  - Act 3 (B minor): Abyss Engine, **Crystal Hollow** (150), **Starfall Engine** (154)
+  Code: `mus/song_chambers.go` (one shared arrangement, six configs),
+  `trackSongs` / `trackKey` / `chamberTrack` in audio.go, the track pick in
+  game.go. Previews: `../New-Chamber-Music-2026-11-11.zip`. The mus tests
+  pass here; levels sit within about 1.3 dB of the act songs.
 
 ## Where the code lives now
 

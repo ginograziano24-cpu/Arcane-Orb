@@ -95,6 +95,10 @@ Legend: **PC** = needs the PC (build, play or benchmark) to finish or verify.
 42. [x] **Sculpted sounds for every pickup and moment** (2026-11-11,
     sfx_sculpt.go).
 43. [ ] **Soundtrack selection** with named tracks (Settings or Codex).
+    The six chamber songs already carry titles (`mus.Title`).
+43b. [x] **Music changes from chamber to chamber, like Magic Ball.**
+    (2026-11-11: six new sibling songs, two per act, same key and palette
+    as the act song; `mus/song_chambers.go`, `chamberTrack` in audio.go.)
 44. [x] **A separate Voice volume slider** for quips. (2026-11-11:
     Settings > Audio > Hero voices.)
 45. [ ] **Dense-fight mix:** limit same-sound stacking per frame and duck

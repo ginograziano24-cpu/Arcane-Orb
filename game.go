@@ -403,7 +403,7 @@ func (g *Game) Update() error {
 		g.snd.SetIntensity(0.25, dt)
 	default:
 		if g.run != nil {
-			t := g.run.AI()
+			t := chamberTrack(g.run.AI(), g.run.ActDepth)
 			inLevel := g.state == StLevel || g.state == StPause || g.state == StCache || g.state == StSettings
 			if inLevel && g.level != nil && g.level.Boss != nil && g.level.Boss.HP > 0 {
 				t = trackBoss

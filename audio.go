@@ -348,8 +348,28 @@ func (s *Sounds) Pick(rarity int) {
 // The soundtrack streams from the music engine (package mus): one song per
 // act, the menu theme and the boss theme, arranged live from the intensity.
 
-// trackSongs maps track numbers (0..2 acts, 3 menu, 4 boss) to songs.
-var trackSongs = []string{"rush", "acid", "abyss", "groove", "warden"}
+// trackSongs maps track numbers (0..2 acts, 3 menu, 4 boss, 5..10 the
+// acts' sibling chamber songs, two per act) to songs.
+var trackSongs = []string{"rush", "acid", "abyss", "groove", "warden",
+	"rush2", "rush3", "acid2", "acid3", "abyss2", "abyss3"}
+
+// trackKey is the musical key of each track (the act it belongs to), so the
+// musical SFX keep playing in the song's key whichever sibling is on.
+var trackKey = []int{0, 1, 2, 3, 4, 0, 0, 1, 1, 2, 2}
+
+// chamberTrack picks the act's song for a chamber: like Magic Ball, the
+// music changes from chamber to chamber, taking turns through the act's
+// family of three (the act song first, then its two siblings).
+func chamberTrack(act, chambersEntered int) int {
+	act %= 3
+	switch max(0, chambersEntered-1) % 3 {
+	case 1:
+		return 5 + 2*act
+	case 2:
+		return 6 + 2*act
+	}
+	return act
+}
 
 const trackBoss = 4
 
@@ -361,6 +381,9 @@ func (s *Sounds) SetTrack(i int) {
 	}
 	s.curTrack = i
 	s.Key = i
+	if i >= 0 && i < len(trackKey) {
+		s.Key = trackKey[i]
+	}
 	s.warmKeyed()
 	if s.old != nil {
 		s.old.Close()
