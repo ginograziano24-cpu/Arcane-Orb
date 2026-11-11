@@ -753,6 +753,7 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 			strokeLine(screen, lx+w*f, ly+bh, lx+w*f+bh, ly, max(1, bh*0.34), prem(cWhite, a))
 		}
 	}
+	L.drawLastBrickMarkers(screen, proj)
 	// lightning arcs (2D, over everything)
 	for _, a := range L.Arcs {
 		al := a.Life / 0.3

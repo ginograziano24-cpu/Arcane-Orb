@@ -43,8 +43,9 @@ Legend: **PC** = needs the PC (build, play or benchmark) to finish or verify.
     (open item 7). (PC to verify live)
 12. [ ] **Chamber pacing per act:** wave count, advance speed and heat so
     act 1 chambers run about 90 s and act 3 about 150 s.
-13. [ ] **Last-brick hunt:** the paddle-bounce lean already exists; also
-    make the last 3 bricks glow and pulse on the minimap edge.
+13. [x] **Last-brick hunt:** the paddle-bounce lean already exists; also
+    mark the last few bricks. (2026-11-11: `lastbricks.go`: a bobbing
+    chevron over each remaining required brick once the assist kicks in.)
 14. [x] **Hero quips and combo commentary** (2026-11-11, quips.go).
 
 ## C. Balance
