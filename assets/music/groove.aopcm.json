@@ -6,5 +6,5 @@
   "regenerate": "go run ./tools/musiccache",
   "sampleRate": 44100,
   "sha256": "539478d4bade76980bb341836982526f21d722a9c96998d3c00e662eb16f4aa8",
-  "synthSourceSHA256": "2682ba8d527f0e4d19010e40e5995d715fdaefe8499a73c80ab187adc0c29b2d"
+  "synthSourceSHA256": "a9da3feb6ea4303a86e37e837bcdfda2a3817a7112fdab1cae4b9f63e00d232e"
 }

@@ -3,7 +3,15 @@
 Read this first, then **`ROADMAP-50.md`** (the new 50-item list the user asked for; work it top-down) and `ROADMAP.md`. `HANDOFF.md` still describes the
 renderer, the harness and the build in general.
 
-## First thing next session: compile and test
+## Build status
+
+**Verified on the PC 2026-11-11 08:52:** `go vet` clean, `go test ./...`
+all pass, `go build` OK (Go 1.26.8). Run `Run-Tests.cmd` (next to
+`Source`); it downloads Go into `RoguelikeBreaker\go-sdk` if missing and
+writes `test-results.txt`. The menu-music manifest was refreshed because
+`mus/` sources changed (bank bytes identical). Remaining: play a full run.
+
+## (Older) compile and test notes
 
 This session could **not compile the game**. The workspace had no internet,
 so the Go module cache (Ebitengine's dependencies, golang.org/x/image) was

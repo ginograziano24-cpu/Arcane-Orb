@@ -9,7 +9,9 @@ Legend: **PC** = needs the PC (build, play or benchmark) to finish or verify.
 
 ## A. Must work, every run
 
-1. [ ] **Compile and test the Nov 11 changes on the PC.** `go vet ./...`,
+1. [~] **Compile and test the Nov 11 changes on the PC.** (2026-11-11
+   08:52: vet clean, all tests pass, build OK with Go 1.26.8 via
+   `Run-Tests.cmd`; still to do: play one full run.) `go vet ./...`,
    `go test ./...`, build, play one full run. (PC)
 2. [x] **Anti-stall: no orb loops forever.** An orb bouncing between
    walls and unbreakable bricks without touching the paddle or hurting a
