@@ -41,6 +41,8 @@ type Sounds struct {
 	player, old    *audio.Player
 	stream         *mus.Stream
 	curTrack       int
+	burstT, bigT   time.Time // dense-fight mix (mixDensity)
+	burstN         int
 	intensity      float64
 	curVol, oldVol float64
 	startT, oldT   time.Time
@@ -221,6 +223,9 @@ func (s *Sounds) play(name string, vol float64) {
 	s.vmu.Unlock()
 	important := base != "brk" && base != "deb" && base != "wall" && base != "coin" && base != "tuf" && base != "thump"
 	if nv >= 26 && !important {
+		return
+	}
+	if vol = s.mixDensity(base, important, vol, now); vol <= 0 {
 		return
 	}
 	// pick a variant different from the last one
@@ -470,4 +475,34 @@ func (s *Sounds) updateVolumes() {
 	in := math.Min(1, now.Sub(s.startT).Seconds()/0.6)
 	s.curVol = s.Music * 0.5 * (1 - s.duck) * (1 - s.punch) * in // songs master near -12.5 dBFS RMS; this sits them where the old loops were, +1.5 dB
 	s.player.SetVolume(s.curVol)
+}
+
+// mixDensity keeps busy moments readable (ROADMAP-50 #45). Small, frequent
+// sounds (brick breaks, debris, wall taps, coins) that pile up inside a
+// 60 ms window are thinned: the first three play as normal, the next three
+// at half volume, the rest are dropped. And for a quarter second after a
+// big moment (a power-up, a reward, an explosion, a heart) the small sounds
+// step back so the big one is heard clearly.
+func (s *Sounds) mixDensity(base string, important bool, vol float64, now time.Time) float64 {
+	switch base {
+	case "pw", "pwbad", "pick", "life", "cache", "wave", "boom", "nova", "horizon", "jackpot", "paddleboom", "bossdie", "achievement":
+		s.bigT = now
+	}
+	if important {
+		return vol
+	}
+	if now.Sub(s.burstT) > 60*time.Millisecond {
+		s.burstT, s.burstN = now, 0
+	}
+	s.burstN++
+	switch {
+	case s.burstN > 6:
+		return 0
+	case s.burstN > 3:
+		vol *= 0.5
+	}
+	if now.Sub(s.bigT) < 250*time.Millisecond {
+		vol *= 0.7
+	}
+	return vol
 }

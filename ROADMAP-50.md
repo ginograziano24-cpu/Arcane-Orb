@@ -31,6 +31,8 @@ Legend: **PC** = needs the PC (build, play or benchmark) to finish or verify.
 
 7. [ ] **Hit-stop and shake scale with impact size**, so small hits stay
    crisp and big ones land, and multiball never turns into constant shake.
+   (Audit 2026-11-11: every shake uses max(), never adds, and decays at
+   2/s, so it can't build up; what's left is tuning by feel. PC)
 8. [ ] **Paddle angle readability:** a faint aim guide on the paddle's
    edge zones while the orb approaches (option, off by default).
 9. [ ] **Multiball clutter:** cap simultaneous particle bursts per frame
@@ -101,8 +103,10 @@ Legend: **PC** = needs the PC (build, play or benchmark) to finish or verify.
     as the act song; `mus/song_chambers.go`, `chamberTrack` in audio.go.)
 44. [x] **A separate Voice volume slider** for quips. (2026-11-11:
     Settings > Audio > Hero voices.)
-45. [ ] **Dense-fight mix:** limit same-sound stacking per frame and duck
-    small hits under big ones.
+45. [x] **Dense-fight mix:** limit same-sound stacking per frame and duck
+    small hits under big ones. (2026-11-11: `mixDensity` in audio.go: in a
+    60 ms window the first 3 small hits play, the next 3 at half volume,
+    the rest drop; small hits sit 30% lower for 250 ms after a big moment.)
 46. [ ] **Per-world brick material sounds** (the on-hold #128 rework).
 47. [ ] **Boss phase music** sections.
 

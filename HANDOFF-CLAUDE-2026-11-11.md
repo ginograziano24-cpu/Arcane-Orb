@@ -138,6 +138,9 @@ In `sfx.go`:
 
 - #2 Anti-stall (`antistall.go`, test in `antistall_test.go`).
 - #44 Hero voices volume slider (Settings > Audio).
+- #45 Dense-fight mix (`mixDensity`, audio.go). If an audio test that
+  fires many brick sounds in a row fails, this thinning is why; give the
+  test a gap or raise the window.
 - **Music per chamber (the user asked for this, Magic Ball style).** Each
   act now has a family of three songs that take turns from chamber to
   chamber: the act song for the 1st, 4th, 7th chamber, then two new
