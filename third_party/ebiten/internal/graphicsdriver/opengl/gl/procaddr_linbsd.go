@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build (freebsd || linux || netbsd || openbsd) && !nintendosdk && !playstation5
+//go:build (freebsd || linux || netbsd) && !nintendosdk && !playstation5
 
 package gl
 
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/ebitengine/purego"
+
+	"github.com/hajimehoshi/ebiten/v2/internal/windowsystem"
 )
 
 var (
@@ -32,28 +35,37 @@ func (c *defaultContext) init() error {
 	var errs []error
 
 	// Try OpenGL ES first. Some machines like Android and Raspberry Pi might work only with OpenGL ES.
-	for _, name := range []string{"libGLESv2.so", "libGLESv2.so.2", "libGLESv2.so.1", "libGLESv2.so.0"} {
-		lib, err := purego.Dlopen(name, purego.RTLD_LAZY|purego.RTLD_GLOBAL)
-		if err == nil {
-			libGLES = lib
-			c.isES = true
-			return nil
+	//
+	// Do not use OpenGL ES for Steam, as overlays might not work properly (#3338).
+	// With Steam, OpenGL (not ES) should be available anyway. Where there is no
+	// window system there is no overlay, and OpenGL ES is the only option.
+	if !windowsystem.Available() || os.Getenv("SteamEnv") != "1" {
+		for _, name := range []string{"libGLESv2.so", "libGLESv2.so.2", "libGLESv2.so.1", "libGLESv2.so.0"} {
+			lib, err := purego.Dlopen(name, purego.RTLD_LAZY|purego.RTLD_GLOBAL)
+			if err == nil {
+				libGLES = lib
+				c.isES = true
+				return nil
+			}
+			errs = append(errs, fmt.Errorf("gl: Dlopen failed: name: %s: %w", name, err))
 		}
-		errs = append(errs, fmt.Errorf("gl: Dlopen failed: name: %s: %w", name, err))
 	}
 
-	// Try OpenGL next.
+	// Try OpenGL next. It needs a window system, so it is not an alternative
+	// where there is none.
 	// Usually libGL.so or libGL.so.1 is used. libGL.so.2 might exist only on NetBSD.
 	// TODO: Should "libOpenGL.so.0" [1] and "libGLX.so.0" [2] be added? These were added as of GLFW 3.3.9.
 	// [1] https://github.com/glfw/glfw/commit/55aad3c37b67f17279378db52da0a3ab81bbf26d
 	// [2] https://github.com/glfw/glfw/commit/c18851f52ec9704eb06464058a600845ec1eada1
-	for _, name := range []string{"libGL.so", "libGL.so.2", "libGL.so.1", "libGL.so.0"} {
-		lib, err := purego.Dlopen(name, purego.RTLD_LAZY|purego.RTLD_GLOBAL)
-		if err == nil {
-			libGL = lib
-			return nil
+	if windowsystem.Available() {
+		for _, name := range []string{"libGL.so", "libGL.so.2", "libGL.so.1", "libGL.so.0"} {
+			lib, err := purego.Dlopen(name, purego.RTLD_LAZY|purego.RTLD_GLOBAL)
+			if err == nil {
+				libGL = lib
+				return nil
+			}
+			errs = append(errs, fmt.Errorf("gl: Dlopen failed: name: %s: %w", name, err))
 		}
-		errs = append(errs, fmt.Errorf("gl: Dlopen failed: name: %s: %w", name, err))
 	}
 
 	errs = append([]error{fmt.Errorf("gl: failed to load libGL.so and libGLESv2.so: ")}, errs...)

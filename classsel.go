@@ -239,6 +239,7 @@ func (g *Game) drawArch(s *ebiten.Image) {
 			if g.archSel != i {
 				g.archSel = i
 				g.snd.Play("pick.2." + itoa(g.snd.Key))
+				g.pickQuip(c.ID)
 			} else {
 				g.snd.Play("click")
 			}

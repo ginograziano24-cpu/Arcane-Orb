@@ -139,13 +139,31 @@ func (g *Game) updateHero(L *Level, dt float64) {
 		p.bossSeen = L
 		g.react(reactBoss)
 	}
+	g.quip(quipStart) // once per run
+	if q := &g.quips; q.pending > 0 && q.run == g.run {
+		m := q.pending - 1
+		q.pending = 0
+		g.quip(m)
+	}
 	if L.Cleared && p.clearSeen != L {
 		p.clearSeen = L
 		g.react(reactClear)
+		if L.Boss != nil {
+			if r := g.run; r != nil && r.Act >= numActs && !r.Endless {
+				g.quip(quipWin)
+			} else {
+				g.quip(quipBoss)
+			}
+		}
 	}
 	for _, m := range []int{25, 50, 100} {
 		if p.lastCombo < m && L.Combo >= m {
 			g.react(reactCombo)
+		}
+	}
+	for tier, m := range []int{50, 100, 150} {
+		if p.lastCombo < m && L.Combo >= m {
+			g.comboQuip(tier)
 		}
 	}
 	p.lastCombo = L.Combo

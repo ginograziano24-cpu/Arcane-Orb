@@ -20,10 +20,11 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -377,7 +378,7 @@ func init() {
 		// Android doesn't support F13 and more as constants of KeyEvent:
 		// https://developer.android.com/reference/android/view/KeyEvent
 		//
-		// Note that F13 might be avilable if HID devices are available directly:
+		// Note that F13 might be available if HID devices are available directly:
 		// https://source.android.com/docs/core/interaction/input/keyboard-devices
 		if i <= 12 {
 			androidKeyToUIKeyName[131+i-1] = name
@@ -468,10 +469,10 @@ type Key int
 // Keys.
 const (
 {{range $index, $name := .EbitengineKeyNamesWithoutMods}}Key{{$name}} Key = Key(ui.Key{{$name}})
-{{end}}	KeyAlt     Key = Key(ui.KeyReserved0)
-	KeyControl Key = Key(ui.KeyReserved1)
-	KeyShift   Key = Key(ui.KeyReserved2)
-	KeyMeta    Key = Key(ui.KeyReserved3)
+{{end}}	KeyAlt     Key = Key(ui.KeyAlt)
+	KeyControl Key = Key(ui.KeyControl)
+	KeyShift   Key = Key(ui.KeyShift)
+	KeyMeta    Key = Key(ui.KeyMeta)
 	KeyMax     Key = KeyMeta
 
 	// Keys for backward compatibility.
@@ -479,16 +480,6 @@ const (
 {{range $old, $new := .OldEbitengineKeyNameToUIKeyName}}Key{{$old}} Key = Key(ui.Key{{$new}})
 {{end}}
 )
-
-func (k Key) isValid() bool {
-	switch k {
-	{{range $name := .EbitengineKeyNamesWithoutOld}}case Key{{$name}}:
-		return true
-	{{end}}
-	default:
-		return false
-	}
-}
 
 // String returns a string representing the key.
 //
@@ -539,11 +530,11 @@ type Key int
 
 const (
 {{range $index, $name := .UIKeyNames}}Key{{$name}}{{if eq $index 0}} Key = iota{{end}}
-{{end}}	KeyReserved0
-	KeyReserved1
-	KeyReserved2
-	KeyReserved3
-	KeyMax = KeyReserved3
+{{end}}	KeyAlt
+	KeyControl
+	KeyShift
+	KeyMeta
+	KeyMax = KeyMeta
 )
 
 func (k Key) String() string {
@@ -587,6 +578,11 @@ import (
 
 var uiKeyToGLFWKey = map[Key]glfw.Key{
 {{range $dname, $gname := .UIKeyNameToGLFWKeyName}}Key{{$dname}}: glfw.Key{{$gname}},
+{{end}}
+}
+
+var glfwKeyToUIKey = map[glfw.Key]Key{
+{{range $dname, $gname := .UIKeyNameToGLFWKeyName}}glfw.Key{{$gname}}: Key{{$dname}},
 {{end}}
 }
 `
@@ -695,38 +691,35 @@ func functionKey(name string) int {
 	return i
 }
 
-func keyNamesLess(k []string) func(i, j int) bool {
-	return func(i, j int) bool {
-		k0, k1 := k[i], k[j]
-		d0, d1 := digitKey(k0), digitKey(k1)
-		a0, a1 := alphabetKey(k0), alphabetKey(k1)
-		f0, f1 := functionKey(k0), functionKey(k1)
-		if d0 != -1 {
-			if d1 != -1 {
-				return d0 < d1
-			}
-			return true
-		}
-		if a0 != -1 {
-			if d1 != -1 {
-				return false
-			}
-			if a1 != -1 {
-				return a0 < a1
-			}
-			return true
-		}
+func keyNamesCmp(k0, k1 string) int {
+	d0, d1 := digitKey(k0), digitKey(k1)
+	a0, a1 := alphabetKey(k0), alphabetKey(k1)
+	f0, f1 := functionKey(k0), functionKey(k1)
+	if d0 != -1 {
 		if d1 != -1 {
-			return false
+			return cmp.Compare(d0, d1)
+		}
+		return -1
+	}
+	if a0 != -1 {
+		if d1 != -1 {
+			return 1
 		}
 		if a1 != -1 {
-			return false
+			return cmp.Compare(a0, a1)
 		}
-		if f0 != -1 && f1 != -1 {
-			return f0 < f1
-		}
-		return k0 < k1
+		return -1
 	}
+	if d1 != -1 {
+		return 1
+	}
+	if a1 != -1 {
+		return 1
+	}
+	if f0 != -1 && f1 != -1 {
+		return cmp.Compare(f0, f1)
+	}
+	return cmp.Compare(k0, k1)
 }
 
 const license = `// Copyright 2013 The Ebitengine Authors
@@ -766,10 +759,10 @@ func main() {
 	ebitengineKeyNames = append(ebitengineKeyNames, "Alt", "Control", "Shift", "Meta")
 	ebitengineKeyNamesWithoutOld = append(ebitengineKeyNamesWithoutOld, "Alt", "Control", "Shift", "Meta")
 
-	sort.Slice(ebitengineKeyNames, keyNamesLess(ebitengineKeyNames))
-	sort.Slice(ebitengineKeyNamesWithoutOld, keyNamesLess(ebitengineKeyNamesWithoutOld))
-	sort.Slice(ebitengineKeyNamesWithoutMods, keyNamesLess(ebitengineKeyNamesWithoutMods))
-	sort.Slice(uiKeyNames, keyNamesLess(uiKeyNames))
+	slices.SortFunc(ebitengineKeyNames, keyNamesCmp)
+	slices.SortFunc(ebitengineKeyNamesWithoutOld, keyNamesCmp)
+	slices.SortFunc(ebitengineKeyNamesWithoutMods, keyNamesCmp)
+	slices.SortFunc(uiKeyNames, keyNamesCmp)
 
 	// TODO: Add this line for event package (#926).
 	//
@@ -800,10 +793,10 @@ func main() {
 
 		// The build tag can't be included in the templates because of `go vet`.
 		// Pass the build tag and extract this in the template to make `go vet` happy.
-		buildConstraints := ""
+		var buildConstraints string
 		switch path {
 		case filepath.Join("internal", "glfw", "keys.go"):
-			buildConstraints = "//go:build darwin || freebsd || linux || netbsd || openbsd || windows"
+			buildConstraints = "//go:build darwin || freebsd || linux || netbsd || windows"
 		case filepath.Join("internal", "ui", "keys_mobile.go"):
 			buildConstraints = "//go:build android || ios"
 		case filepath.Join("internal", "ui", "keys_glfw.go"):

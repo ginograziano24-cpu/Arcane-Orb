@@ -69,8 +69,9 @@ type Ball struct {
 	X, Z, VX, VZ, R float64
 	Stuck           bool
 	Off             float64
-	Trail           [][2]float64
+	trail           orbMotionTrail
 	PierceLeft      int
+	pierceFlash     float64
 	Charged         bool
 	Momentum        int
 	Phantom         float64 // >0: temporary orb with this many seconds left
@@ -188,6 +189,7 @@ type Boss struct {
 	HP, MaxHP   float64
 	coreT, atkT float64
 	rebuildT    float64
+	recoveryT   float64
 	coreHits    int
 	body        [][2]int
 	Dead        bool
@@ -242,7 +244,7 @@ type Level struct {
 	Coins                 []*Coin
 	Bolts                 []*Bolt
 	Rocks                 []*Rock
-	Parts                 []*Particle
+	Parts                 []Particle
 	Rings                 []*Ring
 	Arcs                  []*Arc
 	Floats                []*FloatText
@@ -282,6 +284,7 @@ type Level struct {
 	kickVX, kickVZ    float64
 	hurtFlash         float64
 	Walls             []levelgen.Pt
+	floorClip         floorClip
 	Vis               Visuals
 	Designed          bool
 	rushBonus         float64 // Gold Rush damage bonus
@@ -354,6 +357,7 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 		r.AbilT = math.Max(r.AbilT, r.Arch.Cooldown*0.4)
 	}
 	L.Walls = levelgen.Arena(L.Data.Shape)
+	L.floorClip = makeFloorClip(L.Walls)
 	L.PaddleX = 0
 	L.PaddleW = baseW * r.Stats.PaddleWidth
 	L.Barrier = min(5, r.Stats.BarrierPerLevel+r.NextBarrier)
@@ -697,12 +701,14 @@ func (L *Level) Update(dt float64, in Input) {
 			}
 		}
 		b.Hit = math.Max(0, b.Hit-dt*7)
-		b.Trail = append(b.Trail, [2]float64{b.X, b.Z})
-		if len(b.Trail) > 12 {
-			b.Trail = b.Trail[1:]
+		b.pierceFlash = max(0, b.pierceFlash-dt*5)
+		if b.Stuck {
+			b.trail = orbMotionTrail{}
+		} else {
+			b.trail.advance(b.X, b.Z, dt)
 		}
 		if L.Timers[PFire] > 0 && g.settings.Particles > 0 {
-			L.Parts = append(L.Parts, &Particle{P: V3{b.X, b.R, b.Z}, V: V3{(L.rng.Float64() - 0.5) * 1.5, 1.5 + L.rng.Float64()*2, (L.rng.Float64() - 0.5) * 1.5},
+			L.Parts = append(L.Parts, Particle{P: V3{b.X, b.R, b.Z}, V: V3{(L.rng.Float64() - 0.5) * 1.5, 1.5 + L.rng.Float64()*2, (L.rng.Float64() - 0.5) * 1.5},
 				Life: 0.35, Max: 0.35, Size: 0.35, Col: color.RGBA{255, uint8(110 + L.rng.Intn(120)), 30, 255}, Kind: pSpark})
 		}
 	}
@@ -937,7 +943,7 @@ func (L *Level) collideWalls(b *Ball) {
 		fixAngle(b)
 		b.Rico++
 		b.PierceLeft = max(b.PierceLeft, L.g.run.Stats.Pierce)
-		L.g.snd.Play("wall")
+		L.g.snd.Play("wall." + itoa(L.Biome.ID))
 	}
 }
 
@@ -1033,6 +1039,7 @@ func (L *Level) collideBricks(b *Ball) {
 				reflect = false
 			} else if destroyed && b.PierceLeft > 0 {
 				b.PierceLeft--
+				b.pierceFlash = 1
 				reflect = false
 			} else if destroyed && br.Kind != levelgen.Elite && L.rng.Float64() < orbPlow {
 				// small bricks don't stop a moving orb: it ploughs on
@@ -1107,7 +1114,11 @@ func (L *Level) collidePaddle(b *Ball) {
 		L.Balls = append(L.Balls, &Ball{X: b.X, Z: b.Z, R: b.R, VX: sp * math.Sin(a), VZ: sp * math.Cos(a), PierceLeft: r.Stats.Pierce})
 		L.g.snd.PlayKeyed("split")
 	}
-	L.g.snd.PlayKeyed("pad")
+	if math.Abs(t) >= 0.65 {
+		L.g.snd.PlayKeyed("padedge")
+	} else {
+		L.g.snd.PlayKeyed("pad")
+	}
 }
 
 func (L *Level) collideRocks(b *Ball) {
@@ -1549,7 +1560,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 		L.dropPower(x, z, true)
 		L.gainGold(10, x, z, true)
 		r.Elites++
-		L.text(V3{x, 2, z}, "ELITE DOWN", color.RGBA{220, 160, 255, 255}, true)
+		L.text(V3{x, 2, z}, "ELITE TOPPLED!", color.RGBA{220, 160, 255, 255}, true)
 		L.Shake = math.Max(L.Shake, 0.5)
 	case levelgen.Basic, levelgen.Regen, levelgen.Moving, levelgen.Armored, levelgen.Split:
 		if L.rng.Float64() < dropP && len(L.Drops) < 5 {
@@ -1709,7 +1720,7 @@ func (L *Level) explode(x, z, radiusCells, dmg float64, big bool) {
 	L.sparks(V3{x, 0.8, z}, 26, color.RGBA{255, 190, 80, 255}, 10)
 	if g.settings.Particles > 0 {
 		for i := 0; i < 8; i++ {
-			L.Parts = append(L.Parts, &Particle{P: V3{x + (L.rng.Float64()-0.5)*rad, 0.6, z + (L.rng.Float64()-0.5)*rad},
+			L.Parts = append(L.Parts, Particle{P: V3{x + (L.rng.Float64()-0.5)*rad, 0.6, z + (L.rng.Float64()-0.5)*rad},
 				V: V3{0, 1.5 + L.rng.Float64(), 0}, Life: 1.1, Max: 1.1, Size: 1.6 + L.rng.Float64(), Col: color.RGBA{60, 50, 50, 255}, Kind: pSmoke})
 		}
 	}
@@ -1956,7 +1967,7 @@ func (L *Level) rockHit() {
 	if L.Barrier > 0 && !g.run.Duel {
 		L.Barrier--
 		L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: BarrierZ, MaxR: 3, Life: 0.4, Max: 0.4, Col: color.RGBA{170, 140, 255, 255}})
-		L.text(V3{L.PaddleX, 1.5, PaddleZ + 2}, "BARRIER SHATTERED", color.RGBA{190, 170, 255, 255}, true)
+		L.text(V3{L.PaddleX, 1.5, PaddleZ + 2}, "SAVED BY THE BARRIER!", color.RGBA{190, 170, 255, 255}, true)
 		L.stun = 0.4
 	} else {
 		L.text(V3{L.PaddleX, 1.5, PaddleZ + 2}, "CRUSHED", color.RGBA{255, 100, 100, 255}, true)
@@ -2081,7 +2092,7 @@ func (L *Level) updateBricks(dt float64) {
 				}
 			}
 			if L.g.settings.Particles > 0 && L.rng.Float64() < dt*12 {
-				L.Parts = append(L.Parts, &Particle{P: V3{b.X() + (L.rng.Float64()-0.5)*1.6, 1, b.Z()}, V: V3{0, 2 + L.rng.Float64()*2, 0},
+				L.Parts = append(L.Parts, Particle{P: V3{b.X() + (L.rng.Float64()-0.5)*1.6, 1, b.Z()}, V: V3{0, 2 + L.rng.Float64()*2, 0},
 					Life: 0.5, Max: 0.5, Size: 0.5, Col: color.RGBA{255, uint8(100 + L.rng.Intn(120)), 30, 255}, Kind: pSpark})
 			}
 		}
@@ -2125,7 +2136,7 @@ func (L *Level) updateBricks(dt float64) {
 						b.R, b.C = rr, cc
 						L.Grid[rr][cc] = b
 						b.Appear = 0
-						L.g.snd.Play("warp")
+						L.g.snd.Play("shift")
 						break
 					}
 				}
@@ -2265,6 +2276,7 @@ func (L *Level) updateDrops(dt float64) {
 		}
 		i++
 	}
+	hadRocks := len(L.Rocks) > 0
 	for i := 0; i < len(L.Rocks); {
 		rk := L.Rocks[i]
 		if rk.Warn > 0 {
@@ -2287,11 +2299,14 @@ func (L *Level) updateDrops(dt float64) {
 		}
 		i++
 	}
+	if hadRocks && len(L.Rocks) == 0 && L.Boss != nil && !L.Boss.Dead {
+		L.Boss.recoveryT = 0.7
+	}
 }
 
 func (L *Level) updateEffects(dt float64) {
 	for i := 0; i < len(L.Parts); {
-		p := L.Parts[i]
+		p := &L.Parts[i]
 		p.Life -= dt
 		if p.Life <= 0 {
 			L.Parts[i] = L.Parts[len(L.Parts)-1]
@@ -2365,11 +2380,12 @@ func (L *Level) updateEffects(dt float64) {
 				p = Particle{P: V3{(rf() - 0.5) * 40, 9, rf() * 46}, V: V3{(rf() - 0.5) * 0.6, -1.6 - rf(), 0},
 					Life: 5, Max: 5, Size: 0.2, Col: color.RGBA{255, uint8(120 + L.rng.Intn(100)), 40, 255}, Kind: pAmbient}
 			}
-			L.Parts = append(L.Parts, &p)
+			L.Parts = append(L.Parts, p)
 		}
 	}
 	if len(L.Parts) > 900 {
-		L.Parts = L.Parts[len(L.Parts)-900:]
+		copy(L.Parts, L.Parts[len(L.Parts)-900:])
+		L.Parts = L.Parts[:900]
 	}
 }
 
@@ -2381,7 +2397,7 @@ func (L *Level) sparks(p V3, n int, c color.RGBA, spd float64) {
 		a := L.rng.Float64() * 2 * math.Pi
 		e := L.rng.Float64() * 1.2
 		s := spd * (0.3 + L.rng.Float64()*0.7)
-		L.Parts = append(L.Parts, &Particle{P: p, V: V3{math.Cos(a) * s, math.Sin(e) * s * 0.8, math.Sin(a) * s},
+		L.Parts = append(L.Parts, Particle{P: p, V: V3{math.Cos(a) * s, math.Sin(e) * s * 0.8, math.Sin(a) * s},
 			Life: 0.35 + L.rng.Float64()*0.3, Max: 0.65, Size: 0.25 + L.rng.Float64()*0.25, Col: c, Kind: pSpark, Grav: 8})
 	}
 }
@@ -2396,7 +2412,7 @@ func (L *Level) debris(p V3, n int, c color.RGBA) {
 			pp.Rot = L.rng.Float64() * 6.28
 			pp.Spin = (L.rng.Float64() - 0.5) * 18
 		}
-		L.Parts = append(L.Parts, &pp)
+		L.Parts = append(L.Parts, pp)
 	}
 	world := WNeon
 	if L.Biome != nil {
@@ -2520,12 +2536,13 @@ func (L *Level) moveCore() {
 	c.Kind = levelgen.Elite
 	c.Col = L.Biome.Trim
 	c.Appear = 0.5
-	L.g.snd.Play("warp")
+	L.g.snd.Play("elite")
 }
 
 func (L *Level) updateBoss(dt float64) {
 	b := L.Boss
 	b.Hurt = math.Max(0, b.Hurt-dt*3)
+	b.recoveryT = max(0, b.recoveryT-dt)
 	if b.Dead {
 		b.deathT += dt
 		if L.rng.Float64() < dt*10 {
@@ -2599,7 +2616,7 @@ func (L *Level) killBoss() {
 // quick ring on the floor and, for big bricks, a hit-stop and shockwave.
 func (L *Level) breakPop(b *Brick, x, z float64) {
 	c := lighten(b.Col, 0.45)
-	L.Parts = append(L.Parts, &Particle{P: V3{x, 0.7, z}, Life: 0.16, Max: 0.16, Size: 2.8, Col: c, Kind: pSpark})
+	L.Parts = append(L.Parts, Particle{P: V3{x, 0.7, z}, Life: 0.16, Max: 0.16, Size: 2.8, Col: c, Kind: pSpark})
 	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 0.9, Life: 0.22, Max: 0.22, Col: c})
 	switch {
 	case b.Kind == levelgen.Elite:
@@ -2729,7 +2746,7 @@ func (L *Level) orbImpact(b *Ball, nx, nz, strength float64, c color.RGBA, n int
 	for i := 0; i < n; i++ {
 		a := base + (L.rng.Float64()-0.5)*2.2
 		s := 4 + L.rng.Float64()*5
-		L.Parts = append(L.Parts, &Particle{P: V3{cx, b.R * 0.8, cz},
+		L.Parts = append(L.Parts, Particle{P: V3{cx, b.R * 0.8, cz},
 			V:    V3{math.Cos(a) * s, 1.5 + L.rng.Float64()*2.5, math.Sin(a) * s},
 			Life: 0.16 + L.rng.Float64()*0.12, Max: 0.28, Size: 0.18 + L.rng.Float64()*0.12, Col: c, Kind: pSpark, Grav: 10})
 	}

@@ -71,7 +71,7 @@ func (L *Level) updatePassives(dt float64) {
 			c.attuneT = 0
 			c.attuneEl = (c.attuneEl + 1) % 4
 			L.text(V3{L.PaddleX, 1.6, PaddleZ + 2.5}, "ATTUNED: "+attuneNames[c.attuneEl], attuneCols[c.attuneEl], false)
-			L.g.snd.PlayVol("abilready", 0.45)
+			L.g.snd.PlayVol("attune", 0.5)
 		}
 	}
 	if s.ClassOverclock {
@@ -82,7 +82,7 @@ func (L *Level) updatePassives(dt float64) {
 			c.stillT += dt
 			if c.stillT >= s.overclockTime() {
 				c.overclock = true
-				L.g.snd.PlayVol("abilready", 0.5)
+				L.g.snd.PlayVol("overclock", 0.55)
 				L.text(V3{L.PaddleX, 1.4, PaddleZ + 1.2}, "OVERCLOCKED", color.RGBA{255, 170, 70, 255}, false)
 			}
 		}
@@ -90,7 +90,7 @@ func (L *Level) updatePassives(dt float64) {
 	if s.ClassStatic && c.static < 100 {
 		c.static = math.Min(100, c.static+math.Abs(L.PaddleX-L.lastPadX)*100/(10*HalfW)*s.staticRate())
 		if c.static >= 100 {
-			L.g.snd.PlayVol("abilready", 0.5)
+			L.g.snd.PlayVol("staticfull", 0.55)
 		}
 	}
 	L.lastPadX = L.PaddleX

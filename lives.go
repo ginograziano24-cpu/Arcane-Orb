@@ -47,7 +47,7 @@ func (L *Level) maybeDropLife(x, z float64) {
 	if L.rng.Float64() < lifeDropP*killWeight*r.Stats.Luck {
 		L.Drops = append(L.Drops, &Drop{X: x, Z: z, P: PLife})
 		L.text(V3{x, 2.2, z}, "A HEART FALLS!", color.RGBA{255, 120, 160, 255}, true)
-		L.g.snd.PlayVol("abilready", 0.8)
+		L.g.snd.PlayVol("heartfall."+itoa(L.g.snd.Key), 0.8)
 	}
 }
 
@@ -63,10 +63,10 @@ func (L *Level) gainLife() {
 	r.rc().Hearts++
 	r.log("heart", "Caught a falling heart", "heart")
 	L.lifeFlash = 1
-	L.text(V3{L.PaddleX, 2.4, PaddleZ + 2}, "LIFE RESTORED", color.RGBA{255, 140, 180, 255}, true)
+	L.text(V3{L.PaddleX, 2.4, PaddleZ + 2}, "HEART CAUGHT!", color.RGBA{255, 140, 180, 255}, true)
 	L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: PaddleZ, MaxR: 4, Life: 0.5, Max: 0.5, Col: color.RGBA{255, 130, 170, 255}})
 	L.sparks(V3{L.PaddleX, 1, PaddleZ}, 30, color.RGBA{255, 150, 190, 255}, 8)
-	g.snd.PlayKeyed("heal")
+	g.snd.PlayKeyed("life")
 	g.snd.Duck(0.5, 1.5)
 	g.react(reactLife)
 }
@@ -88,6 +88,9 @@ func (L *Level) loseLife(why string) {
 	r.log("life", "Lost a life ("+why+")", "heart")
 	L.explodePaddle()
 	g.react(reactLifeLost)
+	if r.Lives == 1 && r.maxLives() > 1 {
+		g.quip(quipLastLife)
+	}
 	if r.Lives <= 0 {
 		r.Lives = 0
 		L.gameOverT = gameOverDelay
@@ -127,7 +130,7 @@ func (L *Level) explodePaddle() {
 		if i%3 == 0 {
 			c = trim
 		}
-		L.Parts = append(L.Parts, &Particle{P: V3{px, 0.4, z}, V: v, Life: 1.1, Max: 1.4, Size: 0.22 + L.rng.Float64()*0.3, Col: c, Kind: pDebris, Grav: 26,
+		L.Parts = append(L.Parts, Particle{P: V3{px, 0.4, z}, V: v, Life: 1.1, Max: 1.4, Size: 0.22 + L.rng.Float64()*0.3, Col: c, Kind: pDebris, Grav: 26,
 			Rot: L.rng.Float64() * 6, Spin: (L.rng.Float64()*2 - 1) * 14})
 	}
 	L.sparks(V3{x, 0.6, z}, 60, color.RGBA{255, 190, 90, 255}, 14)
@@ -156,7 +159,7 @@ func (L *Level) updateLives(dt float64) bool {
 			// the paddle reforms in a swirl of its world's light
 			L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: PaddleZ, MaxR: 2.4, Life: 0.3, Max: 0.3, Col: lighten(L.Biome.Trim, 0.3)})
 			L.sparks(V3{L.PaddleX, 0.5, PaddleZ}, 24, lighten(L.Biome.Trim, 0.4), 4)
-			L.g.snd.PlayVol("warp", 0.7)
+			L.g.snd.PlayVol("reform", 0.7)
 		}
 	}
 	return false

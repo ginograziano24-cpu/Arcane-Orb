@@ -21,18 +21,20 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/internal/affine"
-	"github.com/hajimehoshi/ebiten/v2/internal/builtinshader"
+	"github.com/hajimehoshi/ebiten/v2/internal/colormshader"
 )
 
 // Dim is the dimension of a ColorM.
 const Dim = affine.ColorMDim
 
-// ColorM represents a matrix to transform coloring when rendering an image.
+// ColorM represents a matrix to transform coloring when rendering an image. The matrix
+// is applied by a fragment shader to each pixel during the rendering process.
 //
 // ColorM is applied to the straight alpha color
 // while an Image's pixels' format is alpha premultiplied.
 // Before applying a matrix, a color is un-multiplied, and after applying the matrix,
 // the color is multiplied again.
+// The pixel input and output are expected to be r,g,b,a values in the range 0 to 1.
 //
 // The initial value is identity.
 type ColorM struct {
@@ -106,18 +108,30 @@ func (c *ColorM) RotateHue(theta float64) {
 // saturationScale is a value to scale saturation.
 // valueScale is a value to scale value (a.k.a. brightness).
 //
-// This conversion uses RGB to/from YCrCb conversion.
+// This conversion uses RGB to/from YCbCr conversion.
 func (c *ColorM) ChangeHSV(hueTheta float64, saturationScale float64, valueScale float64) {
 	c.impl = affine.ChangeHSV(c.affineColorM(), hueTheta, float32(saturationScale), float32(valueScale))
 }
 
 // Element returns a value of a matrix at (i, j).
+//
+// i must be in the range [0, Dim-2] and j must be in the range [0, Dim-1].
+// Otherwise, Element panics.
 func (c *ColorM) Element(i, j int) float64 {
+	if i < 0 || Dim-1 <= i || j < 0 || Dim <= j {
+		panic("ebiten: i or j is out of index")
+	}
 	return float64(c.affineColorM().At(i, j))
 }
 
 // SetElement sets an element at (i, j).
+//
+// i must be in the range [0, Dim-2] and j must be in the range [0, Dim-1].
+// Otherwise, SetElement panics.
 func (c *ColorM) SetElement(i, j int, element float64) {
+	if i < 0 || Dim-1 <= i || j < 0 || Dim <= j {
+		panic("ebiten: i or j is out of index")
+	}
 	c.impl = affine.ColorMSetElement(c.affineColorM(), i, j, float32(element))
 }
 
@@ -152,14 +166,14 @@ func uniforms(c ColorM) map[string]any {
 	c.affineColorM().Elements(body[:], translation[:])
 
 	uniforms := map[string]any{}
-	uniforms[builtinshader.UniformColorMBody] = body[:]
-	uniforms[builtinshader.UniformColorMTranslation] = translation[:]
+	uniforms[colormshader.UniformColorMBody] = body[:]
+	uniforms[colormshader.UniformColorMTranslation] = translation[:]
 	return uniforms
 }
 
 type builtinShaderKey struct {
-	filter  builtinshader.Filter
-	address builtinshader.Address
+	filter  colormshader.Filter
+	address colormshader.Address
 }
 
 var (
@@ -167,7 +181,7 @@ var (
 	builtinShadersM sync.Mutex
 )
 
-func builtinShader(filter builtinshader.Filter, address builtinshader.Address) *ebiten.Shader {
+func builtinShader(filter colormshader.Filter, address colormshader.Address) *ebiten.Shader {
 	builtinShadersM.Lock()
 	defer builtinShadersM.Unlock()
 
@@ -179,7 +193,7 @@ func builtinShader(filter builtinshader.Filter, address builtinshader.Address) *
 		return s
 	}
 
-	src := builtinshader.ShaderSource(filter, address, true)
+	src := colormshader.ShaderSource(filter, address)
 	s, err := ebiten.NewShader(src)
 	if err != nil {
 		panic(fmt.Sprintf("colorm: NewShader for a built-in shader failed: %v", err))

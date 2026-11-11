@@ -42,8 +42,12 @@ func (m *Mesh) topology() *meshTopo {
 	if m.topo != nil && m.topo.n == len(m.Tris) {
 		return m.topo
 	}
-	t := &meshTopo{n: len(m.Tris), tri: make([][3]int32, len(m.Tris))}
-	at := map[V3]int32{}
+	// A closed triangle surface has roughly half as many distinct corners
+	// as faces. This is only an initial capacity; seams/disconnected parts
+	// can grow normally. Never change welding or the first-seen index order.
+	expectedCorners := min(len(m.Tris)*3, len(m.Tris)/2+8)
+	t := &meshTopo{n: len(m.Tris), tri: make([][3]int32, len(m.Tris)), pos: make([]V3, 0, expectedCorners)}
+	at := make(map[V3]int32, expectedCorners)
 	for i := range m.Tris {
 		for k, p := range m.Tris[i].P {
 			j, ok := at[p]
@@ -150,15 +154,21 @@ func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA,
 		tr := &m.Tris[ti]
 		ix := t.tri[ti]
 		a, bb, c := &pr[ix[0]], &pr[ix[1]], &pr[ix[2]]
-		n := bb.p.Sub(a.p).Cross(c.p.Sub(a.p))
-		l := n.Len()
-		if l < 1e-9 {
+		// Cull using the same float32 coordinates as the emitted quad.
+		// The fourth corner duplicates the third, so it adds no test.
+		ax, bx, cx := float32(a.sx), float32(bb.sx), float32(c.sx)
+		ay, by, cy := float32(a.sy), float32(bb.sy), float32(c.sy)
+		if (ax < 0 && bx < 0 && cx < 0) || (ax > fw && bx > fw && cx > fw) ||
+			(ay < 0 && by < 0 && cy < 0) || (ay > fh && by > fh && cy > fh) {
 			continue
 		}
-		// facing test before normalising (the sign is the same), so a
-		// back face costs one square root, not two
+		n := bb.p.Sub(a.p).Cross(c.p.Sub(a.p))
 		ctr := a.p.Add(bb.p).Add(c.p).Mul(1.0 / 3)
 		if n.Dot(eye.Sub(ctr)) <= 0 {
+			continue
+		}
+		l := n.Len()
+		if l < 1e-9 {
 			continue
 		}
 		n = V3{n.X / l, n.Y / l, n.Z / l} // (what Norm computes)
@@ -168,19 +178,18 @@ func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA,
 		}
 		e := 1 + tr.Emi + emissive
 		cc := cf(b.lit(col, n))
+		r, g, bl, al := cc[0]*e, cc[1]*e, cc[2]*e, cc[3]
 		var q quad
-		corner := func(k int, v *projected) {
+		for k, v := range [3]*projected{a, bb, c} {
 			fog := v.fog
-			r := cc[0]*e*(1-fog) + fc[0]*fog
-			g := cc[1]*e*(1-fog) + fc[1]*fog
-			bl := cc[2]*e*(1-fog) + fc[2]*fog
-			al := cc[3]
-			q.v[k] = ebiten.Vertex{DstX: float32(v.sx), DstY: float32(v.sy), SrcX: sprWhite.X0, SrcY: sprWhite.Y0,
-				ColorR: r * al, ColorG: g * al, ColorB: bl * al, ColorA: al}
+			q.v[k] = ebiten.Vertex{
+				DstX: float32(v.sx), DstY: float32(v.sy), SrcX: sprWhite.X0, SrcY: sprWhite.Y0,
+				ColorR: (r*(1-fog) + fc[0]*fog) * al,
+				ColorG: (g*(1-fog) + fc[1]*fog) * al,
+				ColorB: (bl*(1-fog) + fc[2]*fog) * al,
+				ColorA: al,
+			}
 		}
-		corner(0, a)
-		corner(1, bb)
-		corner(2, c)
 		q.v[3] = q.v[2]
 		q.v[1].SrcX = sprWhite.X1
 		q.v[2].SrcX, q.v[2].SrcY = sprWhite.X1, sprWhite.Y1
@@ -191,9 +200,6 @@ func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA,
 		sum += c.d
 		sum += c.d
 		q.depth = sum / 4
-		if offScreen(&q.v, fw, fh) {
-			continue
-		}
 		b.quads = append(b.quads, q)
 	}
 }

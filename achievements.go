@@ -289,7 +289,7 @@ func (g *Game) drawAchievementsTab(s *ebiten.Image, y0 float64) {
 		}
 		name, desc := a.Name, a.Desc
 		if a.Hidden && !have {
-			name, desc = "Hidden", "Keep playing to discover this one."
+			name, desc = "Hidden", "Still a secret. Keep playing to find it."
 		}
 		nc := cWhite
 		if !have {

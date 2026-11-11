@@ -27,24 +27,57 @@ import (
 // #import <UIKit/UIKit.h>
 import "C"
 
+func init() {
+	ui.Get().SetKeyPressDispatcher(dispatchKeyPress)
+	ui.Get().SetKeyEventDispatchers(dispatchKeyDown, dispatchKeyUp)
+}
+
+// dispatchKeyPress records a key press, and its release, for a key the platform
+// text editor received instead of the game's view.
+func dispatchKeyPress(key ui.Key) {
+	inputMu.Lock()
+	defer inputMu.Unlock()
+	keyPressedTimes[key] = ui.Get().InputTime()
+	setKeyReleased(key)
+	updateInput(nil)
+}
+
+// dispatchKeyDown records a key press for a key the platform text editor
+// received instead of the game's view.
+func dispatchKeyDown(key ui.Key) {
+	inputMu.Lock()
+	defer inputMu.Unlock()
+	keyPressedTimes[key] = ui.Get().InputTime()
+	updateInput(nil)
+}
+
+// dispatchKeyUp records a key release for a key the platform text editor
+// received instead of the game's view.
+func dispatchKeyUp(key ui.Key) {
+	inputMu.Lock()
+	defer inputMu.Unlock()
+	setKeyReleased(key)
+	updateInput(nil)
+}
+
 var ptrToID = map[int64]int{}
 
 func getIDFromPtr(ptr int64) int {
 	if id, ok := ptrToID[ptr]; ok {
 		return id
 	}
-	maxID := 0
+	var maxID int
 	for _, id := range ptrToID {
-		if maxID < id {
-			maxID = id
-		}
+		maxID = max(maxID, id)
 	}
 	id := maxID + 1
 	ptrToID[ptr] = id
 	return id
 }
 
-func UpdateTouchesOnIOS(phase int, ptr int64, x, y int) {
+func UpdateTouchesOnIOS(phase int, ptr int64, x, y float64) {
+	inputMu.Lock()
+	defer inputMu.Unlock()
 	switch phase {
 	case C.UITouchPhaseBegan, C.UITouchPhaseMoved, C.UITouchPhaseStationary:
 		id := getIDFromPtr(ptr)
@@ -60,11 +93,25 @@ func UpdateTouchesOnIOS(phase int, ptr int64, x, y int) {
 	}
 }
 
-func UpdatePressesOnIOS(phase int, keyCode int, keyString string) {
+func UpdatePressesOnIOS(phase int, keyCode int, keyString string, modifierFlags int) {
+	inputMu.Lock()
+	defer inputMu.Unlock()
+	// TODO: If a key is kept pressed, ignore the repeated key events.
+	// There seems no way to check whether a key event is a repeated event or not so far.
+	updateLockKeys(modifierFlags)
+
 	switch phase {
-	case C.UITouchPhaseBegan, C.UITouchPhaseMoved, C.UITouchPhaseStationary:
+	case C.UIPressPhaseStationary:
+		// keyPressedTimes represents the time when a key is first pressed.
+		// Do nothing here.
+	case C.UIPressPhaseBegan:
+		if ui.Get().IsKeyPressForComposition() {
+			// The key is typed into a composition, which the input method acts
+			// on. The release is still reported, so that the key cannot stick.
+			return
+		}
 		if key, ok := iosKeyToUIKey[keyCode]; ok {
-			keys[key] = struct{}{}
+			keyPressedTimes[key] = ui.Get().InputTime()
 		}
 		var runes []rune
 		if phase == C.UITouchPhaseBegan {
@@ -76,12 +123,19 @@ func UpdatePressesOnIOS(phase int, keyCode int, keyString string) {
 			}
 		}
 		updateInput(runes)
-	case C.UITouchPhaseEnded, C.UITouchPhaseCancelled:
+	case C.UIPressPhaseEnded, C.UIPressPhaseCancelled:
 		if key, ok := iosKeyToUIKey[keyCode]; ok {
-			delete(keys, key)
+			setKeyReleased(key)
 		}
 		updateInput(nil)
 	default:
 		panic(fmt.Sprintf("ebitenmobileview: invalid phase: %d", phase))
 	}
+}
+
+// updateLockKeys takes the lock key states from a key event's modifier flags.
+func updateLockKeys(modifierFlags int) {
+	capsLock = ui.NewLockKeyStateFromBool(modifierFlags&C.UIKeyModifierAlphaShift != 0)
+	// iOS has no Num Lock: the numeric keypad always produces digits.
+	numLock = ui.LockKeyStateOn
 }

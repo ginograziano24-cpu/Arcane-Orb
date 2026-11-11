@@ -82,7 +82,7 @@ func (g *Game) drawDuelConnect(s *ebiten.Image) {
 		if d.steamCode != "" && sNetHost() {
 			u.text(s, "YOUR ROOM CODE", fBold, 16, lx+pw/2, py+140, cDim, alignCenter)
 			u.textOutlined(s, d.steamCode, fTitle, 64, lx+pw/2, py+160, cGold, alignCenter)
-			u.text(s, "Waiting for your friend to join…", fReg, 19, lx+pw/2, py+246, ca(cDim, 0.6+0.4*math.Sin(u.time*3)), alignCenter)
+			u.text(s, "Waiting for your friend… (probably fetching snacks)", fReg, 19, lx+pw/2, py+246, ca(cDim, 0.6+0.4*math.Sin(u.time*3)), alignCenter)
 		} else if u.button(s, "dshost", "Host a room", lx+pw/2-170, py+150, 340, 64, cGreen, d.link == nil) {
 			d.steamWant = true
 			steamDuelHost()
@@ -101,7 +101,7 @@ func (g *Game) drawDuelConnect(s *ebiten.Image) {
 		}
 		y := py + 432
 		if len(d.steamRooms) == 0 {
-			u.text(s, "No open rooms yet. Refresh to look again.", fReg, 18, lx+40, y+6, ca(cDim, 0.7), alignLeft)
+			u.text(s, "No rooms open right now. Refresh in a moment.", fReg, 18, lx+40, y+6, ca(cDim, 0.7), alignLeft)
 		}
 		for i, rm := range d.steamRooms {
 			if i >= 4 {
@@ -149,7 +149,7 @@ func (g *Game) drawDuelConnect(s *ebiten.Image) {
 		y := py + 432
 		rooms := d.browser.Rooms()
 		if len(rooms) == 0 {
-			msg := "Nobody is hosting on this network right now."
+			msg := "Nobody's hosting on your network yet. You could!"
 			if d.browser == nil {
 				msg = "Room discovery is busy (another copy is open)."
 			}

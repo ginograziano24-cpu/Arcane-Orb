@@ -171,7 +171,7 @@ func (L *Level) spawnBomber() bool {
 	c := &Critter{Kind: critBomber, X: side * (HalfW + 1.5), Z: best, z0: best, vx: -side * (2.6 + L.rng.Float64()*0.8), Life: 20, enter: 1}
 	L.Critters = append(L.Critters, c)
 	L.g.coach("bomber")
-	L.g.snd.PlayVol("warp", 0.35)
+	L.g.snd.PlayVol("bomber", 0.5)
 	return true
 }
 
@@ -324,14 +324,14 @@ func (L *Level) popMischief(c *Critter) {
 		if len(c.carry) > 0 {
 			L.text(V3{c.X, 1.6, c.Z}, "STOP, THIEF!", color.RGBA{255, 220, 120, 255}, true)
 		}
-		g.snd.Play("coinbig")
+		g.snd.Play("thiefstop")
 	case critMason:
 		L.gainGold(5, c.X, c.Z, true)
 		if L.rng.Float64() < 0.3 {
 			L.dropPower(c.X, c.Z, true)
 		}
 		L.text(V3{c.X, 1.6, c.Z}, "SHOO!", color.RGBA{230, 210, 170, 255}, false)
-		g.snd.Play("coinbig")
+		g.snd.Play("shoo")
 	case critBomber:
 		// the bomb drops right where it was struck
 		L.explode(c.X, c.Z, 1.3, math.Max(3, 3*L.hpMul()), true)

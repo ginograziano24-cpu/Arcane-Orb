@@ -14,6 +14,10 @@
 
 // Package audio provides audio players.
 //
+// This package must be used within an Ebitengine game; it does not work standalone, as the
+// audio device is initialized only after the game starts running. To play audio outside an
+// Ebitengine game, use Oto ([github.com/ebitengine/oto/v3]) directly.
+//
 // The stream format must be 16-bit little endian or 32-bit float little endian, and 2 channels. The format is as follows:
 //
 //	[data]      = [sample 1] [sample 2] [sample 3] ...
@@ -81,8 +85,12 @@ var (
 // Usual numbers are 44100 or 48000. One context has only one sample rate. You cannot play multiple audio
 // sources with different sample rates at the same time.
 //
-// NewContext panics when an audio context is already created.
+// NewContext panics when sampleRate is not positive or an audio context is already created.
 func NewContext(sampleRate int) *Context {
+	if sampleRate <= 0 {
+		panic(fmt.Sprintf("audio: sample rate must be positive but was %d", sampleRate))
+	}
+
 	theContextLock.Lock()
 	defer theContextLock.Unlock()
 
@@ -120,7 +128,7 @@ func NewContext(sampleRate int) *Context {
 		return nil
 	})
 
-	h.AppendHookOnBeforeUpdate(func() error {
+	h.AppendHookOnBeforeUpdateWithVMGuestInfo(func(vmGuest bool) error {
 		var err error
 		theContextLock.Lock()
 		if theContext != nil {
@@ -131,9 +139,12 @@ func NewContext(sampleRate int) *Context {
 			return err
 		}
 
-		// Initialize the context here in the case when there is no player and
-		// the program waits for IsReady() to be true (#969, #970, #2715).
-		ready, err := c.playerFactory.initContextIfNeeded()
+		// Create the audio device here, on the first update after the UI backend is
+		// initialized, rather than when a player is first touched. Deferring the creation
+		// keeps the device from being created before the environment is known (#969, #970,
+		// #2715, #3438). This also initializes the device when there is no player and the
+		// program waits for IsReady() to be true.
+		ready, err := c.playerFactory.initContextIfNeeded(vmGuest)
 		if err != nil {
 			return err
 		}
@@ -143,12 +154,21 @@ func NewContext(sampleRate int) *Context {
 				c.setReady()
 			}()
 		}
-
-		if err := c.updatePlayers(); err != nil {
-			return err
-		}
 		return nil
 	})
+
+	// In the current Ebitengine implementation, update might not be called when the window is in background (#3154).
+	// In this case, an audio player position is not updated correctly with AppendHookOnBeforeUpdateWithVMGuestInfo.
+	// Use a distinct goroutine to update the player states.
+	go func() {
+		for {
+			if err := c.updatePlayers(); err != nil {
+				c.setError(err)
+				return
+			}
+			time.Sleep(time.Second / 100)
+		}
+	}()
 
 	return c
 }
@@ -172,9 +192,12 @@ func (c *Context) error() error {
 	c.m.Lock()
 	defer c.m.Unlock()
 	if c.err != nil {
-		return c.err
+		return fmt.Errorf("audio: audio error: %w", c.err)
 	}
-	return c.playerFactory.error()
+	if err := c.playerFactory.error(); err != nil {
+		return fmt.Errorf("audio: audio error: %w", err)
+	}
+	return nil
 }
 
 func (c *Context) setReady() {
@@ -188,18 +211,26 @@ func (c *Context) addPlayingPlayer(p *playerImpl) {
 	defer c.m.Unlock()
 	c.playingPlayers[p] = struct{}{}
 
-	if !reflect.ValueOf(p.sourceIdent()).Comparable() {
+	// An uncomparable ident is out of the duplication check (#3039).
+	ident := p.sourceIdent()
+	if !reflect.ValueOf(ident).Comparable() {
 		return
 	}
 
-	// Check the source duplication
-	srcs := map[any]struct{}{}
-	for p := range c.playingPlayers {
-		if _, ok := srcs[p.sourceIdent()]; ok {
+	// Check the source duplication. The players other than p have been checked against each
+	// other when they were added, so it is enough to compare p with them.
+	for playing := range c.playingPlayers {
+		if playing == p {
+			continue
+		}
+		playingIdent := playing.sourceIdent()
+		if !reflect.ValueOf(playingIdent).Comparable() {
+			continue
+		}
+		if playingIdent == ident {
 			c.err = errors.New("audio: the same source must not be used by multiple Player objects")
 			return
 		}
-		srcs[p.sourceIdent()] = struct{}{}
 	}
 }
 
@@ -262,27 +293,23 @@ func (c *Context) updatePlayers() error {
 	}
 	c.m.Unlock()
 
-	var playersToRemove []*playerImpl
-
 	// Now reader players cannot call removePlayers from themselves in the current implementation.
-	// Underlying playering can be the pause state after fishing its playing,
+	// The underlying player can become paused after finishing playback,
 	// but there is no way to notify this to players so far.
 	// Instead, let's check the states proactively every frame.
 	for _, p := range players {
 		if err := p.Err(); err != nil {
 			return err
 		}
-		p.updatePosition()
-		if !p.IsPlaying() {
-			playersToRemove = append(playersToRemove, p)
+		// Start playing if Play was requested before the audio device was created.
+		if err := p.startIfPending(); err != nil {
+			return err
 		}
+		p.updatePosition()
+		// The player itself decides whether it is removed, so that a player restarted between
+		// the check and the removal is not dropped from the context.
+		p.removeFromContextIfNotPlaying()
 	}
-
-	c.m.Lock()
-	for _, p := range playersToRemove {
-		delete(c.playingPlayers, p)
-	}
-	c.m.Unlock()
 
 	return nil
 }
@@ -306,14 +333,15 @@ func (c *Context) SampleRate() int {
 // Even when all references to a Player object is gone,
 // the object is not GCed until the player finishes playing.
 // This means that if a Player plays an infinite stream,
-// the object is never GCed unless Close is called.
+// the object is never GCed unless [Player.Pause] or [Player.PauseAndStopReading] is called.
 type Player struct {
-	p *playerImpl
+	p       *playerImpl
+	cleanup runtime.Cleanup
 }
 
 // NewPlayer creates a new player with the given stream.
 //
-// src's format must be linear PCM (signed 16bits little endian, 2 channel stereo)
+// src's format must be linear PCM (signed 16-bit little endian, 2 channel stereo)
 // without a header (e.g. RIFF header).
 // The sample rate must be same as that of the audio context.
 //
@@ -322,15 +350,15 @@ type Player struct {
 //
 // Note that the given src can't be shared with other Player objects.
 //
-// NewPlayer tries to call Seek of src to get the current position.
-// NewPlayer returns error when the Seek returns error.
+// NewPlayer does not touch src. The player asks src for its current position when it
+// first uses src, at [Player.Play] or [Player.SetPosition].
 //
 // A Player doesn't close src even if src implements io.Closer.
 // Closing the source is src owner's responsibility.
 //
 // For new code, NewPlayerF32 is preferrable to NewPlayer, since Ebitengine will treat only 32bit float audio internally in the future.
 //
-// A Player for 16bit integer must be used with 16bit integer version of audio APIs, like vorbis.DecodeWithoutResampling or audio.NewInfiniteLoop, not or vorbis.DecodeF32 or audio.NewInfiniteLoopF32.
+// A Player for 16bit integer must be used with 16bit integer version of audio APIs, like vorbis.DecodeWithoutResampling or audio.NewInfiniteLoop, not vorbis.DecodeF32 or audio.NewInfiniteLoopF32.
 func (c *Context) NewPlayer(src io.Reader) (*Player, error) {
 	_, seekable := src.(io.Seeker)
 	f32Src := convert.NewFloat32BytesReaderFromInt16BytesReader(src)
@@ -339,9 +367,9 @@ func (c *Context) NewPlayer(src io.Reader) (*Player, error) {
 		return nil, err
 	}
 
-	p := &Player{pi}
+	p := &Player{p: pi}
 
-	runtime.SetFinalizer(p, (*Player).finalize)
+	p.cleanup = runtime.AddCleanup(p, (*playerImpl).finalize, p.p)
 
 	return p, nil
 }
@@ -357,8 +385,8 @@ func (c *Context) NewPlayer(src io.Reader) (*Player, error) {
 //
 // Note that the given src can't be shared with other Player objects.
 //
-// NewPlayerF32 tries to call Seek of src to get the current position.
-// NewPlayerF32 returns error when the Seek returns error.
+// NewPlayerF32 does not touch src. The player asks src for its current position when it
+// first uses src, at [Player.Play] or [Player.SetPosition].
 //
 // A Player doesn't close src even if src implements io.Closer.
 // Closing the source is src owner's responsibility.
@@ -373,9 +401,8 @@ func (c *Context) NewPlayerF32(src io.Reader) (*Player, error) {
 		return nil, err
 	}
 
-	p := &Player{pi}
-
-	runtime.SetFinalizer(p, (*Player).finalize)
+	p := &Player{p: pi}
+	p.cleanup = runtime.AddCleanup(p, (*playerImpl).finalize, p.p)
 
 	return p, nil
 }
@@ -412,7 +439,7 @@ func (c *Context) NewPlayerF32FromBytes(src []byte) *Player {
 	p, err := c.NewPlayerF32(bytes.NewReader(src))
 	if err != nil {
 		// Errors should never happen.
-		panic(fmt.Sprintf("audio: %v at NewPlayerFromBytesF32", err))
+		panic(fmt.Sprintf("audio: %v at NewPlayerF32FromBytes", err))
 	}
 	return p
 }
@@ -424,8 +451,13 @@ func NewPlayerFromBytes(context *Context, src []byte) *Player {
 	return context.NewPlayerFromBytes(src)
 }
 
-func (p *Player) finalize() {
-	runtime.SetFinalizer(p, nil)
+// finalize closes the player when its Player wrapper is no longer reachable.
+//
+// A Player becomes unreachable as early as the moment one of its methods reads the playerImpl out
+// of it, so finalize can run while that method is still in flight. Every Player method keeps its
+// receiver alive with runtime.KeepAlive until the delegated call returns, so that finalize does
+// not close the player under it.
+func (p *playerImpl) finalize() {
 	if !p.IsPlaying() {
 		_ = p.Close()
 	}
@@ -437,17 +469,22 @@ func (p *Player) finalize() {
 // even if the stream implements io.Closer.
 //
 // Close returns error when the player is already closed.
+//
+// Deprecated: as of v2.10. Use [Player.PauseAndStopReading] instead.
 func (p *Player) Close() error {
+	defer runtime.KeepAlive(p)
 	return p.p.Close()
 }
 
 // Play plays the stream.
 func (p *Player) Play() {
+	defer runtime.KeepAlive(p)
 	p.p.Play()
 }
 
 // IsPlaying returns boolean indicating whether the player is playing.
 func (p *Player) IsPlaying() bool {
+	defer runtime.KeepAlive(p)
 	return p.p.IsPlaying()
 }
 
@@ -457,6 +494,7 @@ func (p *Player) IsPlaying() bool {
 //
 // Rewind returns error when seeking the source stream returns error.
 func (p *Player) Rewind() error {
+	defer runtime.KeepAlive(p)
 	return p.p.Rewind()
 }
 
@@ -466,6 +504,7 @@ func (p *Player) Rewind() error {
 //
 // SetPosition returns error when seeking the source stream returns an error.
 func (p *Player) SetPosition(offset time.Duration) error {
+	defer runtime.KeepAlive(p)
 	return p.p.SetPosition(offset)
 }
 
@@ -478,7 +517,18 @@ func (p *Player) Seek(offset time.Duration) error {
 
 // Pause pauses the playing.
 func (p *Player) Pause() {
+	defer runtime.KeepAlive(p)
 	p.p.Pause()
+}
+
+// PauseAndStopReading pauses the playing and stops reading the source.
+// After PauseAndStopReading returns, this player does not read the source until [Player.Play],
+// [Player.SetPosition], or [Player.Rewind] is called, so the source can be closed safely.
+// The buffered data is kept, and [Player.Play] resumes the playing without a gap.
+// PauseAndStopReading blocks until an ongoing read from the source finishes, if any.
+func (p *Player) PauseAndStopReading() {
+	defer runtime.KeepAlive(p)
+	p.p.PauseAndStopReading()
 }
 
 // Position returns the current position in time.
@@ -486,6 +536,7 @@ func (p *Player) Pause() {
 // As long as the player continues to play, Position's returning value is increased monotonically,
 // even though the source stream loops and its position goes back.
 func (p *Player) Position() time.Duration {
+	defer runtime.KeepAlive(p)
 	return p.p.Position()
 }
 
@@ -496,29 +547,33 @@ func (p *Player) Current() time.Duration {
 	return p.Position()
 }
 
-// Volume returns the current volume of this player [0-1].
+// Volume returns the current volume of this player, which is 0 or larger.
 func (p *Player) Volume() float64 {
+	defer runtime.KeepAlive(p)
 	return p.p.Volume()
 }
 
-// SetVolume sets the volume of this player.
-// volume must be in between 0 and 1. SetVolume panics otherwise.
+// SetVolume sets the volume of this player, which must be in the range of [0, math.MaxFloat32].
+// A volume larger than 1 amplifies the sound and might cause clipping.
+// A value out of the range, including NaN, is treated as 0.
 func (p *Player) SetVolume(volume float64) {
+	defer runtime.KeepAlive(p)
 	p.p.SetVolume(volume)
 }
 
 // SetBufferSize adjusts the buffer size of the player.
-// If 0 is specified, the default buffer size is used.
+// If a nonpositive value or a value too large to represent is specified, the default buffer size is used.
 // A small buffer size is useful if you want to play a real-time PCM for example.
 // Note that the audio quality might be affected if you modify the buffer size.
 func (p *Player) SetBufferSize(bufferSize time.Duration) {
+	defer runtime.KeepAlive(p)
 	p.p.SetBufferSize(bufferSize)
 }
 
 type hooker interface {
 	OnSuspendAudio(f func() error)
 	OnResumeAudio(f func() error)
-	AppendHookOnBeforeUpdate(f func() error)
+	AppendHookOnBeforeUpdateWithVMGuestInfo(f func(vmGuest bool) error)
 }
 
 var hookerForTesting hooker
@@ -540,32 +595,95 @@ func (h *hookerImpl) OnResumeAudio(f func() error) {
 	hook.OnResumeAudio(f)
 }
 
-func (h *hookerImpl) AppendHookOnBeforeUpdate(f func() error) {
-	hook.AppendHookOnBeforeUpdate(f)
+func (h *hookerImpl) AppendHookOnBeforeUpdateWithVMGuestInfo(f func(vmGuest bool) error) {
+	hook.AppendHookOnBeforeUpdateWithVMGuestInfo(f)
 }
 
-// Resample converts the sample rate of the given singed 16bit integer, little-endian, 2 channels (stereo) stream.
-// size is the length of the source stream in bytes.
+// ResampleReader converts the sample rate of the given signed 16bit integer, little-endian, 2 channels (stereo) stream.
+// length is the length of the source stream in bytes. 0 indicates the length is unknown.
 // from is the original sample rate.
 // to is the target sample rate.
+// ResampleReader panics if from or to is not positive.
 //
-// If the original sample rate equals to the new one, Resample returns source as it is.
-func Resample(source io.ReadSeeker, size int64, from, to int) io.ReadSeeker {
+// If the source ends before length bytes, the remainder of the result is silence.
+//
+// If the original sample rate equals to the new one, ResampleReader returns source as it is.
+//
+// The returned value implements io.Seeker when the source implements io.Seeker.
+// The returned value might implement io.Seeker even when the source doesn't implement io.Seeker, but
+// there is no guarantee that the Seek function works correctly.
+func ResampleReader(source io.Reader, length int64, from, to int) io.Reader {
+	validateResamplingSampleRates(from, to)
 	if from == to {
 		return source
 	}
-	return convert.NewResampling(source, size, from, to, bitDepthInBytesInt16)
+	return convert.NewResampling(source, length, from, to, bitDepthInBytesInt16)
+}
+
+// ResampleReaderF32 converts the sample rate of the given 32bit float, little-endian, 2 channels (stereo) stream.
+// length is the length of the source stream in bytes. 0 indicates the length is unknown.
+// from is the original sample rate.
+// to is the target sample rate.
+// ResampleReaderF32 panics if from or to is not positive.
+//
+// If the source ends before length bytes, the remainder of the result is silence.
+//
+// If the original sample rate equals to the new one, ResampleReaderF32 returns source as it is.
+//
+// The returned value implements io.Seeker when the source implements io.Seeker.
+// The returned value might implement io.Seeker even when the source doesn't implement io.Seeker, but
+// there is no guarantee that the Seek function works correctly.
+func ResampleReaderF32(source io.Reader, length int64, from, to int) io.Reader {
+	validateResamplingSampleRates(from, to)
+	if from == to {
+		return source
+	}
+	return convert.NewResampling(source, length, from, to, bitDepthInBytesFloat32)
+}
+
+// Resample converts the sample rate of the given signed 16bit integer, little-endian, 2 channels (stereo) stream.
+// length is the length of the source stream in bytes. 0 indicates the length is unknown.
+// from is the original sample rate.
+// to is the target sample rate.
+// Resample panics if from or to is not positive.
+//
+// If the source ends before length bytes, the remainder of the result is silence.
+//
+// If the original sample rate equals to the new one, Resample returns source as it is.
+//
+// Deprecated: as of v2.9. Use ResampleReader instead.
+func Resample(source io.ReadSeeker, length int64, from, to int) io.ReadSeeker {
+	validateResamplingSampleRates(from, to)
+	if from == to {
+		return source
+	}
+	return convert.NewResampling(source, length, from, to, bitDepthInBytesInt16)
 }
 
 // ResampleF32 converts the sample rate of the given 32bit float, little-endian, 2 channels (stereo) stream.
-// size is the length of the source stream in bytes.
+// length is the length of the source stream in bytes. 0 indicates the length is unknown.
 // from is the original sample rate.
 // to is the target sample rate.
+// ResampleF32 panics if from or to is not positive.
 //
-// If the original sample rate equals to the new one, Resample returns source as it is.
-func ResampleF32(source io.ReadSeeker, size int64, from, to int) io.ReadSeeker {
+// If the source ends before length bytes, the remainder of the result is silence.
+//
+// If the original sample rate equals to the new one, ResampleF32 returns source as it is.
+//
+// Deprecated: as of v2.9. Use ResampleReaderF32 instead.
+func ResampleF32(source io.ReadSeeker, length int64, from, to int) io.ReadSeeker {
+	validateResamplingSampleRates(from, to)
 	if from == to {
 		return source
 	}
-	return convert.NewResampling(source, size, from, to, bitDepthInBytesFloat32)
+	return convert.NewResampling(source, length, from, to, bitDepthInBytesFloat32)
+}
+
+func validateResamplingSampleRates(from, to int) {
+	if from <= 0 {
+		panic(fmt.Sprintf("audio: original sample rate must be positive but was %d", from))
+	}
+	if to <= 0 {
+		panic(fmt.Sprintf("audio: target sample rate must be positive but was %d", to))
+	}
 }

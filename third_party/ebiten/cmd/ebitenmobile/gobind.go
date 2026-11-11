@@ -27,8 +27,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"golang.org/x/tools/go/packages"
 )
+
+var caser = cases.Title(language.Und)
 
 //go:embed _files/EbitenViewController.m
 var objcM string
@@ -104,11 +108,11 @@ func run() error {
 			return err
 		}
 		prefixLower := *prefix + pkgName
-		prefixUpper := strings.Title(*prefix) + strings.Title(pkgName)
+		prefixUpper := caser.String(*prefix) + caser.String(pkgName)
 		replacePrefixes := func(content string) string {
-			content = strings.ReplaceAll(content, "{{.PrefixUpper}}", prefixUpper)
-			content = strings.ReplaceAll(content, "{{.PrefixLower}}", prefixLower)
-			content = strings.ReplaceAll(content, "{{.JavaPkg}}", *javaPkg)
+			content = strings.ReplaceAll(content, "$Placeholder_PrefixUpper$", prefixUpper)
+			content = strings.ReplaceAll(content, "$Placeholder_PrefixLower$", prefixLower)
+			content = strings.ReplaceAll(content, "$Placeholder_JavaPkg$", *javaPkg)
 			return content
 		}
 

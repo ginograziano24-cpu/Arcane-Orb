@@ -148,3 +148,20 @@ func (g *Game) drawSkyFX(dst *ebiten.Image, world int, horizonY, t float64) {
 	}
 	dst.DrawRectShader(w, h, skyfxShader, op)
 }
+
+// shaderWarm is a scratch target for warmShaders, kept so the queued draw
+// is never orphaned.
+var shaderWarm *ebiten.Image
+
+// warmShaders runs the sky shader once into a tiny scratch image while the
+// player is still on the main menu. Its first real use is on entering a
+// chamber, where the 11-10 profile showed several milliseconds of shader
+// creation inside the chamber-entry hitch; doing it here moves that cost to
+// a moment nobody notices.
+func (g *Game) warmShaders() {
+	if shaderWarm != nil {
+		return
+	}
+	shaderWarm = ebiten.NewImage(8, 8)
+	g.drawSkyFX(shaderWarm, 0, 4, 0)
+}

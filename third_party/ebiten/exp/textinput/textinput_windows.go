@@ -15,17 +15,19 @@
 package textinput
 
 import (
+	"errors"
+	"image"
 	"sync"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 
+	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/internal/microsoftgdk"
 	"github.com/hajimehoshi/ebiten/v2/internal/ui"
 )
 
-type textInput struct {
-	session *session
+type textInputImpl struct {
+	events *textInputEvents
 
 	origWndProc     uintptr
 	wndProcCallback uintptr
@@ -39,27 +41,40 @@ type textInput struct {
 	err error
 }
 
-var theTextInput textInput
+// errNoActiveWindow is returned by start when the application has no active
+// window, which is the case while it is not in the foreground.
+var errNoActiveWindow = errors.New("textinput: no active window")
 
-func (t *textInput) Start(x, y int) (chan State, func()) {
+func (t *textInputImpl) markIMEDiscardNeeded() {
+}
+
+func (t *textInputImpl) Start(bounds image.Rectangle, _, _ string) (<-chan textInputState, func()) {
 	if microsoftgdk.IsXbox() {
 		return nil, nil
 	}
 
-	var session *session
+	bounds = caretBoundsInClientNativePixels(bounds)
+	var ch chan textInputState
 	var err error
-	ui.Get().RunOnMainThread(func() {
-		t.end()
-		err = t.start(x, y)
-		session = newSession()
-		t.session = session
+	ebiten.RunOnMainThread(func() {
+		t.events.end()
+		err = t.start(bounds)
+		if errors.Is(err, errNoActiveWindow) {
+			return
+		}
+		ch, _ = t.events.start()
 	})
-	if err != nil {
-		session.ch <- State{Error: err}
-		session.end()
+	if ch == nil {
+		// Text inputting needs the window, and it becomes active once the
+		// application comes to the foreground.
+		return nil, nil
 	}
-	return session.ch, func() {
-		ui.Get().RunOnMainThread(func() {
+	if err != nil {
+		t.events.send(textInputState{Error: err})
+		t.events.end()
+	}
+	return ch, func() {
+		ebiten.RunOnMainThread(func() {
 			// Disable IME again.
 			if t.immContext != 0 {
 				return
@@ -70,19 +85,22 @@ func (t *textInput) Start(x, y int) (chan State, func()) {
 				return
 			}
 			t.immContext = c
-			t.end()
+			t.events.end()
 		})
 	}
 }
 
 // start must be called from the main thread.
-func (t *textInput) start(x, y int) error {
+func (t *textInputImpl) start(bounds image.Rectangle) (err error) {
 	if t.err != nil {
 		return t.err
 	}
 
 	if t.window == 0 {
 		t.window = _GetActiveWindow()
+	}
+	if t.window == 0 {
+		return errNoActiveWindow
 	}
 	if t.origWndProc == 0 {
 		if t.wndProcCallback == 0 {
@@ -98,7 +116,6 @@ func (t *textInput) start(x, y int) error {
 
 	// By default, IME was disabled by setting 0 as the IMM context.
 	// Restore the context once.
-	var err error
 	t.initOnce.Do(func() {
 		err = ui.Get().RestoreIMMContextOnMainThread()
 	})
@@ -113,27 +130,35 @@ func (t *textInput) start(x, y int) error {
 		t.immContext = 0
 	}
 	h := _ImmGetContext(t.window)
+	defer func() {
+		if winErr := _ImmReleaseContext(t.window, h); winErr != nil {
+			err = errors.Join(err, winErr)
+		}
+	}()
+
+	// CFS_EXCLUDE takes ptCurrentPos as the caret's top left corner and rcArea as
+	// the region the candidate window must not cover, so the input method places
+	// the window right below the caret, or above it when there is no room.
 	if err := _ImmSetCandidateWindow(h, &_CANDIDATEFORM{
 		dwIndex: 0,
-		dwStyle: _CFS_CANDIDATEPOS,
+		dwStyle: _CFS_EXCLUDE,
 		ptCurrentPos: _POINT{
-			x: int32(x),
-			y: int32(y),
+			x: int32(bounds.Min.X),
+			y: int32(bounds.Min.Y),
+		},
+		rcArea: _RECT{
+			left:   int32(bounds.Min.X),
+			top:    int32(bounds.Min.Y),
+			right:  int32(bounds.Max.X),
+			bottom: int32(bounds.Max.Y),
 		},
 	}); err != nil {
-		return err
-	}
-	if err := _ImmReleaseContext(t.window, h); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (t *textInput) wndProc(hWnd uintptr, uMsg uint32, wParam, lParam uintptr) uintptr {
-	if t.session == nil {
-		return _CallWindowProcW(t.origWndProc, hWnd, uMsg, wParam, lParam)
-	}
-
+func (t *textInputImpl) wndProc(hWnd uintptr, uMsg uint32, wParam, lParam uintptr) uintptr {
 	switch uMsg {
 	case _WM_IME_SETCONTEXT:
 		// Draw preedit text by an application side.
@@ -144,18 +169,21 @@ func (t *textInput) wndProc(hWnd uintptr, uMsg uint32, wParam, lParam uintptr) u
 		if lParam&(_GCS_RESULTSTR|_GCS_COMPSTR) != 0 {
 			if lParam&_GCS_RESULTSTR != 0 {
 				if err := t.commit(); err != nil {
-					t.session.ch <- State{Error: err}
-					t.end()
+					t.events.send(textInputState{Error: err})
+					t.events.end()
 				}
 			}
 			if lParam&_GCS_COMPSTR != 0 {
 				if err := t.update(); err != nil {
-					t.session.ch <- State{Error: err}
-					t.end()
+					t.events.send(textInputState{Error: err})
+					t.events.end()
 				}
 			}
 			return 1
 		}
+	case _WM_IME_ENDCOMPOSITION:
+		t.send("", 0, 0, commitNone)
+		return 1
 	case _WM_CHAR, _WM_SYSCHAR:
 		if wParam >= 0xd800 && wParam <= 0xdbff {
 			t.highSurrogate = uint16(wParam)
@@ -173,7 +201,7 @@ func (t *textInput) wndProc(hWnd uintptr, uMsg uint32, wParam, lParam uintptr) u
 			t.highSurrogate = 0
 			if c >= 0x20 {
 				str := string(c)
-				t.send(str, 0, len(str), true)
+				t.send(str, 0, len(str), commitRegular)
 			}
 		}
 	case _WM_UNICHAR:
@@ -184,7 +212,7 @@ func (t *textInput) wndProc(hWnd uintptr, uMsg uint32, wParam, lParam uintptr) u
 		}
 		if r := rune(wParam); r >= 0x20 {
 			str := string(r)
-			t.send(str, 0, len(str), true)
+			t.send(str, 0, len(str), commitRegular)
 		}
 	}
 
@@ -192,122 +220,96 @@ func (t *textInput) wndProc(hWnd uintptr, uMsg uint32, wParam, lParam uintptr) u
 }
 
 // send must be called from the main thread.
-func (t *textInput) send(text string, startInBytes, endInBytes int, committed bool) {
-	if t.session != nil {
-		t.session.trySend(State{
-			Text:                             text,
-			CompositionSelectionStartInBytes: startInBytes,
-			CompositionSelectionEndInBytes:   endInBytes,
-			Committed:                        committed,
-		})
+func (t *textInputImpl) send(text string, startInBytes, endInBytes int, kind commitKind) {
+	t.events.send(textInputState{
+		Text:                             text,
+		CompositionSelectionStartInBytes: startInBytes,
+		CompositionSelectionEndInBytes:   endInBytes,
+		ReplacementStartInBytes:          noReplacement,
+		ReplacementEndInBytes:            noReplacement,
+		CommitKind:                       kind,
+	})
+	if kind.committed() {
+		t.events.end()
 	}
-	if committed {
-		t.end()
-	}
-}
-
-// end must be called from the main thread.
-func (t *textInput) end() {
-	if t.session == nil {
-		return
-	}
-
-	t.session.end()
-	t.session = nil
 }
 
 // update must be called from the main thread.
-func (t *textInput) update() (ferr error) {
+func (t *textInputImpl) update() (err error) {
 	if t.err != nil {
 		return t.err
 	}
 
 	hIMC := _ImmGetContext(t.window)
 	defer func() {
-		if err := _ImmReleaseContext(t.window, hIMC); err != nil && ferr != nil {
-			ferr = err
+		if winErr := _ImmReleaseContext(t.window, hIMC); winErr != nil {
+			err = errors.Join(err, winErr)
 		}
 	}()
 
-	bufferLen, err := _ImmGetCompositionStringW(hIMC, _GCS_COMPSTR, nil, 0)
+	buffer16, err := immGetCompositionStringW[uint16](hIMC, _GCS_COMPSTR)
 	if err != nil {
 		return err
 	}
-	if bufferLen == 0 {
+	if len(buffer16) == 0 {
 		return nil
 	}
 
-	buffer16 := make([]uint16, bufferLen/uint32(unsafe.Sizeof(uint16(0))))
-	if _, err := _ImmGetCompositionStringW(hIMC, _GCS_COMPSTR, unsafe.Pointer(&buffer16[0]), bufferLen); err != nil {
-		return err
-	}
-
-	attrLen, err := _ImmGetCompositionStringW(hIMC, _GCS_COMPATTR, nil, 0)
+	attr, err := immGetCompositionStringW[byte](hIMC, _GCS_COMPATTR)
 	if err != nil {
 		return err
 	}
-	attr := make([]byte, attrLen)
-	if _, err := _ImmGetCompositionStringW(hIMC, _GCS_COMPATTR, unsafe.Pointer(&attr[0]), attrLen); err != nil {
-		return err
-	}
 
-	clauseLen, err := _ImmGetCompositionStringW(hIMC, _GCS_COMPCLAUSE, nil, 0)
+	clause, err := immGetCompositionStringW[uint32](hIMC, _GCS_COMPCLAUSE)
 	if err != nil {
 		return err
 	}
-	clause := make([]uint32, clauseLen/uint32(unsafe.Sizeof(uint32(0))))
-	if _, err := _ImmGetCompositionStringW(hIMC, _GCS_COMPCLAUSE, unsafe.Pointer(&clause[0]), clauseLen); err != nil {
-		return err
-	}
 
-	var start16 int
-	var end16 int
+	// An IME is not guaranteed to report clause offsets that are consistent with the
+	// attribute buffer or the composition string, so treat every offset as untrusted.
+	start16 := len(buffer16)
+	end16 := len(buffer16)
 	if len(clause) > 0 {
 		for i, c := range clause[:len(clause)-1] {
-			if int(c) == len(attr) {
+			if int(c) >= len(attr) {
 				break
 			}
 			if attr[c] == _ATTR_TARGET_CONVERTED || attr[c] == _ATTR_TARGET_NOTCONVERTED {
-				start16 = int(c)
-				end16 = int(clause[i+1])
+				start16 = min(int(c), len(buffer16))
+				end16 = min(max(int(clause[i+1]), start16), len(buffer16))
 				break
 			}
 		}
 	}
 	text := windows.UTF16ToString(buffer16)
-	t.send(text, convertUTF16CountToByteCount(text, start16), convertUTF16CountToByteCount(text, end16), false)
+	t.send(text, convertUTF16CountToByteCount(text, start16), convertUTF16CountToByteCount(text, end16), commitNone)
 
 	return nil
 }
 
 // commit must be called from the main thread.
-func (t *textInput) commit() (ferr error) {
+func (t *textInputImpl) commit() (err error) {
 	if t.err != nil {
 		return t.err
 	}
 
 	hIMC := _ImmGetContext(t.window)
 	defer func() {
-		if err := _ImmReleaseContext(t.window, hIMC); err != nil && ferr != nil {
-			ferr = err
+		if winErr := _ImmReleaseContext(t.window, hIMC); winErr != nil {
+			err = errors.Join(err, winErr)
 		}
 	}()
 
-	bufferLen, err := _ImmGetCompositionStringW(hIMC, _GCS_RESULTSTR, nil, 0)
+	buffer16, err := immGetCompositionStringW[uint16](hIMC, _GCS_RESULTSTR)
 	if err != nil {
 		return err
 	}
-	if bufferLen == 0 {
+	if len(buffer16) == 0 {
 		return nil
 	}
 
-	buffer16 := make([]uint16, bufferLen/uint32(unsafe.Sizeof(uint16(0))))
-	if _, err := _ImmGetCompositionStringW(hIMC, _GCS_RESULTSTR, unsafe.Pointer(&buffer16[0]), bufferLen); err != nil {
-		return err
-	}
-
 	text := windows.UTF16ToString(buffer16)
-	t.send(text, 0, len(text), true)
+	t.send(text, 0, len(text), commitRegular)
 
 	return nil
 }

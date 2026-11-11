@@ -62,10 +62,12 @@ type Context interface {
 	DrawElements(mode uint32, count int32, xtype uint32, offset int)
 	Enable(cap uint32)
 	EnableVertexAttribArray(index uint32)
+	Finish()
 	Flush()
 	FramebufferRenderbuffer(target uint32, attachment uint32, renderbuffertarget uint32, renderbuffer uint32)
 	FramebufferTexture2D(target uint32, attachment uint32, textarget uint32, texture uint32, level int32)
 	GetError() uint32
+	GetExtension(name string) any
 	GetInteger(pname uint32) int
 	GetProgramInfoLog(program uint32) string
 	GetProgrami(program uint32, pname uint32) int

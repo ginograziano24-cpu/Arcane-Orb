@@ -134,20 +134,20 @@ type coachTip struct {
 }
 
 var coachTips = map[string]coachTip{
-	"level":   {"level", "Break every brick", "Move the paddle with {move} and launch the orb with {launch}. Clear every brick to finish the chamber.\n\nIf every orb falls past your paddle you lose a life, and you have two. They refill each act, and a rare falling heart can restore one.\n\nWhen your class ability is charged, use it with {ability}.", "orb", true},
-	"map":     {"map", "Choose your path", "Each row is one step up the act; the lines show where you can go next.\n\nChambers give upgrades, Elites give better ones, Shops sell items, Events are gambles and Rest sites give back a life. The act's Guardian waits at the top.", "eye", true},
-	"reward":  {"reward", "Take one", "Pick one card, or skip it for a little gold. Hover a card to see what its keywords mean.\n\nSome items fuse: own both halves and they forge into something stronger. Cards that complete a fusion say so.", "star", true},
-	"shop":    {"shop", "The shop", "Spend gold on items, relics, scrolls and lost lives. Anything you don't buy is gone when you leave.", "coin", true},
-	"scroll":  {"scroll", "A scroll", "Scrolls are one-use spells. Read one during a chamber with {scrolls}. You can carry a few at once.", "book", false},
-	"life":    {"life", "A life lost", "The paddle reforms in a moment. Lives don't come back until the next act unless a heart falls from a broken brick; catch it with the paddle.", "heart", false},
-	"curse":   {"curse", "Cursed", "Curses weaken you until something lifts them. Look for events and items that cleanse them.", "mask", false},
+	"level":   {"level", "Break every brick", "Steer with {move} and launch the Orb with {launch}. Break every brick and the chamber is yours.\n\nIf every orb slips past your paddle, you lose a life. You have two, they refill each act, and now and then a broken brick drops a heart to patch you up.\n\nWhen your hero's ability is charged, unleash it with {ability}.", "orb", true},
+	"map":     {"map", "Choose your path", "Each row is one step up the act; the lines show where you can go next.\n\nChambers hand out upgrades, Elites hand out better ones, Shops want your gold, Events are a coin toss with extra steps, and Rest sites give back a life. The act's Guardian waits at the very top, tapping its foot.", "eye", true},
+	"reward":  {"reward", "Take one", "Pick one card, or skip it for a little gold. Hover a card to decode its keywords.\n\nSome items fuse: own both halves and they forge into something much nastier. Cards that complete a fusion will tell you so.", "star", true},
+	"shop":    {"shop", "The shop", "Gold buys items, relics, scrolls and spare lives. Whatever you leave on the shelf is gone for good, so no window shopping.", "coin", true},
+	"scroll":  {"scroll", "A scroll", "Scrolls are one-shot spells. Read one mid-chamber with {scrolls}. You can carry a few, so keep one for a rainy day.", "book", false},
+	"life":    {"life", "A life lost", "Don't panic: the paddle pulls itself back together. Lives return at the next act, or sooner if a broken brick drops a heart. Catch it!", "heart", false},
+	"curse":   {"curse", "Cursed", "A curse nags at you until something lifts it. Keep an eye out for events and items that wash curses away.", "mask", false},
 	"waves":   {"waves", "Waves and heat", "This chamber comes in waves: when one is nearly gone the rest crumble and the next drops in.\n\nThe formation creeps closer when the ADVANCE gauge under the title fills. Bricks that reach the red line near your paddle smash: the paddle reels and you spill gold.\n\nHEAT is how strong your build has grown this world. Each point toughens the bricks and hurries the advance.", "burst", false},
-	"critter": {"critter", "Critters", "Little creatures wander the open floor. Hit one with the orb and it bursts into coins, sometimes a power-up. The golden ones are rare, quick and worth far more.", "coin", false},
-	"thief":   {"thief", "Stop, thief!", "A Pilferer is after that power-up. If it grabs one it runs for the wall: hit it with the orb and it drops everything it stole.", "coin", false},
-	"mason":   {"mason", "The Mason", "This little builder lays fresh bricks in front of the formation. Hit it with the orb to send it packing, with a few coins for your trouble.", "anvil", false},
-	"bomber":  {"bomber", "Bombs away", "A bird is flying over the bricks with a bomb. Hit it with the orb while it is over a crowd of bricks and the bomb drops right there.", "bomb", false},
-	"cache":   {"cache", "Rune cache", "Bricks sometimes drop a rune cache. Catch it with the paddle and the fight stops while you choose an item, so your build grows during a chamber as well as after it.", "gem", false},
-	"boss":    {"boss", "The Guardian", "Its armour shrugs off the orb. Strike the glowing core to wound it; the core moves after a few hits, so keep chasing it.", "crown", false},
+	"critter": {"critter", "Critters", "Little critters wander the open floor. Bonk one with the Orb and it pops into coins, sometimes a power-up. The golden ones are rare, quick and worth a fortune.", "coin", false},
+	"thief":   {"thief", "Stop, thief!", "A Pilferer has its eye on that power-up! If it grabs one it runs for the wall. Bonk it with the Orb and it drops everything it stole.", "coin", false},
+	"mason":   {"mason", "The Mason", "This little builder lays fresh bricks in front of the formation. Rude! Hit it with the Orb to send it packing, with a few coins for your trouble.", "anvil", false},
+	"bomber":  {"bomber", "Bombs away", "A bird with a bomb is flying over the bricks. Hit it while it's above a big crowd of bricks and the bomb drops right there. Boom.", "bomb", false},
+	"cache":   {"cache", "Rune cache", "Bricks sometimes drop a rune cache. Catch it with the paddle and the fight pauses while you pick an item, so your build grows mid-chamber too.", "gem", false},
+	"boss":    {"boss", "The Guardian", "Its armour laughs at the Orb. Strike the glowing core instead; it hops away after a few hits, so keep chasing it.", "crown", false},
 }
 
 func (g *Game) coach(id string) {

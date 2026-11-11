@@ -256,7 +256,7 @@ func (L *Level) prismNova() bool {
 	L.text(V3{L.Balls[0].X, 2.4, L.Balls[0].Z}, "PRISMATIC NOVA", color.RGBA{210, 170, 255, 255}, true)
 	L.Shake = math.Max(L.Shake, 0.4)
 	L.Flash = math.Max(L.Flash, 0.3)
-	L.g.snd.Play("warp")
+	L.g.snd.Play("nova")
 	L.g.snd.PlayVol("zap", 0.7)
 	return true
 }
@@ -288,8 +288,7 @@ func (L *Level) jackpot() bool {
 	L.gainGold(6, L.PaddleX, PaddleZ+4, true)
 	L.text(V3{L.PaddleX, 2.2, PaddleZ + 2.5}, "JACKPOT!", color.RGBA{255, 214, 90, 255}, true)
 	L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: PaddleZ + 1, MaxR: 4, Life: 0.45, Max: 0.45, Col: color.RGBA{255, 214, 90, 255}})
-	L.g.snd.Play("coinbig")
-	L.g.snd.PlayKeyed("good")
+	L.g.snd.Play("jackpot")
 	return true
 }
 

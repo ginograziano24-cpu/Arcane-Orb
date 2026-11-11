@@ -18,6 +18,7 @@ import (
 	"errors"
 	"unicode/utf8"
 
+	"github.com/hajimehoshi/ebiten/v2/text/v2/internal/textutil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
@@ -27,8 +28,22 @@ var _ Face = (*MultiFace)(nil)
 // The face in the first index is used in the highest priority, and the last the lowest priority.
 //
 // There is a known issue: if the writing directions of the faces don't agree, the rendering result might be messed up.
+// [NewMultiFace] rejects such faces, but a face's direction can be changed after the creation (e.g. [GoTextFace.Direction]).
+//
+// There is another known issue: a change to a face's glyph availability after a MultiFace's creation
+// (e.g. by [LimitedFace.AddUnicodeRange] or by an assignment to [GoTextFace.Source]) is not reflected.
+// Configure all the faces before creating a MultiFace.
 type MultiFace struct {
 	faces []Face
+
+	// splitTextCache memoizes per-text chunk decomposition. The decomposition
+	// depends on the faces' hasGlyph results. The results can change even after
+	// the faces' creation (e.g. by [LimitedFace.AddUnicodeRange] or by an
+	// assignment to [GoTextFace.Source]), so a cached entry can be stale.
+	// The access time of an entry is updated on every hit, so an entry used
+	// every tick never ages out of the cache and stays stale.
+	// See the MultiFace doc for the workaround.
+	splitTextCache *cache[string, []textChunk]
 }
 
 // NewMultiFace creates a new MultiFace from the given faces.
@@ -46,7 +61,9 @@ func NewMultiFace(faces ...Face) (*MultiFace, error) {
 		}
 	}
 
-	m := &MultiFace{}
+	m := &MultiFace{
+		splitTextCache: newCache[string, []textChunk](32),
+	}
 	m.faces = make([]Face, len(faces))
 	copy(m.faces, faces)
 	return m, nil
@@ -57,43 +74,41 @@ func (m *MultiFace) Metrics() Metrics {
 	var mt Metrics
 	for _, f := range m.faces {
 		mt1 := f.Metrics()
-		if mt1.HLineGap > mt.HLineGap {
-			mt.HLineGap = mt1.HLineGap
-		}
-		if mt1.HAscent > mt.HAscent {
-			mt.HAscent = mt1.HAscent
-		}
-		if mt1.HDescent > mt.HDescent {
-			mt.HDescent = mt1.HDescent
-		}
-		if mt1.VLineGap > mt.VLineGap {
-			mt.VLineGap = mt1.VLineGap
-		}
-		if mt1.VAscent > mt.VAscent {
-			mt.VAscent = mt1.VAscent
-		}
-		if mt1.VDescent > mt.VDescent {
-			mt.VDescent = mt1.VDescent
-		}
-		if mt1.XHeight > mt.XHeight {
-			mt.XHeight = mt1.XHeight
-		}
-		if mt1.CapHeight > mt.CapHeight {
-			mt.CapHeight = mt1.CapHeight
-		}
+		mt.HLineGap = max(mt.HLineGap, mt1.HLineGap)
+		mt.HAscent = max(mt.HAscent, mt1.HAscent)
+		mt.HDescent = max(mt.HDescent, mt1.HDescent)
+		mt.VLineGap = max(mt.VLineGap, mt1.VLineGap)
+		mt.VAscent = max(mt.VAscent, mt1.VAscent)
+		mt.VDescent = max(mt.VDescent, mt1.VDescent)
+		mt.XHeight = max(mt.XHeight, mt1.XHeight)
+		mt.CapHeight = max(mt.CapHeight, mt1.CapHeight)
 	}
 	return mt
 }
 
-// advance implements Face.
-func (m *MultiFace) advance(text string) float64 {
+// advanceAt implements Face.
+func (m *MultiFace) advanceAt(text string, indexInBytes int) float64 {
+	firstLineLen := textutil.FirstLineLen(text)
+	indexInBytes = min(indexInBytes, firstLineLen)
+	if indexInBytes <= 0 {
+		return 0
+	}
+	firstLine := text[:firstLineLen]
 	var a float64
-	for _, c := range m.splitText(text) {
+	for _, c := range m.splitText(firstLine) {
 		if c.faceIndex == -1 {
 			continue
 		}
 		f := m.faces[c.faceIndex]
-		a += f.advance(text[c.textStartIndex:c.textEndIndex])
+		chunk := firstLine[c.textStartIndex:c.textEndIndex]
+		if c.textEndIndex <= indexInBytes {
+			a += f.advanceAt(chunk, len(chunk))
+			continue
+		}
+		if c.textStartIndex < indexInBytes {
+			a += f.advanceAt(chunk, indexInBytes-c.textStartIndex)
+		}
+		break
 	}
 	return a
 }
@@ -108,16 +123,16 @@ func (m *MultiFace) hasGlyph(r rune) bool {
 	return false
 }
 
-// appendGlyphsForLine implements Face.
-func (m *MultiFace) appendGlyphsForLine(glyphs []Glyph, line string, indexOffset int, originX, originY float64) []Glyph {
+// appendLazyGlyphsForLine implements Face.
+func (m *MultiFace) appendLazyGlyphsForLine(glyphs []LazyGlyph, line string, indexOffset int, originX, originY float64, keepGlyph func(originX, originY float64) bool) []LazyGlyph {
 	for _, c := range m.splitText(line) {
 		if c.faceIndex == -1 {
 			continue
 		}
 		f := m.faces[c.faceIndex]
 		t := line[c.textStartIndex:c.textEndIndex]
-		glyphs = f.appendGlyphsForLine(glyphs, t, indexOffset, originX, originY)
-		if a := f.advance(t); f.direction().isHorizontal() {
+		glyphs = f.appendLazyGlyphsForLine(glyphs, t, indexOffset, originX, originY, keepGlyph)
+		if a := f.advanceAt(t, len(t)); f.direction().isHorizontal() {
 			originX += a
 		} else {
 			originY += a
@@ -136,7 +151,7 @@ func (m *MultiFace) appendVectorPathForLine(path *vector.Path, line string, orig
 		f := m.faces[c.faceIndex]
 		t := line[c.textStartIndex:c.textEndIndex]
 		f.appendVectorPathForLine(path, t, originX, originY)
-		if a := f.advance(t); f.direction().isHorizontal() {
+		if a := f.advanceAt(t, len(t)); f.direction().isHorizontal() {
 			originX += a
 		} else {
 			originY += a
@@ -163,11 +178,16 @@ type textChunk struct {
 }
 
 func (m *MultiFace) splitText(text string) []textChunk {
-	var chunks []textChunk
+	return m.splitTextCache.getOrCreate(text, func() ([]textChunk, bool) {
+		return m.doSplitText(text), true
+	})
+}
 
-	for ri, r := range text {
+func (m *MultiFace) doSplitText(text string) []textChunk {
+	var chunks []textChunk
+	var chunk textChunk
+	for i, r := range text {
 		fi := -1
-		_, l := utf8.DecodeRuneInString(text[ri:])
 		for i, f := range m.faces {
 			if !f.hasGlyph(r) && i < len(m.faces)-1 {
 				continue
@@ -179,20 +199,31 @@ func (m *MultiFace) splitText(text string) []textChunk {
 			panic("text: a face was not selected correctly")
 		}
 
+		// Do not use utf8.RuneLen here, as r may be U+FFFD (replacement character)
+		// when the line contains invalid UTF-8 sequences (#3284).
+		_, l := utf8.DecodeRuneInString(text[i:])
+		if l < 0 {
+			// A string for-loop iterator advances by 1 byte when it encounters an invalid UTF-8 sequence.
+			l = 1
+		}
+
 		var s int
-		if len(chunks) > 0 {
-			if chunks[len(chunks)-1].faceIndex == fi {
-				chunks[len(chunks)-1].textEndIndex += l
+		if chunk != (textChunk{}) {
+			if chunk.faceIndex == fi {
+				chunk.textEndIndex += l
 				continue
 			}
-			s = chunks[len(chunks)-1].textEndIndex
+			chunks = append(chunks, chunk)
+			s = chunk.textEndIndex
 		}
-		chunks = append(chunks, textChunk{
+		chunk = textChunk{
 			textStartIndex: s,
 			textEndIndex:   s + l,
 			faceIndex:      fi,
-		})
+		}
 	}
-
+	if chunk != (textChunk{}) {
+		chunks = append(chunks, chunk)
+	}
 	return chunks
 }

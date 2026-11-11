@@ -23,6 +23,7 @@ import (
 	"image"
 	"image/color"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
@@ -32,16 +33,16 @@ import (
 )
 
 var (
-	monotonicClock int64
+	monotonicClock atomic.Int64
 )
 
 func now() int64 {
-	return monotonicClock
+	return monotonicClock.Load()
 }
 
 func init() {
 	hook.AppendHookOnBeforeUpdate(func() error {
-		monotonicClock++
+		monotonicClock.Add(1)
 		return nil
 	})
 }
@@ -289,7 +290,7 @@ func BoundString(face font.Face, text string) image.Rectangle {
 	m := fc.Metrics()
 	faceHeight := m.Height
 
-	fx, fy := fixed.I(0), fixed.I(0)
+	var fx, fy fixed.Int26_6
 	prevR := rune(-1)
 
 	var bounds fixed.Rectangle26_6
@@ -366,7 +367,7 @@ func CacheGlyphs(face font.Face, text string) {
 		b, a, _ := fc.GlyphBounds(r)
 
 		// Cache all 4 variations for one rune (#2528).
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			offset := fixed.Point26_6{
 				X: (fixed.Int26_6(i*(1<<4)) + b.Min.X) & ((1 << 6) - 1),
 				Y: b.Min.Y & ((1 << 6) - 1),

@@ -31,7 +31,7 @@ var imageImportCheckAnalyzer = &analysis.Analyzer{
 	Name:       "imageimportcheck",
 	Doc:        "check importing image/gif, image/jpeg, and image/png packages",
 	Run:        runImageImportCheck,
-	ResultType: reflect.TypeOf(imageImportCheckResult{}),
+	ResultType: reflect.TypeFor[imageImportCheckResult](),
 }
 
 type imageImportCheckResult struct {
@@ -44,17 +44,26 @@ type imageImportCheckError struct {
 }
 
 func runImageImportCheck(pass *analysis.Pass) (any, error) {
+	// A main package is not importable, so its registrations never reach another package.
+	if pass.Pkg.Name() == "main" {
+		return imageImportCheckResult{}, nil
+	}
+
 	pkgPath := pass.Pkg.Path()
 	if strings.HasPrefix(pkgPath, "github.com/hajimehoshi/ebiten/v2/examples/") {
-		return nil, nil
+		return imageImportCheckResult{}, nil
 	}
 	if strings.HasSuffix(pkgPath, "_test") {
-		return nil, nil
+		return imageImportCheckResult{}, nil
+	}
+
+	if pkgPath == "github.com/hajimehoshi/ebiten/v2/text/v2" {
+		return imageImportCheckResult{}, nil
 	}
 
 	// TODO: Remove this exception after v3 is released (#2336).
 	if pkgPath == "github.com/hajimehoshi/ebiten/v2/ebitenutil" {
-		return nil, nil
+		return imageImportCheckResult{}, nil
 	}
 
 	var errs []imageImportCheckError
@@ -62,7 +71,7 @@ func runImageImportCheck(pass *analysis.Pass) (any, error) {
 		for _, i := range f.Imports {
 			path, err := strconv.Unquote(i.Path.Value)
 			if err != nil {
-				return nil, err
+				return imageImportCheckResult{}, err
 			}
 			if path == "image/gif" || path == "image/jpeg" || path == "image/png" {
 				err := imageImportCheckError{

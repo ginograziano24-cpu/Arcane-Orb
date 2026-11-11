@@ -68,32 +68,33 @@ type pendEv struct {
 }
 
 type songPlayer struct {
-	def      *songDef
-	parts    []*partRT
-	byName   map[string]*partRT
-	stepLen  float64
-	barLen   int64
-	pos      int64
-	nextBar  int64
-	sec      string
-	secBar   int
-	secStart int64
-	plays    map[string]int // times each section has started
-	pend     []pendEv
-	inten    atomic.Uint64
-	lvl      float64 // intensity sampled at the bar start
-	rev      *reverb
-	dly      *pingpong
-	comp     *busComp
-	pumps    []int64
-	lastPump int64
-	mlp      [2]svf
-	mlpOn    bool
-	rng      *rand.Rand
-	sl, sr   []float64 // send buses
-	ml, mr   []float64
-	duck     []float64
-	fade     float64
+	def       *songDef
+	parts     []*partRT
+	byName    map[string]*partRT
+	stepLen   float64
+	barLen    int64
+	pos       int64
+	nextBar   int64
+	sec       string
+	secBar    int
+	secStart  int64
+	plays     map[string]int // times each section has started
+	pend      []pendEv
+	inten     atomic.Uint64
+	lvl       float64 // intensity sampled at the bar start
+	rev       *reverb
+	dly       *pingpong
+	comp      *busComp
+	pumps     []int64
+	lastPump  int64
+	mlp       [2]svf
+	mlpOn     bool
+	rng       *rand.Rand
+	voiceSeed uint32    // independent oscillator and noise seeds per stream
+	sl, sr    []float64 // send buses
+	ml, mr    []float64
+	duck      []float64
+	fade      float64
 }
 
 const musBlock = 256
@@ -107,7 +108,7 @@ var VoiceStats map[string]int
 
 func newSongPlayer(def *songDef) *songPlayer {
 	sp := &songPlayer{def: def, byName: map[string]*partRT{}, plays: map[string]int{},
-		rng: rand.New(rand.NewSource(int64(len(def.name)) * 977))}
+		rng: rand.New(rand.NewSource(int64(len(def.name)) * 977)), voiceSeed: 12345}
 	sp.stepLen = msr * 60 / def.bpm / 4
 	sp.barLen = int64(math.Round(sp.stepLen * 16))
 	for _, pd := range def.parts {
@@ -202,7 +203,8 @@ func (sp *songPlayer) trigger(pe pendEv) {
 		open.decay *= 6.5
 		ins = &open
 	}
-	v := newVoice(ins, e.key, e.vel, pe.durS)
+	sp.voiceSeed = sp.voiceSeed*1664525 + 1013904223
+	v := newVoice(ins, e.key, e.vel, pe.durS, sp.voiceSeed)
 	v.delay = int(pe.start - sp.pos)
 	p.voices = append(p.voices, v)
 	p.last = v

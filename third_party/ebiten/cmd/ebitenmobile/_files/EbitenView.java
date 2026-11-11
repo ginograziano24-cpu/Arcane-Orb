@@ -12,30 +12,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package {{.JavaPkg}}.{{.PrefixLower}};
+package $Placeholder_JavaPkg$.$Placeholder_PrefixLower$;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import android.content.Context;
+import android.graphics.Insets;
+import android.graphics.Rect;
 import android.hardware.input.InputManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Display;
+import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.InputDevice;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
+import android.view.WindowInsets;
 import android.view.WindowManager;
+import android.view.inputmethod.BaseInputConnection;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputConnectionWrapper;
+import android.view.inputmethod.InputMethodManager;
+import android.view.inputmethod.TextAttribute;
+import android.widget.EditText;
 
-import {{.JavaPkg}}.ebitenmobileview.Ebitenmobileview;
+import go.Seq;
 
-public class EbitenView extends ViewGroup implements InputManager.InputDeviceListener {
+import $Placeholder_JavaPkg$.ebitenmobileview.Ebitenmobileview;
+import $Placeholder_JavaPkg$.ebitenmobileview.TextInputDriver;
+
+public class EbitenView extends ViewGroup implements InputManager.InputDeviceListener, TextInputDriver {
     static class Gamepad {
         public int deviceId;
         public ArrayList<InputDevice.MotionRange> axes;
@@ -96,8 +118,16 @@ public class EbitenView extends ViewGroup implements InputManager.InputDeviceLis
         }
     }
 
-    private static double pxToDp(double x) {
-        return x / Ebitenmobileview.deviceScale();
+    private double pxToDp(double x) {
+        return x / this.deviceScale;
+    }
+
+    private void updateDeviceScale() {
+        WindowManager windowManager = (WindowManager)getContext().getSystemService(Context.WINDOW_SERVICE);
+        Display display = windowManager.getDefaultDisplay();
+        DisplayMetrics metrics = new DisplayMetrics();
+        display.getRealMetrics(metrics);
+        this.deviceScale = metrics.density;
     }
 
     public EbitenView(Context context) {
@@ -111,6 +141,24 @@ public class EbitenView extends ViewGroup implements InputManager.InputDeviceLis
     }
 
     private void initialize(Context context) {
+        // Set the Android context for the Go side, which requires it e.g. to
+        // get the display information or to vibrate. Seq.setContext leaks a
+        // JNI global reference per call, so set the context at most once.
+        if (!seqContextSet) {
+            seqContextSet = true;
+            Seq.setContext(context.getApplicationContext());
+        }
+
+        updateDeviceScale();
+
+        // A view receives key events only while it has the focus. Take the
+        // focus so that onKeyDown and onKeyUp receive hardware key and
+        // gamepad button events. The hidden edit text takes the focus over
+        // while a text input session is active.
+        setFocusable(true);
+        setFocusableInTouchMode(true);
+        requestFocus();
+
         this.gamepads = new ArrayList<Gamepad>();
 
         this.ebitenSurfaceView = new EbitenSurfaceView(getContext());
@@ -122,25 +170,63 @@ public class EbitenView extends ViewGroup implements InputManager.InputDeviceLis
         for (int id : this.inputManager.getInputDeviceIds()) {
             this.onInputDeviceAdded(id);
         }
+
+        this.editText = new EbitenEditText(context);
+        addView(this.editText, new LayoutParams(1, 1));
+        Ebitenmobileview.setTextInputDriver(this);
+        getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                reportVirtualKeyboardState();
+            }
+        });
     }
 
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         this.ebitenSurfaceView.layout(0, 0, right - left, bottom - top);
+        layoutEditText();
+        updateDeviceScale();
         double widthInDp = pxToDp(right - left);
         double heightInDp = pxToDp(bottom - top);
         Ebitenmobileview.layout(widthInDp, heightInDp);
     }
 
     @Override
+    public WindowInsets onApplyWindowInsets(WindowInsets insets) {
+        // On an edge-to-edge window, showing or hiding the virtual keyboard
+        // changes the window insets without relayouting the window, so the
+        // global layout listener does not fire. Report the state on inset
+        // changes as well.
+        WindowInsets result = super.onApplyWindowInsets(insets);
+        reportVirtualKeyboardState();
+        return result;
+    }
+
+    // layoutEditText places the edit text at the game's caret bounds, so that
+    // panning for the virtual keyboard and the IME's candidate UI are anchored
+    // to the caret. The edit text is fully transparent and takes no touches.
+    private void layoutEditText() {
+        int x = this.caretX;
+        int y = this.caretY;
+        int width = Math.max(this.caretWidth, 1);
+        int height = Math.max(this.caretHeight, 1);
+        this.editText.layout(x, y, x + width, y + height);
+    }
+
+    @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        Ebitenmobileview.onKeyDownOnAndroid(keyCode, event.getUnicodeChar(), event.getSource(), event.getDeviceId());
+        // Ignore key repeat events.
+        if (event.getRepeatCount() > 0) {
+            return super.onKeyDown(keyCode, event);
+        }
+        Ebitenmobileview.onKeyDownOnAndroid(keyCode, event.getUnicodeChar(), event.getSource(), event.getDeviceId(), event.getMetaState());
         return true;
     }
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        Ebitenmobileview.onKeyUpOnAndroid(keyCode, event.getSource(), event.getDeviceId());
+        Ebitenmobileview.onKeyUpOnAndroid(keyCode, event.getSource(), event.getDeviceId(), event.getMetaState());
         return true;
     }
 
@@ -152,10 +238,10 @@ public class EbitenView extends ViewGroup implements InputManager.InputDeviceLis
         int touchIndex = e.getActionIndex();
         for (int i = 0; i < e.getPointerCount(); i++) {
             int id = e.getPointerId(i);
-            int x = (int)e.getX(i);
-            int y = (int)e.getY(i);
+            double x = e.getX(i);
+            double y = e.getY(i);
             int action = (i == touchIndex) ? e.getActionMasked() : MotionEvent.ACTION_MOVE;
-            Ebitenmobileview.updateTouchesOnAndroid(action, id, (int)pxToDp(x), (int)pxToDp(y));
+            Ebitenmobileview.updateTouchesOnAndroid(action, id, pxToDp(x), pxToDp(y));
         }
         return true;
     }
@@ -436,7 +522,398 @@ public class EbitenView extends ViewGroup implements InputManager.InputDeviceLis
         Log.e("Go", e.toString());
     }
 
+    // saveGPUResources starts to save GPU resources.
+    // saveGPUResources is non-blocking.
+    // You can check whether the GPU resources are being saved by areGPUResourcesSaved.
+    //
+    // Even without saveGPUResources, the GPU resources can be reclaimed by Android OS,
+    // but this is not 100% guaranteed.
+    // If saveGPUResources is called, Ebitengine saves GPU resources and restores them
+    // in the case they are lost.
+    //
+    // It is recommended to call saveGPUResources to true only when necessary e.g. showing a reward ad.
+    //
+    // After GPU resources are saved, rendering is suspended until resumeGame is called or
+    // GLSurfaceView is recreated by an actual context loss.
+    public void saveGPUResources() {
+        Ebitenmobileview.saveGPUResources();
+    }
+
+    // areGPUResourcesSaved reports whether GPU resources are being saved.
+    public boolean areGPUResourcesSaved() {
+        return Ebitenmobileview.areGPUResourcesSaved();
+    }
+
+    // EbitenEditText is the hidden edit text serving the IME. Its content is
+    // seeded and observed by the Go side; the game renders the text itself.
+    private class EbitenEditText extends EditText {
+        public EbitenEditText(Context context) {
+            super(context);
+            setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+            setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_FLAG_NO_FULLSCREEN);
+            setFocusableInTouchMode(true);
+            // The edit text sits at the game's caret but must not be seen. An
+            // invisible or offscreen view could not keep the focus or anchor
+            // panning, so make it fully transparent instead.
+            setAlpha(0.0f);
+            if (Build.VERSION.SDK_INT >= 26) {
+                setImportantForAutofill(IMPORTANT_FOR_AUTOFILL_NO);
+            }
+            addTextChangedListener(new TextWatcher() {
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                }
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {
+                }
+
+                @Override
+                public void afterTextChanged(Editable s) {
+                    reportTextInputState();
+                }
+            });
+        }
+
+        @Override
+        protected void onSelectionChanged(int selStart, int selEnd) {
+            super.onSelectionChanged(selStart, selEnd);
+            reportTextInputState();
+        }
+
+        // Composition operations like finishComposingText and
+        // setComposingRegion can change only the composing spans, firing
+        // neither the TextWatcher nor onSelectionChanged. Wrap the input
+        // connection to report the state after such an operation completes.
+        @Override
+        public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+            InputConnection connection = super.onCreateInputConnection(outAttrs);
+            if (connection == null) {
+                return null;
+            }
+            return new InputConnectionWrapper(connection, false) {
+                // An input method commits the Return key as a line break,
+                // appended to the text it finalizes. The game decides what a
+                // Return does, so commit only that text and report the key.
+                @Override
+                public boolean commitText(CharSequence text, int newCursorPosition) {
+                    if (endsWithLineBreak(text)) {
+                        return commitBeforeReturnKey(text, newCursorPosition, null);
+                    }
+                    return super.commitText(text, newCursorPosition);
+                }
+
+                // The TextAttribute overload (API 33) delegates directly to
+                // the wrapped connection, bypassing the two-argument override.
+                // The method is never called on older systems, where merely
+                // declaring it is harmless.
+                @Override
+                public boolean commitText(CharSequence text, int newCursorPosition, TextAttribute textAttribute) {
+                    if (endsWithLineBreak(text)) {
+                        return commitBeforeReturnKey(text, newCursorPosition, textAttribute);
+                    }
+                    return super.commitText(text, newCursorPosition, textAttribute);
+                }
+
+                private boolean commitBeforeReturnKey(CharSequence text, int newCursorPosition, TextAttribute textAttribute) {
+                    CharSequence committed = text.subSequence(0, text.length() - 1);
+                    boolean result;
+                    // The state this commit reports carries the key, so that
+                    // the game acts on the Return as well.
+                    passthroughKeyPending = true;
+                    try {
+                        if (textAttribute == null) {
+                            result = super.commitText(committed, newCursorPosition);
+                        } else {
+                            result = super.commitText(committed, newCursorPosition, textAttribute);
+                        }
+                    } finally {
+                        passthroughKeyPending = false;
+                    }
+                    dispatchKeyToGame(KeyEvent.KEYCODE_ENTER);
+                    return result;
+                }
+
+                @Override
+                public boolean finishComposingText() {
+                    boolean result = super.finishComposingText();
+                    reportTextInputState();
+                    return result;
+                }
+
+                @Override
+                public boolean setComposingRegion(int start, int end) {
+                    boolean result = super.setComposingRegion(start, end);
+                    reportTextInputState();
+                    return result;
+                }
+
+                // The TextAttribute overload (API 33) delegates directly to
+                // the wrapped connection, bypassing the two-argument override.
+                // The method is never called on older systems, where merely
+                // declaring it is harmless.
+                @Override
+                public boolean setComposingRegion(int start, int end, TextAttribute textAttribute) {
+                    boolean result = super.setComposingRegion(start, end, textAttribute);
+                    reportTextInputState();
+                    return result;
+                }
+
+                @Override
+                public boolean endBatchEdit() {
+                    boolean result = super.endBatchEdit();
+                    if (!result) {
+                        // The last nested batch edit ended.
+                        reportTextInputState();
+                    }
+                    return result;
+                }
+            };
+        }
+
+        // The game handles the touches at the caret; never take them.
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            return false;
+        }
+
+        // The Back key while the virtual keyboard is shown is the user
+        // dismissing it; the input method hides itself. Report the dismissal
+        // so that the game side ends text inputting instead of showing the
+        // keyboard again.
+        //
+        // onKeyPreIme also reports key releases, sharing pressedKeyCodes with
+        // onKeyUp: neither alone sees every release. The input method can
+        // consume a release whose press it delivered (Gboard consumes the
+        // release of a Backspace that deleted text), which would leave the key
+        // pressed in the game forever, while a key event an input method
+        // injects through the input connection skips onKeyPreIme.
+        @Override
+        public boolean onKeyPreIme(int keyCode, KeyEvent event) {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP && virtualKeyboardShown) {
+                reportTextInputEndedByUser();
+            }
+            if (event.getAction() == KeyEvent.ACTION_UP && pressedKeyCodes.remove(keyCode)) {
+                Ebitenmobileview.onKeyUpOnAndroid(keyCode, event.getSource(), event.getDeviceId(), event.getMetaState());
+            }
+            return super.onKeyPreIme(keyCode, event);
+        }
+
+        // The focused edit text receives the hardware key events instead of
+        // EbitenView; forward them to the game like EbitenView's onKeyDown and
+        // onKeyUp do. The Return key, which an input method delivers as a key
+        // event too, and the numpad Enter key are consumed after forwarding:
+        // the game acts on the key press, so a line break in the text buffer
+        // would double it.
+        @Override
+        public boolean onKeyDown(int keyCode, KeyEvent event) {
+            if (event.getRepeatCount() == 0) {
+                pressedKeyCodes.add(keyCode);
+                Ebitenmobileview.onKeyDownOnAndroid(keyCode, event.getUnicodeChar(), event.getSource(), event.getDeviceId(), event.getMetaState());
+            }
+            if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                return true;
+            }
+            return super.onKeyDown(keyCode, event);
+        }
+
+        @Override
+        public boolean onKeyUp(int keyCode, KeyEvent event) {
+            if (pressedKeyCodes.remove(keyCode)) {
+                Ebitenmobileview.onKeyUpOnAndroid(keyCode, event.getSource(), event.getDeviceId(), event.getMetaState());
+            }
+            if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                return true;
+            }
+            return super.onKeyUp(keyCode, event);
+        }
+
+        // endsWithLineBreak reports whether text ends with the line break an
+        // input method appends for the Return key.
+        private boolean endsWithLineBreak(CharSequence text) {
+            return text != null && text.length() > 0 && text.charAt(text.length() - 1) == '\n';
+        }
+
+        // dispatchKeyToGame reports a key press, and its release, to the game.
+        // The input method delivered the key as an edit, so no key event
+        // exists to forward; the virtual keyboard's device is its source.
+        private void dispatchKeyToGame(int keyCode) {
+            Ebitenmobileview.onKeyDownOnAndroid(keyCode, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0);
+            Ebitenmobileview.onKeyUpOnAndroid(keyCode, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0);
+        }
+
+        // pressedKeyCodes holds the key codes whose press the game has seen
+        // and whose release it has not.
+        private final Set<Integer> pressedKeyCodes = new HashSet<Integer>();
+    }
+
+    // startTextInput implements TextInputDriver. It is called from the Go side
+    // on an arbitrary thread.
+    @Override
+    public void startTextInput(final String text, final long selectionStartInUTF16, final long selectionEndInUTF16, final long caretX, final long caretY, final long caretWidth, final long caretHeight, final long generation) {
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                textInputActive = true;
+                textInputGeneration = generation;
+                EbitenView.this.caretX = (int)caretX;
+                EbitenView.this.caretY = (int)caretY;
+                EbitenView.this.caretWidth = (int)caretWidth;
+                EbitenView.this.caretHeight = (int)caretHeight;
+                layoutEditText();
+                // Programmatic seeding is not the user's input; do not report
+                // it. setText invokes the TextWatcher synchronously.
+                suppressTextInputReports = true;
+                editText.setText(text);
+                editText.setSelection((int)selectionStartInUTF16, (int)selectionEndInUTF16);
+                suppressTextInputReports = false;
+                editText.requestFocus();
+                showSoftInput();
+            }
+        });
+    }
+
+    // showSoftInput shows the virtual keyboard. The request is ignored without
+    // the window focus; onWindowFocusChanged retries it.
+    private void showSoftInput() {
+        if (!hasWindowFocus()) {
+            return;
+        }
+        InputMethodManager imm = (InputMethodManager)getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.showSoftInput(this.editText, 0);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
+        super.onWindowFocusChanged(hasWindowFocus);
+        if (!hasWindowFocus) {
+            // The keyboard hiding on a focus loss (e.g. going to the
+            // background) is not the user's dismissal; reset the shown state
+            // so it is not reported as one.
+            this.virtualKeyboardShown = false;
+            return;
+        }
+        // Text inputting survives a focus loss: show the keyboard again. This
+        // also serves a show that was ignored without the focus.
+        if (this.textInputActive) {
+            showSoftInput();
+        }
+    }
+
+    // dismissTextInput implements TextInputDriver. It is called from the Go
+    // side on an arbitrary thread.
+    @Override
+    public void dismissTextInput() {
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                // End text inputting first so that the keyboard hiding below
+                // is not reported as the user's dismissal.
+                textInputActive = false;
+                InputMethodManager imm = (InputMethodManager)getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+                imm.hideSoftInputFromWindow(getWindowToken(), 0);
+                // Programmatic clearing is not the user's input; do not report
+                // it.
+                suppressTextInputReports = true;
+                editText.setText("");
+                suppressTextInputReports = false;
+                editText.clearFocus();
+                // In touch mode, the cleared focus does not move to another
+                // view on its own; take it back so that key events keep
+                // reaching this view.
+                requestFocus();
+            }
+        });
+    }
+
+    private void reportTextInputState() {
+        if (this.editText == null || this.suppressTextInputReports) {
+            return;
+        }
+        Editable e = this.editText.getText();
+        int composingStart = BaseInputConnection.getComposingSpanStart(e);
+        int composingEnd = BaseInputConnection.getComposingSpanEnd(e);
+        Ebitenmobileview.onTextInputStateChanged(e.toString(), this.editText.getSelectionStart(), this.editText.getSelectionEnd(), composingStart, composingEnd, this.passthroughKeyPending, this.textInputGeneration);
+    }
+
+    private void reportVirtualKeyboardState() {
+        // Measure the visible frame rather than assuming a soft-input mode, so
+        // that any adjust mode reports a true region.
+        Rect visibleFrame = new Rect();
+        getWindowVisibleDisplayFrame(visibleFrame);
+        int[] location = new int[2];
+        getLocationOnScreen(location);
+        int x0 = Math.min(Math.max(visibleFrame.left - location[0], 0), getWidth());
+        int y0 = Math.min(Math.max(visibleFrame.top - location[1], 0), getHeight());
+        int x1 = Math.min(Math.max(visibleFrame.right - location[0], x0), getWidth());
+        int y1 = Math.min(Math.max(visibleFrame.bottom - location[1], y0), getHeight());
+        boolean shown;
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsets insets = getRootWindowInsets();
+            shown = insets != null && insets.isVisible(WindowInsets.Type.ime());
+            if (shown) {
+                // The visible frame does not reflect the virtual keyboard with
+                // some soft-input modes (e.g. adjustNothing). Clip the region
+                // by the IME inset, which is measured from the window's bottom
+                // edge.
+                Insets imeInsets = insets.getInsets(WindowInsets.Type.ime());
+                View root = getRootView();
+                int[] rootLocation = new int[2];
+                root.getLocationOnScreen(rootLocation);
+                int imeTop = rootLocation[1] + root.getHeight() - imeInsets.bottom - location[1];
+                y1 = Math.min(Math.max(imeTop, y0), y1);
+            }
+        } else {
+            // This view can already be resized to the visible frame (e.g. with
+            // adjustResize), so measure against the root view, which keeps the
+            // window's full size. Assume that a band taller than any system bar
+            // at the bottom of the window is the virtual keyboard.
+            View root = getRootView();
+            int[] rootLocation = new int[2];
+            root.getLocationOnScreen(rootLocation);
+            int rootBottom = rootLocation[1] + root.getHeight();
+            shown = rootBottom - visibleFrame.bottom > 100 * getResources().getDisplayMetrics().density;
+        }
+        boolean wasShown = this.virtualKeyboardShown;
+        this.virtualKeyboardShown = shown;
+        Ebitenmobileview.onVirtualKeyboardChanged(shown, x0, y0, x1 - x0, y1 - y0);
+        // The keyboard disappearing while text inputting is active is the
+        // user dismissing it, e.g. with a back gesture the input method
+        // handles by itself with no Back key event. dismissTextInput ends
+        // text inputting before hiding, so its hiding is not observed here.
+        if (wasShown && !shown && hasWindowFocus()) {
+            reportTextInputEndedByUser();
+        }
+    }
+
+    // reportTextInputEndedByUser reports the user ending text inputting, e.g.
+    // by dismissing the virtual keyboard. Only the first report counts: one
+    // dismissal can be observed both as a Back key event and as the keyboard
+    // disappearing.
+    private void reportTextInputEndedByUser() {
+        if (!this.textInputActive) {
+            return;
+        }
+        this.textInputActive = false;
+        Ebitenmobileview.onTextInputEndedByUser();
+    }
+
+    private static boolean seqContextSet;
+
+    private float deviceScale = 1.0f;
     private EbitenSurfaceView ebitenSurfaceView;
+    private EbitenEditText editText;
     private InputManager inputManager;
     private ArrayList<Gamepad> gamepads;
+    private long textInputGeneration;
+    private int caretX;
+    private int caretY;
+    private int caretWidth;
+    private int caretHeight;
+    // textInputActive is true from startTextInput until dismissTextInput or a
+    // reported user ending.
+    private boolean textInputActive;
+    private boolean suppressTextInputReports;
+    private boolean passthroughKeyPending;
+    private boolean virtualKeyboardShown;
 }

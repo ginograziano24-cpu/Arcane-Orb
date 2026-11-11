@@ -12,26 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build (!darwin && !js && !windows) || ios
+//go:build nintendosdk || playstation5
 
 package textinput
 
 import (
+	"image"
+
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/internal/ui"
 )
 
-type textInput struct {
+type textInputImpl struct {
+	events *textInputEvents
+
 	rs       []rune
-	lastTick uint64
+	lastTick int64
 }
 
-var theTextInput textInput
+func (t *textInputImpl) markIMEDiscardNeeded() {
+}
 
-func (t *textInput) Start(x, y int) (chan State, func()) {
+func (t *textInputImpl) Start(bounds image.Rectangle, _, _ string) (<-chan textInputState, func()) {
 	// AppendInputChars is updated only when the tick is updated.
 	// If the tick is not updated, return nil immediately.
-	tick := ui.Get().Tick()
+	tick := ebiten.Tick()
 	if t.lastTick == tick {
 		return nil, nil
 	}
@@ -39,7 +43,7 @@ func (t *textInput) Start(x, y int) (chan State, func()) {
 		t.lastTick = tick
 	}()
 
-	s := newSession()
+	ch, _ := t.events.start()
 
 	// This is a pseudo implementation with AppendInputChars without IME.
 	// This is tentative and should be replaced with IME in the future.
@@ -47,12 +51,12 @@ func (t *textInput) Start(x, y int) (chan State, func()) {
 	if len(t.rs) == 0 {
 		return nil, nil
 	}
-	s.ch <- State{
-		Text:      string(t.rs),
-		Committed: true,
-	}
-	// Keep the channel as end() resets s.ch.
-	ch := s.ch
-	s.end()
-	return ch, nil
+	t.events.send(textInputState{
+		Text:                    string(t.rs),
+		ReplacementStartInBytes: noReplacement,
+		ReplacementEndInBytes:   noReplacement,
+		CommitKind:              commitRegular,
+	})
+	t.events.end()
+	return ch, func() {}
 }

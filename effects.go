@@ -88,7 +88,7 @@ func (L *Level) blackHole(x, z float64) {
 	L.sparks(V3{x, 1, z}, 60, color.RGBA{170, 110, 255, 255}, 12)
 	L.text(V3{x, 2.8, z}, "EVENT HORIZON", color.RGBA{190, 140, 255, 255}, true)
 	L.Shake, L.Flash = 0.9, 0.4
-	L.g.snd.Play("warp")
+	L.g.snd.Play("horizon")
 	L.g.snd.Play("boom")
 	for _, b := range L.near(x, z, rad) {
 		if b.Layer <= 1 {
@@ -105,7 +105,7 @@ func (L *Level) steamBurst(b *Brick) {
 	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 3.2, Life: 0.45, Max: 0.45, Col: color.RGBA{235, 240, 250, 255}})
 	if L.g.settings.Particles > 0 {
 		for i := 0; i < 10; i++ {
-			L.Parts = append(L.Parts, &Particle{P: V3{x + (L.rng.Float64()-0.5)*2.4, 0.8, z + (L.rng.Float64()-0.5)*1.4},
+			L.Parts = append(L.Parts, Particle{P: V3{x + (L.rng.Float64()-0.5)*2.4, 0.8, z + (L.rng.Float64()-0.5)*1.4},
 				V: V3{0, 2 + L.rng.Float64()*2, 0}, Life: 1.2, Max: 1.2, Size: 1.4 + L.rng.Float64(), Col: color.RGBA{230, 235, 245, 255}, Kind: pSmoke})
 		}
 	}

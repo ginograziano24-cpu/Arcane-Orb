@@ -261,8 +261,7 @@ func (L *Level) nextWave() {
 	L.text(V3{0, 3, 16}, fmt.Sprintf("WAVE %d OF %d", L.wave, L.waves), color.RGBA{255, 222, 128, 255}, true)
 	L.Shake = math.Max(L.Shake, 0.4)
 	L.Flash = math.Max(L.Flash, 0.2)
-	g.snd.Play("warp")
-	g.snd.PlayVol("abilready", 0.7)
+	g.snd.PlayKeyed("wave")
 	g.react(reactCombo)
 }
 
@@ -551,7 +550,7 @@ func (L *Level) maybeDropCache(x, z float64) {
 		L.caches++
 		L.Drops = append(L.Drops, &Drop{X: x, Z: z, P: PCache})
 		L.text(V3{x, 2.2, z}, "A RUNE CACHE FALLS!", color.RGBA{255, 222, 110, 255}, true)
-		L.g.snd.PlayVol("abilready", 0.8)
+		L.g.snd.PlayVol("cachefall", 0.8)
 	}
 }
 
@@ -562,7 +561,7 @@ func (L *Level) cacheCaught() {
 	L.text(V3{L.PaddleX, 2.2, PaddleZ + 2}, "RUNE CACHE", color.RGBA{255, 222, 110, 255}, true)
 	L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: PaddleZ, MaxR: 4, Life: 0.5, Max: 0.5, Col: color.RGBA{255, 214, 90, 255}})
 	L.sparks(V3{L.PaddleX, 1, PaddleZ}, 30, color.RGBA{255, 220, 120, 255}, 8)
-	L.g.snd.Play("pick.2." + itoa(L.g.snd.Key))
+	L.g.snd.PlayKeyed("cache")
 }
 
 // ---------------------------------------------------------------- the cache choice

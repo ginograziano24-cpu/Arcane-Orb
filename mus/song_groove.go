@@ -1,5 +1,7 @@
 package mus
 
+var grooveOrder = []string{"A", "B", "A", "C", "B", "B"}
+
 // "Arcane Groove" — the title and menu theme. A swung funk vamp in D
 // dorian at 110 BPM: breakbeat drums with ghost notes, a slap bass with
 // octave pops, electric-piano comping, a brass hook and turntable
@@ -145,6 +147,6 @@ func init() {
 				},
 				sweep: map[string][2]float64{"bass": {300, 6000}}},
 		},
-		next: func(sp *songPlayer) string { return sp.cycle("A", "B", "A", "C", "B", "B") },
+		next: func(sp *songPlayer) string { return sp.cycle(grooveOrder...) },
 	})
 }

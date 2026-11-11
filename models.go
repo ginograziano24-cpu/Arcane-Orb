@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"io"
 	"math"
+	"sync"
 )
 
 // Modelled assets from the Blender art pass (tools/artkit/scripts/models.py).
@@ -23,6 +24,11 @@ import (
 var modelFS embed.FS
 
 var modelCache = map[string]*Mesh{}
+
+// All102 authored assets use the same format. Reuse the decompressor's
+// substantial scratch state during prefetch instead of allocating it per model.
+var modelInflaterPool sync.Pool
+var modelReadBufferPool sync.Pool
 
 // modelsOff lets the procedural meshes be compared against the art pass.
 var modelsOff = false
@@ -67,14 +73,33 @@ func parseModel(data []byte) (*Mesh, error) {
 	if len(data) < 8 || string(data[:4]) != "ORBM" {
 		return nil, io.ErrUnexpectedEOF
 	}
-	zr, err := zlib.NewReader(bytes.NewReader(data[4:]))
+	var zr io.ReadCloser
+	var err error
+	if cached := modelInflaterPool.Get(); cached != nil {
+		zr = cached.(io.ReadCloser)
+		err = zr.(zlib.Resetter).Reset(bytes.NewReader(data[4:]), nil)
+	} else {
+		zr, err = zlib.NewReader(bytes.NewReader(data[4:]))
+	}
+	if err != nil {
+		if zr != nil {
+			_ = zr.Close()
+		}
+		return nil, err
+	}
+	defer func() { _ = zr.Close(); modelInflaterPool.Put(zr) }()
+	var buffer *bytes.Buffer
+	if cached := modelReadBufferPool.Get(); cached != nil {
+		buffer = cached.(*bytes.Buffer)
+	} else {
+		buffer = &bytes.Buffer{}
+	}
+	defer func() { buffer.Reset(); modelReadBufferPool.Put(buffer) }()
+	_, err = buffer.ReadFrom(zr)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := io.ReadAll(zr)
-	if err != nil {
-		return nil, err
-	}
+	raw := buffer.Bytes()
 	if len(raw) < 8 {
 		return nil, io.ErrUnexpectedEOF
 	}

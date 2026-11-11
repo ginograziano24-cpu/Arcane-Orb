@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"fmt"
 	_ "image/jpeg"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -20,10 +19,14 @@ var backdropNames = map[int]string{
 
 var backdropCache = map[string]*ebiten.Image{}
 
+func backdropAssetName(world, variant int) string {
+	return backdropNames[world] + "_" + itoa(variant%2)
+}
+
 // backdrop returns the painted sky for a world; variant picks one of the
 // paintings. Returns nil if the asset is missing (falls back to makeSky).
 func backdrop(world int, variant int) *ebiten.Image {
-	name := fmt.Sprintf("%s_%d", backdropNames[world], variant%2)
+	name := backdropAssetName(world, variant)
 	if img, ok := backdropCache[name]; ok {
 		return img
 	}

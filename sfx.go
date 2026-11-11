@@ -95,13 +95,29 @@ func (b *sb) modes(start, f0 float64, ratios, amps, decays []float64, gain, atta
 		d := decays[k]
 		life := math.Min(b.dur()-start, 7/d)
 		ph := b.r.Float64()
-		b.gen(start, life, func(t float64) float64 {
-			a := 1.0
-			if t < attack {
-				a = t / attack
+		// A decaying sine is a rotating, shrinking phasor: one complex
+		// multiply per sample instead of a sin and an exp.
+		i0 := int(start * sampleRate)
+		n := int(life * sampleRate)
+		step := 2 * math.Pi * f / sampleRate
+		decay := math.Exp(-d / sampleRate)
+		zr, zi := decay*math.Cos(step), decay*math.Sin(step)
+		g := amps[k] * gain
+		sr, si := g*math.Cos(2*math.Pi*ph), g*math.Sin(2*math.Pi*ph)
+		ramp := int(attack * sampleRate)
+		for i := 0; i < n; i++ {
+			if j := i0 + i; j >= 0 {
+				if j >= len(b.x) {
+					break
+				}
+				v := si
+				if i < ramp {
+					v *= float64(i) / (attack * sampleRate)
+				}
+				b.x[j] += v
 			}
-			return math.Sin(2*math.Pi*(f*t+ph)) * amps[k] * math.Exp(-t*d) * a * gain
-		})
+			sr, si = sr*zr-si*zi, sr*zi+si*zr
+		}
 	}
 }
 
@@ -305,8 +321,27 @@ func (c *comb) proc(x float64) float64 {
 	y := c.buf[c.i]
 	c.store = y*(1-c.damp) + c.store*c.damp
 	c.buf[c.i] = x + c.store*c.fb
-	c.i = (c.i + 1) % len(c.buf)
+	if c.i++; c.i == len(c.buf) {
+		c.i = 0
+	}
 	return y
+}
+
+// addBlock runs the comb over a whole input block, adding its output to out.
+// Same arithmetic, in the same order, as calling proc per sample.
+func (c *comb) addBlock(in, out []float64) {
+	buf, i, store, fb, damp := c.buf, c.i, c.store, c.fb, c.damp
+	n := len(buf)
+	for j, x := range in {
+		y := buf[i]
+		store = y*(1-damp) + store*damp
+		buf[i] = x + store*fb
+		if i++; i == n {
+			i = 0
+		}
+		out[j] += y
+	}
+	c.i, c.store = i, store
 }
 
 type allpass struct {
@@ -318,8 +353,25 @@ func (a *allpass) proc(x float64) float64 {
 	y := a.buf[a.i]
 	o := -x + y
 	a.buf[a.i] = x + y*0.5
-	a.i = (a.i + 1) % len(a.buf)
+	if a.i++; a.i == len(a.buf) {
+		a.i = 0
+	}
 	return o
+}
+
+// block runs the allpass over a whole block in place.
+func (a *allpass) block(x []float64) {
+	buf, i := a.buf, a.i
+	n := len(buf)
+	for j, v := range x {
+		y := buf[i]
+		buf[i] = v + y*0.5
+		x[j] = -v + y
+		if i++; i == n {
+			i = 0
+		}
+	}
+	a.i = i
 }
 
 // finish applies reverb, normalises and returns interleaved 16-bit stereo.
@@ -338,19 +390,24 @@ func (b *sb) finish(m master) []byte {
 			al = append(al, &allpass{buf: make([]float64, d)})
 			ar = append(ar, &allpass{buf: make([]float64, d+23)})
 		}
+		// Block-wise: each filter runs over the whole clip in turn (tight
+		// loops, no pointer chasing), summing the combs in the same order as
+		// a per-sample loop would, so the output is bit-for-bit the same.
+		in := make([]float64, n)
 		for i, x := range b.x {
-			in := x * 0.02
-			var sl, sr float64
-			for k := range cl {
-				sl += cl[k].proc(in)
-				sr += cr[k].proc(in)
-			}
-			for k := range al {
-				sl = al[k].proc(sl)
-				sr = ar[k].proc(sr)
-			}
-			l[i] = x + sl*m.wet*8
-			r[i] = x + sr*m.wet*8
+			in[i] = x * 0.02
+		}
+		for k := range cl {
+			cl[k].addBlock(in, l)
+			cr[k].addBlock(in, r)
+		}
+		for k := range al {
+			al[k].block(l)
+			ar[k].block(r)
+		}
+		for i, x := range b.x {
+			l[i] = x + l[i]*m.wet*8
+			r[i] = x + r[i]*m.wet*8
 		}
 	} else {
 		copy(l, b.x)
@@ -594,18 +651,41 @@ var recipes = map[string]recipe{
 	}},
 	// ---- ball / paddle ----------------------------------------------
 	"pad": {3, func(p []int, v int, r *rand.Rand) []byte {
-		k := arg(p, 0, 0)
-		return one(0.5, r.Int63(), verbSmall.with(0.5), func(b *sb) {
-			b.sub(0, 210, 110, 0.12, 0.9)
-			b.noise(0, 0.015, expEnv(0, 200), fBP, cst(3000), 1, 0.5)
-			f := semis(keyRoots[k]*2, []int{0, 7, 12}[v%3])
-			b.modes(0, f, []float64{1, 2, 3}, []float64{1, 0.4, 0.2}, []float64{14, 24, 34}, 0.5, 0.002)
+		f := semis(keyRoots[arg(p, 0, 0)]*2, [3]int{0, 7, 12}[v%3])
+		return one(0.42, r.Int63(), verbSmall.with(0.46), func(b *sb) {
+			b.sub(0, 185, 72, 0.11, 0.75)
+			b.modes(0, f, []float64{1, 2.02, 3.04}, []float64{1, 0.32, 0.12}, []float64{15, 25, 45}, 0.8, 0.003)
+			b.fm(0.028, 0.23, f*2, 2, 0.8, 18, 0.008, 18, 0.22)
+		})
+	}},
+	"padedge": {3, func(p []int, v int, r *rand.Rand) []byte {
+		f := semis(keyRoots[arg(p, 0, 0)]*2, [3]int{0, 7, 12}[v%3])
+		return one(0.31, r.Int63(), verbSmall.with(0.38), func(b *sb) {
+			b.sub(0, 155, 90, 0.065, 0.42)
+			b.noise(0, 0.058, expEnv(0.003, 48), fBP, sweep(1050, 2150, 0.058), 0.9, 0.33)
+			b.modes(0.008, f*2, []float64{1, 1.5, 2.04}, []float64{1, 0.24, 0.10}, []float64{27, 39, 53}, 0.68, 0.003)
 		})
 	}},
 	"wall": {3, func(p []int, v int, r *rand.Rand) []byte {
-		return one(0.25, r.Int63(), verbSmall.with(0.22), func(b *sb) {
-			b.modes(0, 340+r.Float64()*80, []float64{1, 2.3}, []float64{1, 0.3}, []float64{40, 70}, 1, 0.001)
-			b.noise(0, 0.01, expEnv(0, 300), fBP, cst(2500), 1, 0.4)
+		world := arg(p, 0, WNeon)
+		if world < 0 || world >= NumWorlds {
+			world = WNeon
+		}
+		// Wood and sandstone strike low; crystal and metal ring higher.
+		material := [NumWorlds]struct{ fundamental, decay, overtone float64 }{
+			WNeon:    {420, 34, 2.03},
+			WMeadow:  {235, 49, 2.46},
+			WCaverns: {735, 23, 2.76},
+			WRuins:   {285, 45, 1.64},
+			WClouds:  {490, 28, 2.01},
+			WMachine: {555, 32, 3.24},
+		}[world]
+		f := material.fundamental * (1 + float64(v-1)*0.035)
+		m := worldMaster(world)
+		m.peak, m.wet = 0.19, m.wet*0.6
+		return one(0.23, r.Int63(), m, func(b *sb) {
+			b.modes(0, f, []float64{1, material.overtone}, []float64{1, 0.28}, []float64{material.decay, 54}, 0.8, 0.002)
+			b.noise(0, 0.028, expEnv(0.0015, 116), fBP, cst(760+f*1.7), 0.9, 0.24)
 		})
 	}},
 	"launch": {2, func(p []int, v int, r *rand.Rand) []byte {
@@ -1206,6 +1286,12 @@ var recipes = map[string]recipe{
 			b.noise(0, 0.008, expEnv(0, 400), fHP, cst(3000), 0.7, 0.5)
 		})
 	}},
+	"seal": {1, func(p []int, v int, r *rand.Rand) []byte {
+		return one(0.48, r.Int63(), verbSmall.with(0.25), func(b *sb) {
+			b.modes(0, 523.25, []float64{1, 2}, []float64{1, 0.2}, []float64{18, 30}, 1, 0.015)
+			b.modes(0.068, 783.99, []float64{1, 2}, []float64{1, 0.12}, []float64{16, 25}, 0.65, 0.018)
+		})
+	}},
 	"cardhover": {3, func(p []int, v int, r *rand.Rand) []byte {
 		return one(0.5, r.Int63(), verbMid.with(0.2), func(b *sb) {
 			b.glass(0, []float64{2093, 2349, 2637}[v%3], 0.6)
@@ -1222,9 +1308,10 @@ func prewarmNames() []string {
 			out = append(out, "brk."+itoa(w)+".0."+itoa(st))
 		}
 	}
-	for _, n := range []string{"crit", "steel", "shieldhit", "pad.0", "wall", "launch", "laser", "boom", "zap",
-		"thump", "coinbig", "hover", "click", "cardhover", "deal", "mapenter", "lose.0", "clear.0", "finale.0", "pick.0.0", "pick.1.0",
-		"pick.2.0", "pick.3.0", "pick.4.0", "synergy.0", "actstart.0", "heartbeat", "firestorm", "thunder", "abilready", "bossintro", "parry", "achievement", "scroll", "paddleboom"} {
+	for _, n := range []string{"crit", "steel", "shieldhit", "pad.0", "padedge.0", "wall.0", "launch", "laser", "boom", "zap",
+		"thump", "coinbig", "hover", "click", "seal", "cardhover", "deal", "mapenter", "lose.0", "clear.0", "finale.0", "pick.0.0", "pick.1.0",
+		"pick.2.0", "pick.3.0", "pick.4.0", "synergy.0", "actstart.0", "heartbeat", "firestorm", "thunder", "abilready", "bossintro", "parry", "achievement", "scroll", "paddleboom",
+		"pwbad.2", "pwbad.4", "cachefall", "attune", "overclock", "staticfull", "jackpot", "nova", "horizon", "reform", "lucky", "shoo", "thiefstop", "bomber", "shift", "elite"} {
 		out = append(out, n)
 	}
 	for i := 0; i < 12; i++ {

@@ -15,6 +15,11 @@
 package text
 
 import (
+	"slices"
+	"sync"
+	"unicode/utf8"
+
+	"github.com/hajimehoshi/ebiten/v2/text/v2/internal/textutil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
@@ -23,11 +28,11 @@ var _ Face = (*LimitedFace)(nil)
 // LimitedFace is a Face with glyph limitations.
 type LimitedFace struct {
 	face          Face
-	unicodeRanges unicodeRanges
+	unicodeRanges textutil.UnicodeRanges
 }
 
 // NewLimitedFace creates a new LimitedFace from the given face.
-// In the default state, glyphs for any runes are limited and not rendered.
+// In the default state, no runes are allowed, and any rune is replaced with U+FFFD (the replacement character) when rendered.
 // You have to call AddUnicodeRange to add allowed glyphs.
 func NewLimitedFace(face Face) *LimitedFace {
 	return &LimitedFace{
@@ -38,7 +43,7 @@ func NewLimitedFace(face Face) *LimitedFace {
 // AddUnicodeRange adds a rune range for rendered glyphs.
 // A range is inclusive, which means that a range contains the specified rune end.
 func (l *LimitedFace) AddUnicodeRange(start, end rune) {
-	l.unicodeRanges.add(start, end)
+	l.unicodeRanges.Add(start, end)
 }
 
 // Metrics implements Face.
@@ -46,24 +51,116 @@ func (l *LimitedFace) Metrics() Metrics {
 	return l.face.Metrics()
 }
 
-// advance implements Face.
-func (l *LimitedFace) advance(text string) float64 {
-	return l.face.advance(l.unicodeRanges.filter(text))
+// advanceAt implements Face.
+func (l *LimitedFace) advanceAt(text string, indexInBytes int) float64 {
+	firstLineLen := textutil.FirstLineLen(text)
+	indexInBytes = min(indexInBytes, firstLineLen)
+	firstLine := text[:firstLineLen]
+	filtered := l.unicodeRanges.Filter(firstLine)
+	if filtered == firstLine {
+		return l.face.advanceAt(filtered, indexInBytes)
+	}
+	// Filter substitutes unsupported runes with U+FFFD (3 bytes), so byte
+	// offsets in text don't match those in filtered. Translate indexInBytes
+	// into the filtered string's byte space.
+	const fffdLen = 3
+	var filteredIdx int
+	for i, r := range firstLine {
+		_, runeLen := utf8.DecodeRuneInString(firstLine[i:])
+		if runeLen < 0 {
+			runeLen = 1
+		}
+		if i+runeLen > indexInBytes {
+			break
+		}
+		if l.unicodeRanges.Contains(r) {
+			filteredIdx += runeLen
+		} else {
+			filteredIdx += fffdLen
+		}
+	}
+	return l.face.advanceAt(filtered, filteredIdx)
 }
 
 // hasGlyph implements Face.
 func (l *LimitedFace) hasGlyph(r rune) bool {
-	return l.unicodeRanges.contains(r) && l.face.hasGlyph(r)
+	return l.unicodeRanges.Contains(r) && l.face.hasGlyph(r)
 }
 
-// appendGlyphsForLine implements Face.
-func (l *LimitedFace) appendGlyphsForLine(glyphs []Glyph, line string, indexOffset int, originX, originY float64) []Glyph {
-	return l.face.appendGlyphsForLine(glyphs, l.unicodeRanges.filter(line), indexOffset, originX, originY)
+// appendLazyGlyphsForLine implements Face.
+func (l *LimitedFace) appendLazyGlyphsForLine(glyphs []LazyGlyph, line string, indexOffset int, originX, originY float64, keepGlyph func(originX, originY float64) bool) []LazyGlyph {
+	filtered := l.unicodeRanges.Filter(line)
+	if filtered == line {
+		return l.face.appendLazyGlyphsForLine(glyphs, filtered, indexOffset, originX, originY, keepGlyph)
+	}
+
+	// The appended glyphs' indices are indices in filtered, not in line, so
+	// they have to be translated back (see limitedFilterMapping).
+	// The buffer is pooled for this is in the text rendering hot path.
+	mappingP := theLimitedFilterMappingPool.Get().(*[]int)
+	var mapping []int
+	defer func() {
+		*mappingP = mapping[:0]
+		theLimitedFilterMappingPool.Put(mappingP)
+	}()
+	mapping = limitedFilterMapping((*mappingP)[:0], line, filtered)
+
+	before := len(glyphs)
+	glyphs = l.face.appendLazyGlyphsForLine(glyphs, filtered, indexOffset, originX, originY, keepGlyph)
+	// The indices of glyphs are always in the range [0, len(filtered)], where
+	// mapping has len(filtered)+1 entries.
+	for i := before; i < len(glyphs); i++ {
+		glyphs[i].StartIndexInBytes = mapping[glyphs[i].StartIndexInBytes-indexOffset] + indexOffset
+		glyphs[i].EndIndexInBytes = mapping[glyphs[i].EndIndexInBytes-indexOffset] + indexOffset
+	}
+	return glyphs
+}
+
+var theLimitedFilterMappingPool = sync.Pool{
+	New: func() any {
+		// 64 is an arbitrary number for the initial capacity.
+		s := make([]int, 0, 64)
+		// Return a pointer instead of a slice, or go-vet warns at Put.
+		return &s
+	},
+}
+
+// limitedFilterMapping returns a mapping from a byte index in filtered to a
+// byte index in line, where filtered is UnicodeRanges.Filter(line). buf is
+// reused as the returned slice's backing array, and its contents are
+// discarded.
+//
+// Filter replaces each unsupported rune with U+FFFD, whose byte length can
+// differ from the replaced rune's length, so the indices are translated rune
+// by rune. The mapping has len(filtered)+1 entries so that the end index of
+// the last rune can be mapped, and the last entry is len(line). The values at
+// indices in the middle of a rune in filtered are arbitrary, but a glyph
+// index is always at a rune boundary.
+func limitedFilterMapping(buf []int, line, filtered string) []int {
+	mapping := slices.Grow(buf, len(filtered)+1)[:len(filtered)+1]
+	var oi, fi int
+	for oi < len(line) && fi < len(filtered) {
+		_, size := utf8.DecodeRuneInString(line[oi:])
+		_, fsize := utf8.DecodeRuneInString(filtered[fi:])
+		for k := range fsize {
+			if k < size {
+				mapping[fi+k] = oi + k
+			} else {
+				mapping[fi+k] = oi
+			}
+		}
+		oi += size
+		fi += fsize
+	}
+	for ; fi <= len(filtered); fi++ {
+		mapping[fi] = oi
+	}
+	return mapping
 }
 
 // appendVectorPathForLine implements Face.
 func (l *LimitedFace) appendVectorPathForLine(path *vector.Path, line string, originX, originY float64) {
-	l.face.appendVectorPathForLine(path, l.unicodeRanges.filter(line), originX, originY)
+	l.face.appendVectorPathForLine(path, l.unicodeRanges.Filter(line), originX, originY)
 }
 
 // direction implements Face.
@@ -73,41 +170,4 @@ func (l *LimitedFace) direction() Direction {
 
 // private implements Face.
 func (l *LimitedFace) private() {
-}
-
-type unicodeRange struct {
-	start rune
-	end   rune
-}
-
-type unicodeRanges struct {
-	ranges []unicodeRange
-}
-
-func (u *unicodeRanges) add(start, end rune) {
-	u.ranges = append(u.ranges, unicodeRange{
-		start: start,
-		end:   end,
-	})
-}
-
-func (u *unicodeRanges) contains(r rune) bool {
-	for _, rg := range u.ranges {
-		if rg.start <= r && r <= rg.end {
-			return true
-		}
-	}
-	return false
-}
-
-func (u *unicodeRanges) filter(str string) string {
-	var rs []rune
-	for _, r := range str {
-		if !u.contains(r) {
-			// U+FFFD is "REPLACEMENT CHARACTER".
-			r = '\ufffd'
-		}
-		rs = append(rs, r)
-	}
-	return string(rs)
 }

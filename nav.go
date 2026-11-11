@@ -266,7 +266,7 @@ func (u *UI) hit(id string, x, y, w, h float64) (hover, click bool) {
 // focusRing draws the keyboard/pad focus outline around a rectangle.
 func (u *UI) focusRing(dst *ebiten.Image, x, y, w, h, r float64) {
 	S := u.S
-	p := 0.6 + 0.4*math.Sin(u.time*6)
+	p := 0.85 + 0.15*math.Sin(u.time*6)
 	acc := lighten(u.theme().Accent, 0.4)
 	strokePath(dst, boxPath(u.X(x-6), u.Y(y-6), (w+12)*S, (h+12)*S, (r+6)*S, false), 2.5*S, ca(acc, 0.9*p), false)
 }

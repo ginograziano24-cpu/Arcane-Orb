@@ -166,7 +166,7 @@ func (g *Game) drawPick(s *ebiten.Image) bool {
 	if t > 0.1 && t < 0.92 {
 		bk := ease((t - 0.1) / 0.16)
 		ba := math.Min(1, (0.92-t)/0.2)
-		label := "UPGRADE GAINED"
+		label := "UPGRADE GET!"
 		if p.relic {
 			label = "RELIC CLAIMED"
 		}

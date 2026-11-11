@@ -317,6 +317,14 @@ func (d *DebugContext) EnableVertexAttribArray(arg0 uint32) {
 	}
 }
 
+func (d *DebugContext) Finish() {
+	d.Context.Finish()
+	fmt.Fprintln(os.Stderr, "Finish")
+	if e := d.Context.GetError(); e != NO_ERROR {
+		panic(fmt.Sprintf("gl: GetError() returned %d at Finish", e))
+	}
+}
+
 func (d *DebugContext) Flush() {
 	d.Context.Flush()
 	fmt.Fprintln(os.Stderr, "Flush")
@@ -344,6 +352,15 @@ func (d *DebugContext) FramebufferTexture2D(arg0 uint32, arg1 uint32, arg2 uint3
 func (d *DebugContext) GetError() uint32 {
 	out0 := d.Context.GetError()
 	fmt.Fprintln(os.Stderr, "GetError")
+	return out0
+}
+
+func (d *DebugContext) GetExtension(arg0 string) any {
+	out0 := d.Context.GetExtension(arg0)
+	fmt.Fprintln(os.Stderr, "GetExtension")
+	if e := d.Context.GetError(); e != NO_ERROR {
+		panic(fmt.Sprintf("gl: GetError() returned %d at GetExtension", e))
+	}
 	return out0
 }
 

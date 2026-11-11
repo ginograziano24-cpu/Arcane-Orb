@@ -217,7 +217,7 @@ func (g *Game) drawCodex(s *ebiten.Image) {
 				case locked:
 					g.tooltip = fmt.Sprintf("Reach Arcane Rank %d to unlock this %s.", m.Unlock, map[bool]string{true: "relic", false: "upgrade"}[relic])
 				default:
-					g.tooltip = "Undiscovered. Take it in a run to record it here."
+					g.tooltip = "Undiscovered! Grab it in a run and it gets a page here."
 				}
 			}
 		}
@@ -392,6 +392,9 @@ func (g *Game) drawOriginsTab(s *ebiten.Image, y0 float64) {
 		}
 		k := u.anim("corig"+a.ID, hv, 10)
 		y -= 8 * k
+		if hv && u.nav.mode {
+			u.focusRing(s, x, y, cw, ch, 16)
+		}
 		body := boxPath(u.X(x), u.Y(y), cw*S, ch*S, 16*S, false)
 		fillPath(s, body, mixc(rgba(28, 20, 46, 245), ci.Col, 0.12), rgba(10, 8, 20, 250), vgrad(u.Y(y), u.Y(y+ch)), false)
 		if k > 0.01 {

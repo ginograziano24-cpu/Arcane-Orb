@@ -20,15 +20,17 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"unsafe"
 
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/cocoa"
+	"github.com/hajimehoshi/ebiten/v2/internal/color"
+	"github.com/hajimehoshi/ebiten/v2/internal/colormode"
 	"github.com/hajimehoshi/ebiten/v2/internal/glfw"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/opengl"
+	"github.com/hajimehoshi/ebiten/v2/internal/objcutil"
 )
 
 var class_EbitengineWindowDelegate objc.Class
@@ -37,12 +39,12 @@ func (u *UserInterface) initializePlatform() error {
 	pushResizableState := func(id, win objc.ID) {
 		window := cocoa.NSWindow{ID: win}
 		id.Send(sel_setOrigResizable, window.StyleMask()&cocoa.NSWindowStyleMaskResizable != 0)
-		if !objc.Send[bool](id, sel_origResizable) {
+		if !objc.Send[bool](id, sel_isOrigResizable) {
 			window.SetStyleMask(window.StyleMask() | cocoa.NSWindowStyleMaskResizable)
 		}
 	}
 	popResizableState := func(id, win objc.ID) {
-		if !objc.Send[bool](id, sel_origResizable) {
+		if !objc.Send[bool](id, sel_isOrigResizable) {
 			window := cocoa.NSWindow{ID: win}
 			window.SetStyleMask(window.StyleMask() & ^uint(cocoa.NSWindowStyleMaskResizable))
 		}
@@ -55,12 +57,12 @@ func (u *UserInterface) initializePlatform() error {
 		[]objc.FieldDef{
 			{
 				Name:      "origDelegate",
-				Type:      reflect.TypeOf(objc.ID(0)),
+				Type:      reflect.TypeFor[objc.ID](),
 				Attribute: objc.ReadWrite,
 			},
 			{
 				Name:      "origResizable",
-				Type:      reflect.TypeOf(true),
+				Type:      reflect.TypeFor[bool](),
 				Attribute: objc.ReadWrite,
 			},
 		},
@@ -68,7 +70,7 @@ func (u *UserInterface) initializePlatform() error {
 			{
 				Cmd: sel_initWithOrigDelegate,
 				Fn: func(id objc.ID, cmd objc.SEL, origDelegate objc.ID) objc.ID {
-					self := id.SendSuper(sel_init)
+					self := objcutil.SendSuper[objc.ID](id, class_EbitengineWindowDelegate, sel_init)
 					if self != 0 {
 						id.Send(sel_setOrigDelegate, origDelegate)
 					}
@@ -79,8 +81,8 @@ func (u *UserInterface) initializePlatform() error {
 			// See cocoa_window.m in GLFW.
 			{
 				Cmd: sel_windowShouldClose,
-				Fn: func(id objc.ID, cmd objc.SEL, notification objc.ID) bool {
-					return id.Send(sel_origDelegate).Send(cmd, notification) != 0
+				Fn: func(id objc.ID, cmd objc.SEL, sender objc.ID) bool {
+					return id.Send(sel_origDelegate).Send(cmd, sender) != 0
 				},
 			},
 			{
@@ -122,7 +124,13 @@ func (u *UserInterface) initializePlatform() error {
 			{
 				Cmd: sel_windowWillEnterFullScreen,
 				Fn: func(id objc.ID, cmd objc.SEL, notification objc.ID) {
-					if err := u.setOrigWindowPosWithCurrentPos(); err != nil {
+					// The window delegate methods are invoked only while a GLFW window exists,
+					// so the running backend is the GLFW backend.
+					b, ok := u.runningBackend().(*glfwBackend)
+					if !ok {
+						return
+					}
+					if err := b.captureWindowPosToRestore(); err != nil {
 						u.setError(err)
 						return
 					}
@@ -142,7 +150,13 @@ func (u *UserInterface) initializePlatform() error {
 					// Even a window has a size limitation, a window can be fullscreen by calling SetFullscreen(true).
 					// In this case, the window size limitation is disabled temporarily.
 					// When exiting from fullscreen, reset the window size limitation.
-					if err := u.updateWindowSizeLimits(); err != nil {
+					// The window delegate methods are invoked only while a GLFW window exists,
+					// so the running backend is the GLFW backend.
+					b, ok := u.runningBackend().(*glfwBackend)
+					if !ok {
+						return
+					}
+					if err := b.updateWindowSizeLimits(); err != nil {
 						u.setError(err)
 						return
 					}
@@ -165,9 +179,28 @@ func (u *UserInterface) initializePlatform() error {
 	return nil
 }
 
+func (u *glfwBackend) setApplePressAndHoldEnabled(enabled bool) {
+	var val int
+	if enabled {
+		val = 1
+	}
+	defaults := objc.ID(class_NSMutableDictionary).Send(sel_alloc).Send(sel_init)
+	defer defaults.Send(sel_release)
+
+	num := objc.ID(class_NSNumber).Send(sel_alloc).Send(sel_initWithBool, val)
+	defer num.Send(sel_release)
+
+	key := cocoa.NSString_alloc().InitWithUTF8String("ApplePressAndHoldEnabled")
+	defer key.ID.Send(sel_release)
+
+	defaults.Send(sel_setObject_forKey, num, key.ID)
+	ud := objc.ID(class_NSUserDefaults).Send(sel_standardUserDefaults)
+	ud.Send(sel_registerDefaults, defaults)
+}
+
 type graphicsDriverCreatorImpl struct {
 	transparent bool
-	colorSpace  graphicsdriver.ColorSpace
+	colorSpace  color.ColorSpace
 }
 
 func (g *graphicsDriverCreatorImpl) newAuto() (graphicsdriver.Graphics, GraphicsLibrary, error) {
@@ -198,6 +231,29 @@ func (*graphicsDriverCreatorImpl) newPlayStation5() (graphicsdriver.Graphics, er
 	return nil, errors.New("ui: PlayStation 5 is not supported in this environment")
 }
 
+// setOpenGLWindowHints sets the GLFW hints to create a window with an OpenGL context.
+//
+// setOpenGLWindowHints must be called from the main thread.
+func (u *glfwBackend) setOpenGLWindowHints() error {
+	if err := glfw.WindowHint(glfw.ClientAPI, glfw.OpenGLAPI); err != nil {
+		return err
+	}
+	if err := glfw.WindowHint(glfw.ContextVersionMajor, 3); err != nil {
+		return err
+	}
+	if err := glfw.WindowHint(glfw.ContextVersionMinor, 2); err != nil {
+		return err
+	}
+	// macOS requires forward-compatible and a core profile.
+	if err := glfw.WindowHint(glfw.OpenGLForwardCompat, glfw.True); err != nil {
+		return err
+	}
+	if err := glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile); err != nil {
+		return err
+	}
+	return nil
+}
+
 // glfwMonitorSizeInGLFWPixels must be called from the main thread.
 func glfwMonitorSizeInGLFWPixels(m *glfw.Monitor) (int, int, error) {
 	vm, err := m.GetVideoMode()
@@ -219,29 +275,41 @@ func dipToGLFWPixel(x float64, scale float64) float64 {
 	return x
 }
 
-func (u *UserInterface) adjustWindowPosition(x, y int, monitor *Monitor) (int, int) {
-	return x, y
+func (u *glfwBackend) adjustWindowPosition(x, y int, monitor *Monitor) (int, int, error) {
+	return x, y, nil
 }
 
 var (
-	class_NSCursor = objc.GetClass("NSCursor")
-	class_NSEvent  = objc.GetClass("NSEvent")
+	class_NSAppearance        = objc.GetClass("NSAppearance")
+	class_NSCursor            = objc.GetClass("NSCursor")
+	class_NSEvent             = objc.GetClass("NSEvent")
+	class_NSMutableDictionary = objc.GetClass("NSMutableDictionary")
+	class_NSNumber            = objc.GetClass("NSNumber")
+	class_NSUserDefaults      = objc.GetClass("NSUserDefaults")
 )
 
 var (
 	sel_alloc                         = objc.RegisterName("alloc")
+	sel_appearanceNamed               = objc.RegisterName("appearanceNamed:")
 	sel_collectionBehavior            = objc.RegisterName("collectionBehavior")
 	sel_delegate                      = objc.RegisterName("delegate")
 	sel_init                          = objc.RegisterName("init")
+	sel_initWithBool                  = objc.RegisterName("initWithBool:")
 	sel_initWithOrigDelegate          = objc.RegisterName("initWithOrigDelegate:")
+	sel_modifierFlags                 = objc.RegisterName("modifierFlags")
 	sel_mouseLocation                 = objc.RegisterName("mouseLocation")
 	sel_origDelegate                  = objc.RegisterName("origDelegate")
-	sel_origResizable                 = objc.RegisterName("isOrigResizable")
+	sel_isOrigResizable               = objc.RegisterName("isOrigResizable")
+	sel_registerDefaults              = objc.RegisterName("registerDefaults:")
+	sel_release                       = objc.RegisterName("release")
+	sel_setAppearance                 = objc.RegisterName("setAppearance:")
 	sel_setCollectionBehavior         = objc.RegisterName("setCollectionBehavior:")
 	sel_setDelegate                   = objc.RegisterName("setDelegate:")
 	sel_setDocumentEdited             = objc.RegisterName("setDocumentEdited:")
+	sel_setObject_forKey              = objc.RegisterName("setObject:forKey:")
 	sel_setOrigDelegate               = objc.RegisterName("setOrigDelegate:")
 	sel_setOrigResizable              = objc.RegisterName("setOrigResizable:")
+	sel_standardUserDefaults          = objc.RegisterName("standardUserDefaults")
 	sel_toggleFullScreen              = objc.RegisterName("toggleFullScreen:")
 	sel_windowDidBecomeKey            = objc.RegisterName("windowDidBecomeKey:")
 	sel_windowDidEnterFullScreen      = objc.RegisterName("windowDidEnterFullScreen:")
@@ -256,21 +324,58 @@ var (
 	sel_windowWillExitFullScreen      = objc.RegisterName("windowWillExitFullScreen:")
 )
 
+// syncModKeysFromOS reconciles modifier key state to the current OS state.
+// On macOS some system flows (the screenshot tool's Cmd+Shift+4, and others)
+// absorb modifier key-up events globally without changing window focus, so the
+// matching releases never reach the app. Polling +[NSEvent modifierFlags] each
+// tick ensures stuck modifiers eventually clear. Must be called on the main
+// thread.
+func (u *glfwBackend) syncModKeysFromOS() {
+	flags := objc.Send[uint](objc.ID(class_NSEvent), sel_modifierFlags)
+	const (
+		nsEventModifierFlagShift   = 1 << 17
+		nsEventModifierFlagControl = 1 << 18
+		nsEventModifierFlagOption  = 1 << 19
+		nsEventModifierFlagCommand = 1 << 20
+	)
+	var mods glfw.ModifierKey
+	if flags&nsEventModifierFlagShift != 0 {
+		mods |= glfw.ModShift
+	}
+	if flags&nsEventModifierFlagControl != 0 {
+		mods |= glfw.ModControl
+	}
+	if flags&nsEventModifierFlagOption != 0 {
+		mods |= glfw.ModAlt
+	}
+	if flags&nsEventModifierFlagCommand != 0 {
+		mods |= glfw.ModSuper
+	}
+	u.input.syncModKeys(mods, u.InputTime())
+}
+
+// syncLockKeysFromOS updates the lock key state to the current OS state.
+// Must be called on the main thread.
+func (u *glfwBackend) syncLockKeysFromOS() {
+	flags := objc.Send[uint](objc.ID(class_NSEvent), sel_modifierFlags)
+	const nsEventModifierFlagCapsLock = 1 << 16
+
+	caps := NewLockKeyStateFromBool(flags&nsEventModifierFlagCapsLock != 0)
+	// macOS has no Num Lock: the numeric keypad always produces digits.
+	u.input.setLockKeys(caps, LockKeyStateOn)
+}
+
 func currentMouseLocation() (x, y int) {
-	sig := cocoa.NSMethodSignature_signatureWithObjCTypes("{NSPoint=dd}@:")
-	inv := cocoa.NSInvocation_invocationWithMethodSignature(sig)
-	inv.SetTarget(objc.ID(class_NSEvent))
-	inv.SetSelector(sel_mouseLocation)
-	inv.Invoke()
-	var point cocoa.NSPoint
-	inv.GetReturnValue(unsafe.Pointer(&point))
+	point := objc.Send[cocoa.NSPoint](objc.ID(class_NSEvent), sel_mouseLocation)
 
 	x, y = int(point.X), int(point.Y)
 
 	// On macOS, the Y axis is upward. Adjust the Y position (#807, #2794).
 	y = -y
-	m := theMonitors.primaryMonitor()
-	y += m.videoMode.Height
+	// The primary monitor can be nil in theory (#1878, #1887, #3241).
+	if m := theMonitors.primaryMonitor(); m != nil {
+		y += m.videoMode.Height
+	}
 	return x, y
 }
 
@@ -295,7 +400,9 @@ func monitorFromWindowByOS(w *glfw.Window) (*Monitor, error) {
 		screen = window.Screen()
 	}
 	screenDictionary := screen.DeviceDescription()
-	screenID := cocoa.NSNumber{ID: screenDictionary.ObjectForKey(cocoa.NSString_alloc().InitWithUTF8String("NSScreenNumber").ID)}
+	screenNumberKey := cocoa.NSString_alloc().InitWithUTF8String("NSScreenNumber")
+	screenID := cocoa.NSNumber{ID: screenDictionary.ObjectForKey(screenNumberKey.ID)}
+	screenNumberKey.ID.Send(sel_release)
 	aID := uintptr(screenID.UnsignedIntValue()) // CGDirectDisplayID
 	pool.Release()
 	for _, m := range theMonitors.append(nil) {
@@ -310,11 +417,20 @@ func monitorFromWindowByOS(w *glfw.Window) (*Monitor, error) {
 	return nil, nil
 }
 
-func (u *UserInterface) nativeWindow() (uintptr, error) {
+func (u *glfwBackend) nativeWindow() (uintptr, error) {
 	return u.window.GetCocoaWindow()
 }
 
-func (u *UserInterface) isNativeFullscreen() (bool, error) {
+// isWindowOccluded reports whether no part of the window is visible on the screen.
+func (u *glfwBackend) isWindowOccluded() (bool, error) {
+	w, err := u.window.GetCocoaWindow()
+	if err != nil {
+		return false, err
+	}
+	return cocoa.NSWindow{ID: objc.ID(w)}.OcclusionState()&cocoa.NSWindowOcclusionStateVisible == 0, nil
+}
+
+func (u *glfwBackend) isNativeFullscreen() (bool, error) {
 	w, err := u.window.GetCocoaWindow()
 	if err != nil {
 		return false, err
@@ -322,13 +438,13 @@ func (u *UserInterface) isNativeFullscreen() (bool, error) {
 	return cocoa.NSWindow{ID: objc.ID(w)}.StyleMask()&cocoa.NSWindowStyleMaskFullScreen != 0, nil
 }
 
-func (u *UserInterface) isNativeFullscreenAvailable() bool {
+func (u *glfwBackend) isNativeFullscreenAvailable() bool {
 	// TODO: If the window is transparent, we should use GLFW's windowed fullscreen (#1822, #1857).
 	// However, if the user clicks the green button, should this window be in native fullscreen mode?
 	return true
 }
 
-func (u *UserInterface) setNativeFullscreen(fullscreen bool) error {
+func (u *glfwBackend) setNativeFullscreen(fullscreen bool) error {
 	// Toggling fullscreen might ignore events like keyUp. Ensure that events are fired.
 	if err := glfw.WaitEventsTimeout(0.1); err != nil {
 		return err
@@ -359,39 +475,9 @@ func (u *UserInterface) setNativeFullscreen(fullscreen bool) error {
 	return nil
 }
 
-func (u *UserInterface) adjustViewSizeAfterFullscreen() error {
-	if u.GraphicsLibrary() == GraphicsLibraryOpenGL {
-		return nil
-	}
-
-	w, err := u.window.GetCocoaWindow()
-	if err != nil {
-		return err
-	}
-	window := cocoa.NSWindow{ID: objc.ID(w)}
-	if window.StyleMask()&cocoa.NSWindowStyleMaskFullScreen == 0 {
-		return nil
-	}
-
-	// Reduce the view height (#1745).
-	// https://stackoverflow.com/questions/27758027/sprite-kit-serious-fps-issue-in-full-screen-mode-on-os-x
-	windowSize := window.Frame().Size
-	view := window.ContentView()
-	viewSize := view.Frame().Size
-	if windowSize.Width != viewSize.Width || windowSize.Height != viewSize.Height {
-		return nil
-	}
-	viewSize.Width--
-	view.SetFrameSize(viewSize)
-
-	// NSColor.blackColor (0, 0, 0, 1) didn't work.
-	// Use the transparent color instead.
-	window.SetBackgroundColor(cocoa.NSColor_colorWithSRGBRedGreenBlueAlpha(0, 0, 0, 0))
-	return nil
-}
-
-func (u *UserInterface) isFullscreenAllowedFromUI(mode WindowResizingMode) bool {
-	if u.maxWindowWidthInDIP != glfw.DontCare || u.maxWindowHeightInDIP != glfw.DontCare {
+func (u *glfwBackend) isFullscreenAllowedFromUI(mode WindowResizingMode) bool {
+	s := u.desktopWindow.windowSizeLimit.Load()
+	if s.maxWidthInDIP != glfw.DontCare || s.maxHeightInDIP != glfw.DontCare {
 		return false
 	}
 	if mode == WindowResizingModeOnlyFullscreenEnabled {
@@ -403,7 +489,7 @@ func (u *UserInterface) isFullscreenAllowedFromUI(mode WindowResizingMode) bool 
 	return false
 }
 
-func (u *UserInterface) setWindowResizingModeForOS(mode WindowResizingMode) error {
+func (u *glfwBackend) setWindowResizingModeForOS(mode WindowResizingMode) error {
 	var collectionBehavior uint
 	if u.isFullscreenAllowedFromUI(mode) {
 		collectionBehavior |= cocoa.NSWindowCollectionBehaviorManaged
@@ -419,7 +505,7 @@ func (u *UserInterface) setWindowResizingModeForOS(mode WindowResizingMode) erro
 	return nil
 }
 
-func initializeWindowAfterCreation(w *glfw.Window) error {
+func (u *glfwBackend) initializeWindowAfterCreation(w *glfw.Window) error {
 	// TODO: Register NSWindowWillEnterFullScreenNotification and so on.
 	// Enable resizing temporary before making the window fullscreen.
 	cocoaWindow, err := w.GetCocoaWindow()
@@ -432,12 +518,12 @@ func initializeWindowAfterCreation(w *glfw.Window) error {
 	return nil
 }
 
-func (u *UserInterface) skipTaskbar() error {
+func (u *glfwBackend) skipTaskbar() error {
 	return nil
 }
 
 // setDocumentEdited must be called from the main thread.
-func (u *UserInterface) setDocumentEdited(edited bool) error {
+func (u *glfwBackend) setDocumentEdited(edited bool) error {
 	w, err := u.window.GetCocoaWindow()
 	if err != nil {
 		return err
@@ -446,6 +532,32 @@ func (u *UserInterface) setDocumentEdited(edited bool) error {
 	return nil
 }
 
-func (u *UserInterface) afterWindowCreation() error {
+func (u *glfwBackend) afterWindowCreation() error {
+	return nil
+}
+
+var (
+	nsStringAqua     = cocoa.NSString_alloc().InitWithUTF8String("NSAppearanceNameAqua")
+	nsStringDarkAqua = cocoa.NSString_alloc().InitWithUTF8String("NSAppearanceNameDarkAqua")
+)
+
+// setWindowColorModeImpl must be called from the main thread.
+func (u *glfwBackend) setWindowColorModeImpl(mode colormode.ColorMode) error {
+	w, err := u.window.GetCocoaWindow()
+	if err != nil {
+		return err
+	}
+
+	var appearance objc.ID
+	switch mode {
+	case colormode.Light:
+		appearance = objc.ID(class_NSAppearance).Send(sel_appearanceNamed, nsStringAqua.ID)
+	case colormode.Dark:
+		appearance = objc.ID(class_NSAppearance).Send(sel_appearanceNamed, nsStringDarkAqua.ID)
+	case colormode.Unknown:
+		appearance = 0
+	}
+
+	objc.ID(w).Send(sel_setAppearance, appearance)
 	return nil
 }

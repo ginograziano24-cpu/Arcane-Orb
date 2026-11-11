@@ -108,7 +108,7 @@ func (g *Game) drawLeaderboard(s *ebiten.Image, x, y, w float64) {
 			}
 			friends = top
 		}
-		secs = append(secs, section{"WORLD", lb.global, "No runs yet. Be the first."}, section{"FRIENDS", friends, "No friends have a run yet."})
+		secs = append(secs, section{"WORLD", lb.global, "Nobody here yet. Plant your flag!"}, section{"FRIENDS", friends, "Your friends haven't played yet. Nudge them."})
 	} else {
 		var rows []lbRow
 		for i, e := range g.save.Board {

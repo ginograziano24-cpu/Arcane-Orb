@@ -1,0 +1,286 @@
+// Copyright 2026 The Ebitengine Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package text_test
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+
+	"golang.org/x/image/font/gofont/goregular"
+
+	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/text/v2"
+)
+
+func TestGlyphImageCacheConcurrent(t *testing.T) {
+	src, err := text.NewGoTextFaceSource(bytes.NewReader(goregular.TTF))
+	if err != nil {
+		t.Fatal(err)
+	}
+	face := &text.GoTextFace{Source: src, Size: 16}
+	glyphs := text.AppendLazyGlyphs(nil, "Hello, 世界!", face, nil)
+
+	const goroutines = 8
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Go(func() {
+			for _, gl := range glyphs {
+				// A space or a control character has no image.
+				if gl.ImageBounds.Empty() {
+					continue
+				}
+				if gl.Image() == nil {
+					t.Error("Image() returned nil for a glyph which should have an image")
+				}
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func TestGlyphImageCacheSizeEviction(t *testing.T) {
+	src, err := text.NewGoTextFaceSource(bytes.NewReader(goregular.TTF))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dst := ebiten.NewImage(64, 64)
+
+	// Draw with many distinct sizes, like a game animating its font size.
+	const drawnSizeCount = 100
+	for i := range drawnSizeCount {
+		face := &text.GoTextFace{Source: src, Size: 12 + float64(i)/4}
+		text.Draw(dst, "Hello", face, nil)
+	}
+	if got := text.GlyphImageCacheCount(src); got == 0 {
+		t.Fatal("no glyph image cache was created")
+	}
+
+	// A tick doesn't advance in a test, so pass explicit ticks to simulate frames.
+	// Each frame uses a new size, and one size is kept in use all the time.
+	const (
+		firstTick = 1000
+		tickCount = 300
+		hotSize   = 12
+		// A cache is dropped after it is unused for 60 ticks. 128 is an arbitrary bound above that.
+		maxCacheCount = 128
+	)
+	for i := range tickCount {
+		tick := int64(firstTick + i)
+		text.TouchGlyphImageCache(&text.GoTextFace{Source: src, Size: hotSize}, tick)
+		text.TouchGlyphImageCache(&text.GoTextFace{Source: src, Size: 1000 + float64(i)}, tick)
+		if got := text.GlyphImageCacheCount(src); got > maxCacheCount {
+			t.Fatalf("the number of the glyph image caches must be <= %d but was %d at tick %d", maxCacheCount, got, tick)
+		}
+	}
+
+	if !text.HasGlyphImageCache(src, hotSize) {
+		t.Errorf("the cache for the size %v must not be dropped", float64(hotSize))
+	}
+	if staleSize := 1000.0; text.HasGlyphImageCache(src, staleSize) {
+		t.Errorf("the cache for the size %v must be dropped", staleSize)
+	}
+}
+
+func TestGlyphImageCacheSideways(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "MPLUS1p-Regular.ttf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pixels := func(img *ebiten.Image) []byte {
+		if img == nil {
+			return nil
+		}
+		b := img.Bounds()
+		pix := make([]byte, 4*b.Dx()*b.Dy())
+		img.ReadPixels(pix)
+		return pix
+	}
+
+	const (
+		str  = "L"
+		size = 200
+	)
+	for _, horizontalFirst := range []bool{true, false} {
+		src := newGoTextFaceSourceForTest(t, data)
+		horizontal := &text.GoTextFace{
+			Source: src,
+			Size:   size,
+		}
+		vertical := &text.GoTextFace{
+			Source:    src,
+			Size:      size,
+			Direction: text.DirectionTopToBottomAndLeftToRight,
+		}
+		var hg, vg []text.Glyph
+		if horizontalFirst {
+			hg = text.AppendGlyphs(nil, str, horizontal, nil)
+			vg = text.AppendGlyphs(nil, str, vertical, nil)
+		} else {
+			vg = text.AppendGlyphs(nil, str, vertical, nil)
+			hg = text.AppendGlyphs(nil, str, horizontal, nil)
+		}
+		if len(hg) != 1 || len(vg) != 1 {
+			t.Fatalf("got %d horizontal and %d vertical glyphs, want 1 each", len(hg), len(vg))
+		}
+		if hg[0].Image == nil || vg[0].Image == nil {
+			t.Fatal("a glyph image is nil")
+		}
+		hb := hg[0].Image.Bounds()
+		vb := vg[0].Image.Bounds()
+		if hb.Dx() != vb.Dy() || hb.Dy() != vb.Dx() {
+			t.Errorf("horizontal first: %t: vertical glyph image size %dx%d is not the horizontal size %dx%d rotated", horizontalFirst, vb.Dx(), vb.Dy(), hb.Dx(), hb.Dy())
+		}
+		if bytes.Equal(pixels(hg[0].Image), pixels(vg[0].Image)) {
+			t.Errorf("horizontal first: %t: the vertical glyph image must not be the horizontal glyph image", horizontalFirst)
+		}
+	}
+}
+
+// variableFontData returns the bytes of a font with variation axes.
+func variableFontData(t *testing.T) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", "RobotoFlex.ttf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func newGoTextFaceSourceForTest(t *testing.T, data []byte) *text.GoTextFaceSource {
+	t.Helper()
+	src, err := text.NewGoTextFaceSource(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return src
+}
+
+func TestGoTextFaceSourceMetricsWithVariations(t *testing.T) {
+	data := variableFontData(t)
+	const size = 16
+
+	want := (&text.GoTextFace{Source: newGoTextFaceSourceForTest(t, data), Size: size}).Metrics()
+
+	wght := text.MustParseTag("wght")
+	for _, weight := range []float32{100, 400, 900} {
+		src := newGoTextFaceSourceForTest(t, data)
+		varied := &text.GoTextFace{Source: src, Size: size}
+		varied.SetVariation(wght, weight)
+		text.Measure("Hello, world!", varied, 0)
+
+		if got := (&text.GoTextFace{Source: src, Size: size}).Metrics(); got != want {
+			t.Errorf("Metrics() after shaping with wght=%v: got: %v, want: %v", weight, got, want)
+		}
+	}
+}
+
+func TestGoTextFaceSourceMetricsConcurrentWithShaping(t *testing.T) {
+	data := variableFontData(t)
+	wght := text.MustParseTag("wght")
+
+	// A source reads its metrics only once, so a fresh source is needed on
+	// every iteration.
+	const iterations = 50
+	for i := range iterations {
+		src := newGoTextFaceSourceForTest(t, data)
+		varied := &text.GoTextFace{Source: src, Size: 16}
+		varied.SetVariation(wght, float32(100+i*10))
+		plain := &text.GoTextFace{Source: src, Size: 16}
+
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			text.Measure("Hello, world!", varied, 0)
+		})
+		wg.Go(func() {
+			plain.Metrics()
+		})
+		wg.Wait()
+	}
+}
+
+func TestGlyphImageCacheAfterSizeChange(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "chromacheck-sbix.ttf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		str     = "\U0000E901"
+		oldSize = 16
+		newSize = 64
+	)
+	src := newGoTextFaceSourceForTest(t, data)
+	face := &text.GoTextFace{
+		Source: src,
+		Size:   oldSize,
+	}
+
+	glyphs := text.AppendLazyGlyphs(nil, str, face, nil)
+	face.Size = newSize
+	if img := glyphs[0].Image(); img == nil {
+		t.Fatal("Image() = nil, want an image")
+	}
+
+	glyphs = text.AppendLazyGlyphs(nil, str, face, nil)
+	img := glyphs[0].Image()
+	if img == nil {
+		t.Fatal("Image() = nil, want an image")
+	}
+	if got, want := img.Bounds().Size(), glyphs[0].ImageBounds.Size(); got != want {
+		t.Errorf("the image size = %v, want %v", got, want)
+	}
+}
+
+func TestGlyphImageCacheAfterVariationChange(t *testing.T) {
+	data := variableFontData(t)
+	face := &text.GoTextFace{
+		Source: newGoTextFaceSourceForTest(t, data),
+		Size:   32,
+	}
+	weight := text.MustParseTag("wght")
+	face.SetVariation(weight, 100)
+	glyphs := text.AppendLazyGlyphs(nil, "J", face, nil)
+	face.SetVariation(weight, 900)
+	if glyphs[0].Image() == nil {
+		t.Fatal("Image() = nil, want an image")
+	}
+
+	got := text.AppendLazyGlyphs(nil, "J", face, nil)[0].Image()
+	fresh := &text.GoTextFace{
+		Source: newGoTextFaceSourceForTest(t, data),
+		Size:   32,
+	}
+	fresh.SetVariation(weight, 900)
+	want := text.AppendLazyGlyphs(nil, "J", fresh, nil)[0].Image()
+	if got == nil || want == nil {
+		t.Fatal("Image() = nil, want an image")
+	}
+	if got.Bounds().Size() != want.Bounds().Size() {
+		t.Errorf("image size = %v, want %v", got.Bounds().Size(), want.Bounds().Size())
+		return
+	}
+	gotPixels := make([]byte, 4*got.Bounds().Dx()*got.Bounds().Dy())
+	wantPixels := make([]byte, len(gotPixels))
+	got.ReadPixels(gotPixels)
+	want.ReadPixels(wantPixels)
+	if !bytes.Equal(gotPixels, wantPixels) {
+		t.Error("glyph pixels differ from a fresh face with the same variation")
+	}
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"io"
 	"math"
 	"math/rand"
 	"runtime"
@@ -74,17 +75,31 @@ func NewSounds() *Sounds {
 	s := &Sounds{ctx: audio.NewContext(sampleRate), cache: map[string]*clipEntry{}, lastVar: map[string]int{}, last: map[string]time.Time{},
 		SFX: 0.8, Music: 0.6, curTrack: -1, rng: rand.New(rand.NewSource(time.Now().UnixNano()))}
 	s.warmQ = make(chan string, 1024)
-	for range max(1, min(4, runtime.NumCPU()-1)) {
+	workers := max(1, min(4, runtime.NumCPU()-1))
+	if runtime.GOOS == "js" {
+		workers = 1
+	}
+	for range workers {
 		go func() {
 			for n := range s.warmQ {
 				base, _ := parseName(n)
 				for v := 0; v < max(1, recipes[base].vars); v++ {
+					if runtime.GOOS == "js" {
+						// Give the browser's main thread a chance to render between clips.
+						time.Sleep(8 * time.Millisecond)
+					}
 					s.clip(n, v)
 				}
 			}
 		}()
 	}
-	s.warm(prewarmNames()...)
+	if runtime.GOOS == "js" {
+		// The active world and key are warmed on selection. Preparing every
+		// world's variants before the first menu draw blocks the browser.
+		s.warm("hover", "click", "seal", "cardhover", "deal", "mapenter")
+	} else {
+		s.warm(prewarmNames()...)
+	}
 	return s
 }
 
@@ -137,14 +152,22 @@ func (s *Sounds) warm(names ...string) {
 	}
 }
 
-// warmKeyed queues the musical brick sounds for the current world and key
+// warmKeyed queues the musical contact sounds for the current world and key
 // (the key follows the music, so each act and the boss have their own).
 func (s *Sounds) warmKeyed() {
 	w, k := itoa(s.World), itoa(s.Key)
-	names := []string{"tuf." + w + "." + k, "deb." + w}
+	names := []string{"tuf." + w + "." + k, "deb." + w, "wall." + w, "pad." + k, "padedge." + k}
 	for st := 0; st < 15; st++ {
 		names = append(names, "brk."+w+"."+k+"."+itoa(st))
 	}
+	// pickups follow the key too; queue them after the bricks, which play far
+	// more often
+	for p := PMulti; p <= PMagnet; p++ {
+		if powerDefs[p].Good {
+			names = append(names, "pw."+itoa(int(p))+"."+k)
+		}
+	}
+	names = append(names, "life."+k, "heartfall."+k, "cache."+k, "wave."+k)
 	s.warm(names...)
 }
 
@@ -183,7 +206,15 @@ func (s *Sounds) play(name string, vol float64) {
 	for _, p := range s.voices {
 		if p.IsPlaying() {
 			live = append(live, p)
+		} else {
+			// Finished one-shot players are never reused. Release their audio
+			// resources now instead of waiting for a later GC finalizer.
+			_ = p.Close()
 		}
+	}
+	// The reused slice must not retain finished players beyond its length.
+	for i := len(live); i < len(s.voices); i++ {
+		s.voices[i] = nil
 	}
 	s.voices = live
 	nv := len(s.voices)
@@ -208,14 +239,14 @@ func (s *Sounds) play(name string, vol float64) {
 		s.Punch(pk * vol)
 	}
 	gain := s.SFX * vol
-	if !s.rendered(name, v) {
+	if c, ready := s.cachedClip(name, v); ready {
+		s.start(c, gain)
+	} else {
 		// not ready (nor warmed in time): render it on another goroutine
 		// and start it from there, a few milliseconds late, rather than
 		// stall this frame
 		go func() { s.start(s.clip(name, v), gain) }()
-		return
 	}
-	s.start(s.clip(name, v), gain)
 }
 
 // start plays a rendered clip at the given volume.
@@ -231,12 +262,16 @@ func (s *Sounds) start(c []byte, gain float64) {
 	s.vmu.Unlock()
 }
 
-// rendered reports whether a clip is ready to play.
-func (s *Sounds) rendered(name string, v int) bool {
+// cachedClip returns already-published PCM with one lookup. The temporary
+// concatenated lookup key does not escape; clip builds/stores keys on misses.
+func (s *Sounds) cachedClip(name string, v int) ([]byte, bool) {
 	s.cmu.Lock()
 	e := s.cache[name+"#"+itoa(v)]
 	s.cmu.Unlock()
-	return e != nil && e.done.Load()
+	if e == nil || !e.done.Load() {
+		return nil, false
+	}
+	return e.data, true
 }
 
 // punchFor is how far big impacts dip the music for an instant, so they
@@ -322,7 +357,6 @@ const trackBoss = 4
 // from the old song. Safe to call each frame.
 func (s *Sounds) SetTrack(i int) {
 	if s.curTrack == i {
-		s.updateVolumes()
 		return
 	}
 	s.curTrack = i
@@ -343,12 +377,22 @@ func (s *Sounds) startStream() {
 	if s.player != nil || s.curTrack < 0 || s.Music <= 0 {
 		return
 	}
-	st := mus.NewStream(trackSongs[s.curTrack%len(trackSongs)])
-	if st == nil {
-		return
+	var source io.Reader
+	var st *mus.Stream
+	if s.curTrack == 3 && !liveMenuSynthesis {
+		if cached := cachedMenuStream(); cached != nil {
+			source = cached
+		}
 	}
-	st.SetIntensity(s.intensity)
-	p, err := s.ctx.NewPlayer(st)
+	if source == nil {
+		st = mus.NewStream(trackSongs[s.curTrack%len(trackSongs)])
+		if st == nil {
+			return
+		}
+		st.SetIntensity(s.intensity)
+		source = st
+	}
+	p, err := s.ctx.NewPlayer(source)
 	if err != nil {
 		return
 	}
@@ -358,15 +402,15 @@ func (s *Sounds) startStream() {
 	p.Play()
 }
 
-func (s *Sounds) SetIntensity(v float64) {
-	s.intensity += (v - s.intensity) * 0.03
+func (s *Sounds) SetIntensity(v, dt float64) {
+	// Preserve the 60 FPS response over real time at any render rate.
+	s.intensity += (v - s.intensity) * (1 - math.Pow(0.97, dt*60))
 	if s.stream != nil {
 		s.stream.SetIntensity(s.intensity)
 	}
 	if s.duck > 0 {
-		if el := nowFn().Sub(s.duckT).Seconds(); el > s.duckLen {
-			s.duck = math.Max(0, s.duck-0.02)
-		}
+		release := min(dt, max(0, nowFn().Sub(s.duckT).Seconds()-s.duckLen))
+		s.duck = max(0, s.duck-release*1.2)
 	}
 	s.updateVolumes()
 }

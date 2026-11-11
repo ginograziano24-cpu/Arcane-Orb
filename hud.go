@@ -74,6 +74,10 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	// ---- animated readouts
 	if g.hudLevel != L {
 		g.hudLevel = L
+		g.hudLocation = L.Data.Name
+		if L.Boss == nil {
+			g.hudLocation += "   ·   seed " + itoa(int(L.Data.Seed%100000000))
+		}
 		g.hudGold = float64(r.Gold)
 		g.lastGold = r.Gold
 		g.hudBoss = -1
@@ -110,6 +114,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	g.drawHero(screen, L, 22, 18, 150, 186)
 	if g.duel == nil {
 		g.drawLives(screen, L, 97, 224)
+		g.drawQuip(screen)
 	}
 	// ---- vitals plate, beside the portrait
 	const vx = 162.0
@@ -141,10 +146,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	edge(0)
 	title := L.Biome.Name
 	node := strings.ToUpper(nodeNames[L.Node])
-	sub := L.Data.Name
-	if L.Boss == nil {
-		sub += "   ·   seed " + itoa(int(L.Data.Seed%100000000))
-	}
+	sub := g.hudLocation
 	tW := u.measure(title, fSerif, 30)
 	nw := u.measure(node, fBold, 15) + 26
 	rowW := tW + 14 + nw

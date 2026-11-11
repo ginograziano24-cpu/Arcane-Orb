@@ -1092,7 +1092,7 @@ func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend eb
 		// once more on the way in); fillVerts applies that, so the draws
 		// say premultiplied and DrawTriangles32 takes the vertices as they
 		// are.
-		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: worldAA && !aaOwn, ColorScaleMode: ebiten.ColorScaleModePremultipliedAlpha}
+		op := &ebiten.DrawTrianglesOptions{Blend: blend, AntiAlias: worldAA && !aaOwn, ColorScaleMode: ebiten.ColorScaleModePremultipliedAlpha, AllowVertexMutation: true}
 		src := atlas
 		if rn.tex != 0 {
 			src = texImages[rn.tex]
@@ -1114,8 +1114,8 @@ func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend eb
 // fillVerts gathers the planned quads' vertices, in run order, into
 // b.verts (scaled to the target). The quads are scattered through memory
 // and this copy is cache-miss bound, so a big list is split across
-// goroutines; Ebitengine copies the vertices it is given, so the buffer is
-// free again as soon as each draw call returns.
+// goroutines. Each draw can modify its own slice. Refill the buffer before
+// the next flush.
 func (b *Batch) fillVerts(qs []*quad, scale float32) {
 	ids := b.runIdx
 	n := len(ids) * 4

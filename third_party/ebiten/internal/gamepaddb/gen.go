@@ -46,7 +46,7 @@ const license = `// Copyright 2024 The Ebitengine Authors
 
 // To update the database file, run:
 //
-//     curl --location --remote-name https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/master/gamecontrollerdb.txt
+//     curl --location --remote-name https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/refs/heads/master/gamecontrollerdb.txt
 
 //go:embed gamecontrollerdb.txt
 var gameControllerDB []byte
@@ -64,7 +64,7 @@ import (
 )
 
 //go:embed gamecontrollerdb_{{.FileNameSuffix}}.txt
-var controllerBytes []byte
+var controllerBytes_{{.FileNameSuffix}} []byte
 
 {{if .HasGLFWGamepads}}
 var additionalGLFWGamepads = []byte(` + "`" + `
@@ -79,7 +79,7 @@ var additionalGLFWGamepads = []byte(` + "`" + `
 {{end}}
 
 func init() {
-	if err := Update(controllerBytes); err != nil {
+	if err := Update(controllerBytes_{{.FileNameSuffix}}); err != nil {
 		panic(err)
 	}{{if .HasGLFWGamepads}}
 	if err := Update(additionalGLFWGamepads); err != nil {
@@ -112,15 +112,14 @@ func run() error {
 			hasGLFWGamepads:  true,
 		},
 		"Mac OS X": {
-			filenameSuffix:   "macos_darwin",
-			buildConstraints: "//go:build !ios",
+			filenameSuffix: "iokit_darwin",
 		},
 		"Linux": {
 			filenameSuffix:   "linbsd",
-			buildConstraints: "//go:build (freebsd || (linux && !android) || netbsd || openbsd) && !nintendosdk && !playstation5",
+			buildConstraints: "//go:build (freebsd || (linux && !android) || netbsd) && !nintendosdk && !playstation5",
 		},
 		"iOS": {
-			filenameSuffix: "ios",
+			filenameSuffix: "gc_darwin",
 		},
 		"Android": {
 			filenameSuffix: "android",

@@ -123,9 +123,14 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		st.Master = u.slider(s, "Master volume", 520, y, 880, st.Master, g.mouseHeld)
 		st.Music = u.slider(s, "Music", 520, y+64, 880, st.Music, g.mouseHeld)
 		st.SFX = u.slider(s, "Sound effects", 520, y+128, 880, st.SFX, g.mouseHeld)
-		g.snd.SFX = st.SFX * st.Master
-		g.snd.Music = st.Music * st.Master
-		g.snd.updateVolumes()
+		if !g.bgMuted {
+			g.snd.SFX = st.SFX * st.Master
+			g.snd.Music = st.Music * st.Master
+			g.snd.updateVolumes()
+		}
+		y += 214
+		st.NoQuips = !toggle("quips", "Hero quips (speech bubbles and voices)", !st.NoQuips)
+		st.MuteBg = toggle("mutebg", "Mute while the game is in the background", st.MuteBg)
 	case 1:
 		// quality preset as a row of choices
 		u.text(s, "Graphics quality", fBold, 22, 520, y+12, cWhite, alignLeft)
@@ -157,6 +162,9 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		}
 		nwm := choice("win", "Display mode (F11)", []string{"Fullscreen", "Borderless", "Windowed"}, wm, 150)
 		vs := toggle("vs", "VSync", st.VSync)
+		if desktopFramePacing {
+			st.FrameCap = frameCaps[choice("cap", "Frame limit (VSync off)", frameCapLabels, frameCapIndex(st.FrameCap), 102)]
+		}
 		st.ShowFPS = toggle("fps", "Show FPS", st.ShowFPS)
 		st.CenterHUD = !toggle("edgehud", "Ultrawide: spread the HUD to the screen edges", !st.CenterHUD)
 		if nwm != wm || vs != st.VSync {
@@ -232,4 +240,27 @@ func nz(v, d float64) float64 {
 		return d
 	}
 	return v
+}
+
+// updateBackgroundMute silences the game while another window has focus,
+// when the player asked for that, and brings the sound back on return. The
+// music keeps streaming at a whisper so the song doesn't restart.
+func (g *Game) updateBackgroundMute() {
+	st := g.settings
+	if st == nil || g.snd == nil || bench != nil {
+		return
+	}
+	want := st.MuteBg && !ebiten.IsFocused()
+	if want == g.bgMuted {
+		return
+	}
+	g.bgMuted = want
+	if want {
+		g.snd.SFX = 0
+		g.snd.Music = math.Min(g.snd.Music, 1e-4)
+	} else {
+		g.snd.SFX = st.SFX * st.Master
+		g.snd.Music = st.Music * st.Master
+	}
+	g.snd.updateVolumes()
 }

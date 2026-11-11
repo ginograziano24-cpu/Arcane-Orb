@@ -225,7 +225,7 @@ func (d *duel) hostDirect() {
 	if ips := netplay.LANAddrs(); len(ips) > 0 {
 		d.lanCode = netplay.EncodeAddr(ips[0], s.Port)
 	}
-	d.status = "Waiting for a player to join…"
+	d.status = "Waiting for a challenger…"
 	d.wanCh = make(chan string, 1)
 	go func(ch chan string, port int) { ch <- publicCode(port) }(d.wanCh, s.Port)
 }
@@ -580,7 +580,7 @@ func (g *Game) updateDuelMatch(dt float64) {
 			d.phase = "play"
 			d.playStart = time.Now()
 			g.snd.Play("launch")
-			g.snd.PlayVol("abilready", 0.8)
+			g.snd.PlayVol("duelgo", 0.8)
 		}
 	case "play":
 		d.elapsed = time.Since(d.playStart).Seconds()

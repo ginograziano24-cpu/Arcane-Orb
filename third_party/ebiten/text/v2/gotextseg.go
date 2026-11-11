@@ -17,8 +17,8 @@ package text
 import (
 	"image"
 	"image/draw"
-	"math"
 
+	"github.com/go-text/typesetting/font"
 	"github.com/go-text/typesetting/font/opentype"
 	"golang.org/x/image/math/fixed"
 	gvector "golang.org/x/image/vector"
@@ -27,74 +27,47 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
-func segmentsToBounds(segs []opentype.Segment) fixed.Rectangle26_6 {
-	if len(segs) == 0 {
-		return fixed.Rectangle26_6{}
+// glyphExtentsToBounds returns the bounding rectangle of a glyph in the
+// same display-space coordinates as its scaled outline segments. scale
+// converts font units to pixels. When sideways is true, the same
+// rotation that [font.GlyphOutline.Sideways] applies to segments is
+// applied here, with yOffsetFontUnits as the post-rotation offset in
+// font units.
+func glyphExtentsToBounds(ext font.GlyphExtents, scale float32, sideways bool, yOffsetFontUnits float32) fixed.Rectangle26_6 {
+	// Font-unit corners. X grows right; Y grows up. Height is negative
+	// because YBearing is the top of the glyph and YBearing + Height is
+	// the bottom.
+	x0, x1 := ext.XBearing, ext.XBearing+ext.Width
+	y0, y1 := ext.YBearing+ext.Height, ext.YBearing // y0 < y1
+	if sideways {
+		// (x, y) -> (y, -x + yOff). The new x range is the old y range;
+		// the new y range is -old-x + yOff.
+		x0, x1 = y0, y1
+		y0, y1 = -ext.XBearing-ext.Width+yOffsetFontUnits, -ext.XBearing+yOffsetFontUnits
 	}
-
-	minX := float32(math.Inf(1))
-	minY := float32(math.Inf(1))
-	maxX := float32(math.Inf(-1))
-	maxY := float32(math.Inf(-1))
-
-	for _, seg := range segs {
-		n := 1
-		switch seg.Op {
-		case opentype.SegmentOpQuadTo:
-			n = 2
-		case opentype.SegmentOpCubeTo:
-			n = 3
-		}
-		for i := 0; i < n; i++ {
-			x := seg.Args[i].X
-			y := seg.Args[i].Y
-			if minX > x {
-				minX = x
-			}
-			if minY > y {
-				minY = y
-			}
-			if maxX < x {
-				maxX = x
-			}
-			if maxY < y {
-				maxY = y
-			}
-		}
-	}
-
+	// Scale and flip Y to match the segment-coordinate transform. After
+	// the flip the most-positive font Y becomes the most-negative display
+	// Y (the top edge of the box).
 	return fixed.Rectangle26_6{
 		Min: fixed.Point26_6{
-			X: float32ToFixed26_6(minX),
-			Y: float32ToFixed26_6(minY),
+			X: float32ToFixed26_6(x0 * scale),
+			Y: float32ToFixed26_6(-y1 * scale),
 		},
 		Max: fixed.Point26_6{
-			X: float32ToFixed26_6(maxX),
-			Y: float32ToFixed26_6(maxY),
+			X: float32ToFixed26_6(x1 * scale),
+			Y: float32ToFixed26_6(-y0 * scale),
 		},
 	}
 }
 
-func segmentsToImage(segs []opentype.Segment, subpixelOffset fixed.Point26_6, glyphBounds fixed.Rectangle26_6) *ebiten.Image {
-	if len(segs) == 0 {
-		return nil
-	}
-
-	w, h := (glyphBounds.Max.X - glyphBounds.Min.X).Ceil(), (glyphBounds.Max.Y - glyphBounds.Min.Y).Ceil()
-	if w == 0 || h == 0 {
-		return nil
-	}
-
-	// Add always 1 to the size.
-	// In theory, it is possible to determine whether +1 is necessary or not, but the calculation is pretty complicated.
-	w++
-	h++
-
+// newGlyphRasterizer returns a rasterizer of the given pixel size with
+// the outline segments added, translated by the bias derived from
+// glyphBounds and subpixelOffset.
+func newGlyphRasterizer(w, h int, segs []opentype.Segment, subpixelOffset fixed.Point26_6, glyphBounds fixed.Rectangle26_6) *gvector.Rasterizer {
 	biasX := fixed26_6ToFloat32(-glyphBounds.Min.X + subpixelOffset.X)
 	biasY := fixed26_6ToFloat32(-glyphBounds.Min.Y + subpixelOffset.Y)
 
 	rast := gvector.NewRasterizer(w, h)
-	rast.DrawOp = draw.Src
 	for _, seg := range segs {
 		switch seg.Op {
 		case opentype.SegmentOpMoveTo:
@@ -119,8 +92,29 @@ func segmentsToImage(segs []opentype.Segment, subpixelOffset fixed.Point26_6, gl
 	// NotoSansJP-VF.otf in https://github.com/notofonts/noto-cjk/releases/tag/Sans2.004.
 	// See also https://github.com/go-text/typesetting/issues/122.
 	rast.ClosePath()
+	return rast
+}
 
-	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+func segmentsToImage(segs []opentype.Segment, subpixelOffset fixed.Point26_6, glyphBounds fixed.Rectangle26_6) *ebiten.Image {
+	if len(segs) == 0 {
+		return nil
+	}
+
+	w, h := (glyphBounds.Max.X - glyphBounds.Min.X).Ceil(), (glyphBounds.Max.Y - glyphBounds.Min.Y).Ceil()
+	if w == 0 || h == 0 {
+		return nil
+	}
+
+	// Add always 1 to the size.
+	// In theory, it is possible to determine whether +1 is necessary or not, but the calculation is pretty complicated.
+	w++
+	h++
+
+	rast := newGlyphRasterizer(w, h, segs, subpixelOffset, glyphBounds)
+	rast.DrawOp = draw.Src
+
+	dst := newPooledRGBA(w, h)
+	defer releasePooledRGBA(dst)
 	rast.Draw(dst, dst.Bounds(), image.Opaque, image.Point{})
 	return ebiten.NewImageFromImage(dst)
 }

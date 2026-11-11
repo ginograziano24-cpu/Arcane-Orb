@@ -15,22 +15,25 @@ type Settings struct {
 	Particles  int                  `json:"particles"` // 0 reduced, 1 full
 	Fullscreen bool                 `json:"fullscreen"`
 	VSync      bool                 `json:"vsync"`
+	FrameCap   int                  `json:"frame_cap,omitempty"`
 	ShowFPS    bool                 `json:"show_fps"`
 	DX12       bool                 `json:"dx12,omitempty"` // Windows: DirectX 12 instead of 11 (next launch)
 	NoBloom    bool                 `json:"no_bloom"`
 	NoAA       bool                 `json:"no_aa"`
-	Classic    bool                 `json:"classic_backdrop"` // flat painted picture instead of 3D scenery
-	Quality    int                  `json:"quality"`          // 0 low, 1 medium, 2 high, 3 custom
-	RenderRes  float64              `json:"render_scale"`     // 3D resolution, 0.5..1 (0 = full)
-	DynRes     bool                 `json:"dynamic_res"`      // lower the 3D resolution when frames run long
-	FastAnim   bool                 `json:"fast_animations"`  // shorter transitions, no slow-motion or hit-stop
-	NoTips     bool                 `json:"no_tips"`          // hide first-time coach tips
-	CenterHUD  bool                 `json:"center_hud"`       // ultrawide: keep the HUD in the 16:9 centre
-	TopDown    bool                 `json:"top_down"`         // always use the steep, top-down camera
-	TextScale  float64              `json:"text_scale"`       // body text size, 1 = default (0 = default)
-	GameSpeed  float64              `json:"game_speed"`       // chamber speed assist, 0.5..1 (0 = 1)
-	ColorBlind int                  `json:"color_blind"`      // 0 off, 1 protanopia, 2 deuteranopia, 3 tritanopia
-	Borderless bool                 `json:"borderless"`       // windowed without a frame, filling the monitor
+	Classic    bool                 `json:"classic_backdrop"`          // flat painted picture instead of 3D scenery
+	Quality    int                  `json:"quality"`                   // 0 low, 1 medium, 2 high, 3 custom
+	RenderRes  float64              `json:"render_scale"`              // 3D resolution, 0.5..1 (0 = full)
+	DynRes     bool                 `json:"dynamic_res"`               // lower the 3D resolution when frames run long
+	FastAnim   bool                 `json:"fast_animations"`           // shorter transitions, no slow-motion or hit-stop
+	NoTips     bool                 `json:"no_tips"`                   // hide first-time coach tips
+	NoQuips    bool                 `json:"no_quips,omitempty"`        // silence the heroes' speech bubbles and voices
+	MuteBg     bool                 `json:"mute_background,omitempty"` // no sound while another window has focus
+	CenterHUD  bool                 `json:"center_hud"`                // ultrawide: keep the HUD in the 16:9 centre
+	TopDown    bool                 `json:"top_down"`                  // always use the steep, top-down camera
+	TextScale  float64              `json:"text_scale"`                // body text size, 1 = default (0 = default)
+	GameSpeed  float64              `json:"game_speed"`                // chamber speed assist, 0.5..1 (0 = 1)
+	ColorBlind int                  `json:"color_blind"`               // 0 off, 1 protanopia, 2 deuteranopia, 3 tritanopia
+	Borderless bool                 `json:"borderless"`                // windowed without a frame, filling the monitor
 	Binds      map[string]savedBind `json:"binds,omitempty"`
 	Lang       string               `json:"lang,omitempty"`       // language code; "" = pick from Steam or the system
 	FreshActs  bool                 `json:"fresh_acts,omitempty"` // every act starts the build over (the old way)

@@ -119,9 +119,10 @@ func (L *Level) omenCleared() {
 			prize += fmt.Sprintf("  ·  +%d gold", b)
 		}
 		g.toastImg(trJoin("Challenge met: ", o.Name), prize, o.Col, glyphImage(o.Glyph, o.Col))
-		g.snd.PlayKeyed("good")
+		g.snd.PlayKeyed("omenmet")
 	} else {
-		g.toastImg(trJoin("Challenge failed: ", o.Name), "Better luck in the next chamber.", cDim, glyphImage(o.Glyph, cDim))
+		g.toastImg(trJoin("Challenge failed: ", o.Name), "Shake it off. The next chamber won't know.", cDim, glyphImage(o.Glyph, cDim))
+		g.snd.PlayVol("omenfail", 0.6)
 	}
 }
 

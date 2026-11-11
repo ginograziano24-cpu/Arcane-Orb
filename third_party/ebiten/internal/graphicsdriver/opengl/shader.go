@@ -18,11 +18,13 @@ package opengl
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/opengl/gl"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir/glsl"
+	"github.com/hajimehoshi/ebiten/v2/internal/shaderprecomp"
 )
 
 type Shader struct {
@@ -50,12 +52,19 @@ func (s *Shader) ID() graphicsdriver.ShaderID {
 }
 
 func (s *Shader) Dispose() {
-	s.graphics.context.deleteProgram(s.p)
+	s.graphics.deleteProgram(s.p)
 	s.graphics.removeShader(s)
 }
 
 func (s *Shader) compile() error {
-	vssrc, fssrc := glsl.Compile(s.ir, s.graphics.context.glslVersion())
+	version := s.graphics.context.glslVersion()
+
+	var vssrc, fssrc string
+	if vs, fs, ok := shaderprecomp.GLSL(s.ir.SourceID, version == glsl.GLSLVersionES300); ok {
+		vssrc, fssrc = string(vs), string(fs)
+	} else {
+		vssrc, fssrc = glsl.Compile(s.ir, version)
+	}
 
 	vs, err := s.graphics.context.newShader(gl.VERTEX_SHADER, vssrc)
 	if err != nil {
@@ -74,12 +83,23 @@ func (s *Shader) compile() error {
 		return err
 	}
 
+	// Check the shader compile status asynchronously if possible.
+	// The function 'compile' itself is still blocking, but at least this gives a chance to other goroutines to run
+	// while waiting for the shader compilation.
+	if s.graphics.context.hasParallelShaderCompile() {
+		for s.graphics.context.ctx.GetShaderi(uint32(vs), gl.COMPLETION_STATUS_KHR) != gl.TRUE ||
+			s.graphics.context.ctx.GetShaderi(uint32(fs), gl.COMPLETION_STATUS_KHR) != gl.TRUE {
+			runtime.Gosched()
+		}
+	}
+
 	// Check errors only after linking fails.
 	// See https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices#dont_check_shader_compile_status_unless_linking_fails
 	if s.graphics.context.ctx.GetProgrami(uint32(p), gl.LINK_STATUS) == gl.FALSE {
 		programInfo := s.graphics.context.ctx.GetProgramInfoLog(uint32(p))
 		vertexShaderInfo := s.graphics.context.ctx.GetShaderInfoLog(uint32(vs))
 		fragmentShaderInfo := s.graphics.context.ctx.GetShaderInfoLog(uint32(fs))
+		s.graphics.deleteProgram(p)
 		return fmt.Errorf("opengl: program error: %s\nvertex shader error: %s\nvertex shader source: %s\nfragment shader error: %s\nfragment shader source: %s",
 			programInfo, vertexShaderInfo, vssrc, fragmentShaderInfo, fssrc)
 	}

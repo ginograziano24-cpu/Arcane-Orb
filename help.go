@@ -33,13 +33,13 @@ var powerDesc = [numPowers]string{
 }
 
 var nodeDesc = []string{
-	"A chamber of bricks. Clear it for an upgrade.",
-	"Tougher bricks and an elite. Pays out a relic.",
-	"Spend gold on upgrades, relics, scrolls and lost lives.",
-	"A free relic, no fight required.",
-	"A strange encounter: a gamble, a bargain, a gift.",
-	"Regain a life, or train for a stronger upgrade.",
-	"The act's Guardian. Defeat it to move on.",
+	"Bricks, bricks, bricks. Smash them all and pick an upgrade.",
+	"Meaner bricks, one big bruiser, and a relic for your trouble.",
+	"Gold in, goodies out: upgrades, relics, scrolls and spare lives.",
+	"A free relic! No fight, no catch. Probably.",
+	"Something odd waits here. A gift, a gamble, or a goat.",
+	"Patch up a lost life, or sharpen your build.",
+	"The act's Guardian. Knock it down and the road opens.",
 }
 
 func (g *Game) drawHelp(s *ebiten.Image) {

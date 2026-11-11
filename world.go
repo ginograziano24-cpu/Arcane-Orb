@@ -264,8 +264,12 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	// rocks
 	for _, rk := range L.Rocks {
 		if rk.Warn > 0 {
-			a := 0.4 + 0.4*math.Sin(rk.Warn*20)
-			B.Decal(rk.TX, PaddleZ, 0.03, 2.2, 2.2, sprRing, alpha(color.RGBA{255, 60, 60, 255}, a), true)
+			a := 0.64 + 0.20*math.Sin(rk.Warn*20)
+			ink := alpha(color.RGBA{255, 108, 75, 255}, a)
+			B.Decal(rk.TX, PaddleZ, 0.03, 2.2, 2.2, sprRing, ink, true)
+			for _, offset := range [...]float64{-0.65, 0.65} {
+				B.Decal(rk.TX+offset, PaddleZ, 0.04, 0.09, 1.85, sprWhite, ink, true)
+			}
 			continue
 		}
 		s := 0.6
@@ -312,6 +316,10 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	g.drawPaddle(B, L)
 	g.drawCritters(B, L)
 	// balls
+	halo := 1.0
+	if len(L.Balls) > 2 {
+		halo = 0.62
+	}
 	fire := L.Timers[PFire] > 0
 	for _, b := range L.Balls {
 		glow := g.orbGlow(L, b)
@@ -331,28 +339,31 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		}
 		B.DecalBelow(b.X+0.2, b.Z-0.2, 0.02, b.R*3, b.R*2.4, sprShadow, color.RGBA{0, 0, 0, 200})
 		// a pool of the orb's light on the floor
-		B.Decal(b.X, b.Z, 0.025, b.R*11, b.R*11, sprSoft, alpha(glow, 0.2*a), true)
-		for i, p := range b.Trail {
-			f := float64(i+1) / float64(len(b.Trail)+1)
-			B.Billboard(V3{p[0], b.R, p[1]}, b.R*2*f, sprSoft, alpha(glow, 0.35*f*a), true)
+		B.Decal(b.X, b.Z, 0.025, b.R*11, b.R*11, sprSoft, alpha(glow, 0.17*a*halo), true)
+		for _, p := range b.trail.samples[:b.trail.count] {
+			f := 1 - (b.trail.elapsed-p.at)/orbTrailLife
+			if f > 0 {
+				B.Billboard(V3{p.x, b.R, p.z}, b.R*1.65*f, sprSoft, alpha(glow, 0.32*f*a), true)
+			}
 		}
 		// the orb is the hero object: a wide halo, a solid core and a hot
 		// centre so it is always the brightest thing on the board
 		hk := b.Hit * b.Hit
-		B.Billboard(V3{b.X, b.R, b.Z}, b.R*8*(1+0.25*hk), sprSoft, alpha(glow, (0.42+0.3*hk)*a), true)
+		B.Billboard(V3{b.X, b.R, b.Z}, b.R*5.8*(1+0.18*hk), sprSoft, alpha(glow, (0.31+0.21*hk)*a*halo), true)
 		B.Billboard(V3{b.X, b.R, b.Z}, b.R*2.25*(1+0.16*hk), sprSphere, alpha(mixc(core, color.RGBA{255, 255, 255, 255}, hk), a), false)
 		if hk > 0.02 {
 			// the contact flash: a hot burst where it struck, swelling as it fades
 			cx, cz := b.X-b.HitNX*b.R, b.Z-b.HitNZ*b.R
 			B.Billboard(V3{cx, b.R * 0.9, cz}, b.R*(2.2+3.5*(1-b.Hit)), sprSoft, alpha(color.RGBA{255, 250, 235, 255}, 0.8*hk), true)
 		}
-		B.Billboard(V3{b.X, b.R * 1.05, b.Z}, b.R*2.6, sprSoft, alpha(color.RGBA{255, 255, 255, 255}, 0.55*a), true)
+		B.Billboard(V3{b.X, b.R * 1.05, b.Z}, b.R*1.6, sprSoft, alpha(color.RGBA{255, 255, 255, 255}, 0.48*a), true)
 		if b.Charged {
 			B.Billboard(V3{b.X, b.R, b.Z}, b.R*3.4, sprRing, alpha(color.RGBA{255, 90, 90, 255}, 0.8), true)
 		}
 	}
 	// particles
-	for _, p := range L.Parts {
+	for i := range L.Parts {
+		p := &L.Parts[i]
 		f := p.Life / p.Max
 		switch p.Kind {
 		case pDebris:
@@ -634,6 +645,11 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 		x, y, _ := cam.Project(p)
 		return x * k, y * k
 	}
+	if boss := L.Boss; !hideHUD && boss != nil && !boss.Dead && boss.recoveryT > 0 {
+		x, y := proj(V3{0, 6, cellZ(5)})
+		u := g.ui
+		u.textOutlined(screen, "GUARDIAN RECOVERING", fBold, 17, (x-u.OX)/u.S, (y-u.OY)/u.S, ca(cWhite, clamp01(boss.recoveryT*5)), alignCenter)
+	}
 	// orb rim: a thin outline drawn over the world so the orb reads on bright
 	// floors and stays visible behind tall stacks
 	fg := L.Biome.Fog
@@ -642,16 +658,78 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 		x, y := proj(V3{b.X, b.R, b.Z})
 		x1, _ := proj(V3{b.X + b.R, b.R, b.Z})
 		r := math.Max(4, (x1-x)*1.45)
+		if b.pierceFlash > 0 && !b.Stuck {
+			tx, ty := proj(V3{b.X - b.VX*0.025, b.R, b.Z - b.VZ*0.025})
+			dx, dy := x-tx, y-ty
+			length := math.Hypot(dx, dy)
+			if length > 0.01 {
+				dx, dy = dx/length, dy/length
+				w := max(1.5, r*0.16)
+				for _, distance := range [...]float64{1.4, 2.2} {
+					cx, cy := x-dx*r*distance, y-dy*r*distance
+					side := r * 0.46
+					back := r * 0.4
+					ink := alpha(color.RGBA{146, 255, 230, 255}, b.pierceFlash)
+					strokeLine(screen, cx-dx*back-dy*side, cy-dy*back+dx*side, cx, cy, w, ink)
+					strokeLine(screen, cx-dx*back+dy*side, cy-dy*back-dx*side, cx, cy, w, ink)
+				}
+			}
+		}
 		if bright > 0.55 {
 			drawSprite(screen, sprRing, x-r, y-r, 2*r, 2*r, color.RGBA{30, 18, 60, 150}, false)
 		} else {
 			drawSprite(screen, sprRing, x-r, y-r, 2*r, 2*r, color.RGBA{255, 250, 255, 70}, true)
 		}
 	}
+	// Draw immediate status below the paddle, outside the orb's return path.
+	if !hideHUD && g.state == StLevel && g.duel == nil && !L.Cleared && L.introT <= 0 {
+		warning := L.advWarned && L.advT > 0 && L.advT <= 2
+		if warning || L.abilReadyT > 0 {
+			u := g.ui
+			x, y := proj(V3{L.PaddleX, 0, PaddleZ - 1.05})
+			x = max(84, min((x-u.OX)/u.S, 1836))
+			y = min((y-u.OY)/u.S+13, 1028)
+			if warning {
+				u.frame(screen, x-78, y, 156, 36, 0.95)
+				u.textOutlined(screen, "WALL ADVANCING", fBold, 15, x, y+8, rgba(255, 202, 132, 255), alignCenter)
+			} else {
+				opacity := clamp01(L.abilReadyT * 3)
+				u.frame(screen, x-78, y, 156, 36, 0.9*opacity)
+				u.icon(screen, icBolt, x-56, y+18, 20, opacity)
+				u.textOutlined(screen, "ABILITY READY", fBold, 15, x+9, y+8, ca(cWhite, opacity), alignCenter)
+			}
+		}
+	}
 	// health bars over bricks the orb has dented (the Guardian's armour
 	// has its own bar)
 	for _, b := range L.Bricks {
-		if !b.Alive || b.BossPart || b.Kind == levelgen.Steel || b.HP >= b.MaxHP || b.Appear < 1 || b.Up != nil {
+		if !b.Alive || b.Appear < 1 || b.Up != nil {
+			continue
+		}
+		// Use shape as well as color for active conditions.
+		if b.Burn > 0 || b.shieldFlash > 0 {
+			top := float64(b.Layer+1)*LayerH + 0.28
+			x, y := proj(V3{b.X() + b.OffX, top, b.Z() + b.OffZ})
+			size := max(3, 5*g.ui.S)
+			if b.Burn > 0 {
+				ink := color.RGBA{255, 184, 89, 255}
+				for _, shift := range [...]float64{-0.65, 0.65} {
+					cx := x + size*shift
+					strokeLine(screen, cx-size*0.45, y-size, cx, y-2*size, size*0.3, ink)
+					strokeLine(screen, cx, y-2*size, cx+size*0.45, y-size, size*0.3, ink)
+				}
+			}
+			if b.shieldFlash > 0 {
+				y -= size * 2.7
+				ink := alpha(color.RGBA{177, 232, 255, 255}, b.shieldFlash)
+				strokeLine(screen, x-size, y, x, y-size, size*0.32, ink)
+				strokeLine(screen, x, y-size, x+size, y, size*0.32, ink)
+				strokeLine(screen, x+size, y, x, y+size, size*0.32, ink)
+				strokeLine(screen, x, y+size, x-size, y, size*0.32, ink)
+			}
+		}
+
+		if b.BossPart || b.Kind == levelgen.Steel || b.HP >= b.MaxHP {
 			continue
 		}
 		top := float64(b.Layer+1)*LayerH + 0.12
@@ -670,6 +748,10 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 		fillRect(screen, lx-1, ly-1, w+2, bh+2, prem(color.RGBA{10, 8, 16, 255}, a*0.85))
 		fc := mixc(color.RGBA{255, 70, 60, 255}, color.RGBA{120, 255, 120, 255}, f)
 		fillRect(screen, lx, ly, w*f, bh, prem(fc, a))
+		if b.MaxHP > 1 && f <= 0.25 {
+			// A diagonal notch separates a near-break bar from an intact bar at a glance.
+			strokeLine(screen, lx+w*f, ly+bh, lx+w*f+bh, ly, max(1, bh*0.34), prem(cWhite, a))
+		}
 	}
 	// lightning arcs (2D, over everything)
 	for _, a := range L.Arcs {
@@ -684,13 +766,19 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 			prev = [2]float64{x, y}
 		}
 	}
-	// capsule letters
+	// Drop labels and hazard triangles supplement the individual models.
 	for _, d := range L.Drops {
-		if model(powerModel[d.P]) != nil {
-			continue // the power's own model says what it is
+		x, y := proj(V3{d.X, 1.55 + 0.15*math.Sin(d.T*6), d.Z})
+		def := powerDefs[d.P]
+		size := g.ui.S
+		if !def.Good {
+			// A warning triangle is visible even with color cues disabled.
+			ink := color.RGBA{255, 207, 142, 255}
+			strokeLine(screen, x-13*size, y+9*size, x, y-15*size, 2*size, ink)
+			strokeLine(screen, x, y-15*size, x+13*size, y+9*size, 2*size, ink)
+			strokeLine(screen, x+13*size, y+9*size, x-13*size, y+9*size, 2*size, ink)
 		}
-		x, y := proj(V3{d.X, 0.95 + 0.15*math.Sin(d.T*6), d.Z})
-		g.ui.textAt(screen, powerDefs[d.P].Letter, fBold, 20, x, y-13*g.ui.S, color.RGBA{20, 20, 30, 255}, alignCenter)
+		g.ui.textOutlinedAt(screen, def.Letter, fBold, 16, x, y-10*size, cWhite, alignCenter)
 	}
 	// floating texts
 	for _, f := range L.Floats {

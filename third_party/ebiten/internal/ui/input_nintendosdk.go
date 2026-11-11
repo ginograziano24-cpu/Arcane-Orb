@@ -29,17 +29,17 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/internal/gamepad"
 )
 
-func (u *UserInterface) updateInputState() error {
+func (u *UserInterface) updateInputStateForFrame(deviceScaleFactor float64) error {
 	var err error
 	u.mainThread.Call(func() {
-		err = u.updateInputStateImpl()
+		err = u.updateInputStateForFrameImpl()
 	})
 	return err
 }
 
-// updateInputStateImpl must be called from the main thread.
-func (u *UserInterface) updateInputStateImpl() error {
-	if err := gamepad.Update(); err != nil {
+// updateInputStateForFrameImpl must be called from the main thread.
+func (u *UserInterface) updateInputStateForFrameImpl() error {
+	if err := gamepad.Update(0, nil); err != nil {
 		return err
 	}
 
@@ -55,16 +55,16 @@ func (u *UserInterface) updateInputStateImpl() error {
 		C.ebitengine_GetTouches(&u.nativeTouches[0])
 	}
 
-	u.m.Lock()
-	defer u.m.Unlock()
+	u.mu.Lock()
+	defer u.mu.Unlock()
 
 	u.inputState.Touches = u.inputState.Touches[:0]
 	for _, t := range u.nativeTouches {
 		x, y := u.context.clientPositionToLogicalPosition(float64(t.x), float64(t.y), theMonitor.DeviceScaleFactor())
 		u.inputState.Touches = append(u.inputState.Touches, Touch{
 			ID: TouchID(t.id),
-			X:  int(x),
-			Y:  int(y),
+			X:  x,
+			Y:  y,
 		})
 	}
 

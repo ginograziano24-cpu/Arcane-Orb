@@ -97,7 +97,7 @@ var scrollDefs = []scrollDef{
 			return false
 		}
 		L.raiseBarrier(2, 5, "Draught of Warding")
-		L.g.snd.PlayKeyed("heal")
+		L.g.snd.Play("pw." + itoa(int(PBarrier)) + "." + itoa(L.g.snd.Key)) // the barrier rising
 		return true
 	}},
 	{"midas", "Scroll of Midas", "For 10 seconds most hits throw off a coin.", "coinstack", rgba(255, 214, 90, 255), 30, false, func(L *Level) bool {
@@ -172,7 +172,7 @@ func (g *Game) addScroll(id string) bool {
 	}
 	r.Scrolls = append(r.Scrolls, id)
 	g.save.Seen["scroll:"+id] = true
-	g.toastImg("Scroll found", trJoin(sd.Name, " — ", sd.Desc), sd.Col, glyphImage(sd.Glyph, sd.Col))
+	g.toastImg("A scroll for the satchel!", trJoin(sd.Name, " — ", sd.Desc), sd.Col, glyphImage(sd.Glyph, sd.Col))
 	g.snd.Play("pick.1." + itoa(g.snd.Key))
 	g.coach("scroll")
 	return true
@@ -192,7 +192,7 @@ func (L *Level) useScroll(i int) {
 		return
 	}
 	if L.Boss != nil && !sd.Boss {
-		L.text(V3{L.PaddleX, 1.6, PaddleZ + 1.5}, "The Guardian resists", cDim, false)
+		L.text(V3{L.PaddleX, 1.6, PaddleZ + 1.5}, "The Guardian laughs it off", cDim, false)
 		g.snd.PlayVol("deny", 0.6)
 		return
 	}

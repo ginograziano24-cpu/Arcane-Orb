@@ -481,7 +481,7 @@ func (g *Game) drawDmgBars(s *ebiten.Image, r *Run, rx, yy, rw float64, maxRows 
 	S := u.S
 	rows, total := dmgRows(r)
 	if total <= 0 {
-		u.text(s, "No damage dealt yet.", fReg, 18, rx+rw/2, yy+10, cDim, alignCenter)
+		u.text(s, "Not a scratch yet. Go break something!", fReg, 18, rx+rw/2, yy+10, cDim, alignCenter)
 		return yy + 32
 	}
 	lw := math.Min(150, rw*0.36)

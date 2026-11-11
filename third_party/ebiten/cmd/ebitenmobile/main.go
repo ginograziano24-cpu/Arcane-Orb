@@ -18,7 +18,7 @@
 //
 // ebitenmobile uses github.com/ebitengine/gomobile for gomobile, not golang.org/x/mobile.
 // gomobile's version is fixed by ebitenmobile.
-// You can specify gomobile's version by EBITENMOBILE_GOMOBILE environment variable.
+// You can use a local checkout of gomobile by setting EBITENMOBILE_GOMOBILE to the path to the checkout.
 package main
 
 import (
@@ -33,8 +33,12 @@ import (
 	"text/template"
 	"unicode"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"golang.org/x/tools/go/packages"
 )
+
+var caser = cases.Title(language.Und)
 
 const (
 	ebitenmobileCommand = "ebitenmobile"
@@ -42,17 +46,6 @@ const (
 
 //go:embed _files/EbitenViewController.h
 var objcH string
-
-func goEnv(name string) string {
-	if val := os.Getenv(name); val != "" {
-		return val
-	}
-	val, err := exec.Command("go", "env", name).Output()
-	if err != nil {
-		panic(err)
-	}
-	return strings.TrimSpace(string(val))
-}
 
 var (
 	buildA          bool   // -a
@@ -241,30 +234,21 @@ func doBind(args []string, flagset *flag.FlagSet, buildOS string) error {
 	}
 
 	if buildOS == "darwin" {
-		// TODO: Use os.ReadDir after Ebitengine stops supporting Go 1.15.
-		f, err := os.Open(buildO)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			_ = f.Close()
-		}()
-
-		names, err := f.Readdirnames(-1)
+		dirEntries, err := os.ReadDir(buildO)
 		if err != nil {
 			return err
 		}
 
-		for _, name := range names {
+		for _, dirEntry := range dirEntries {
+			name := dirEntry.Name()
 			if name == "Info.plist" {
 				continue
 			}
 			frameworkName := filepath.Base(buildO)
 			frameworkNameBase := frameworkName[:len(frameworkName)-len(".xcframework")]
 			// The first character must be an upper case (#2192).
-			// TODO: strings.Title is used here for the consistency with gomobile (see cmd/gomobile/bind_iosapp.go).
-			// As strings.Title is deprecated, golang.org/x/text/cases should be used.
-			frameworkNameBase = strings.Title(frameworkNameBase)
+			// For the consistency with gomobile (see cmd/gomobile/bind_iosapp.go), the name is title-cased.
+			frameworkNameBase = caser.String(frameworkNameBase)
 			dir := filepath.Join(buildO, name, frameworkNameBase+".framework")
 
 			if err := os.WriteFile(filepath.Join(dir, "Headers", prefixUpper+"EbitenViewController.h"), []byte(replacePrefixes(objcH)), 0644); err != nil {
@@ -320,7 +304,7 @@ func isValidJavaPackageName(name string) bool {
 		return false
 	}
 	// A Java package name consists of one or more Java identifiers separated by dots.
-	for _, token := range strings.Split(name, ".") {
+	for token := range strings.SplitSeq(name, ".") {
 		if !isValidJavaIdentifier(token) {
 			return false
 		}

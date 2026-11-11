@@ -3,6 +3,7 @@ package main
 import (
 	"image/color"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -305,22 +306,7 @@ func (u *UI) hover(x, y, w, h float64) bool {
 }
 
 func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b []byte
-	for n > 0 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-		n /= 10
-	}
-	if neg {
-		b = append([]byte{'-'}, b...)
-	}
-	return string(b)
+	return strconv.Itoa(n)
 }
 
 // rawFace returns a face at an absolute pixel size (for offscreen art).

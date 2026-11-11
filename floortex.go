@@ -4,7 +4,9 @@ import (
 	"embed"
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
+	"math/bits"
 
 	"orb/levelgen"
 )
@@ -81,31 +83,42 @@ func (t *bakedTex) floorUV(x, z float64) [2]float32 {
 	return [2]float32{float32(u), float32(v)}
 }
 
-// drawBakedFloor draws the arena floor from its baked texture in small
-// quads (texture mapping is affine, so small pieces keep it straight),
-// clipped to the arena. Neon floors are greyscale, tinted and pulsed.
+// The 1x1 textured quads inherit the clipping of their 2x2 arena tile.
+// Compute their row masks once from the chamber's fixed wall polygon.
+type floorClip [int(floorZ1 - floorZ0)]uint32
+
+func makeFloorClip(walls []levelgen.Pt) (clip floorClip) {
+	for row, z := 0, floorZ0; z < FarZ+1; row, z = row+1, z+1 {
+		tz := floorZ0 + float64(row/2)*2
+		for col, x := 0, floorX0; x < floorX1; col, x = col+2, x+2 {
+			if levelgen.Inside(walls, levelgen.Pt{X: x + 1, Z: math.Min(tz+1, FarZ-0.2)}) {
+				clip[row] |= 3 << col
+			}
+		}
+	}
+	return
+}
+
+// drawBakedFloor projects the chamber's textured quads in row-major order.
 func drawBakedFloor(B *Batch, L *Level, t *bakedTex, gp float64) {
 	bio := L.Biome
 	const step = 1.0
-	white := B.lit(color.RGBA{255, 255, 255, 255}, V3{0, 1, 0})
-	for z := floorZ0; z < FarZ+1; z += step {
-		for x := floorX0; x < floorX1; x += step {
-			// clip by the 2x2 tile the piece belongs to, as the old floor did
-			tx := floorX0 + math.Floor((x-floorX0)/2)*2
-			tz := floorZ0 + math.Floor((z-floorZ0)/2)*2
-			if !levelgen.Inside(L.Walls, levelgen.Pt{X: tx + 1, Z: math.Min(tz+1, FarZ-0.2)}) {
-				continue
+	up := V3{0, 1, 0}
+	white := B.lit(color.RGBA{255, 255, 255, 255}, up)
+	for row, mask := range L.floorClip {
+		z := floorZ0 + float64(row)
+		c := white
+		if bio.Neon {
+			c = bio.Floor
+			if row/2%4 == 0 {
+				c = mixc(bio.Floor, bio.FloorAlt, 0.6)
 			}
+			c = B.lit(c, up)
+		}
+		for ; mask != 0; mask &= mask - 1 {
+			x := floorX0 + float64(bits.TrailingZeros32(mask))
 			pts := [4]V3{{x, 0, z + step}, {x + step, 0, z + step}, {x + step, 0, z}, {x, 0, z}}
 			uv := [4][2]float32{t.floorUV(x, z+step), t.floorUV(x+step, z+step), t.floorUV(x+step, z), t.floorUV(x, z)}
-			c := white
-			if bio.Neon {
-				c = bio.Floor
-				if int(math.Floor((z-floorZ0)/2))%4 == 0 {
-					c = mixc(bio.Floor, bio.FloorAlt, 0.6)
-				}
-				c = B.lit(c, V3{0, 1, 0})
-			}
 			B.QuadUV(pts, t.id, uv, c, [4]float32{1, 1, 1, 1}, false)
 			B.lastQuad().depth += 2000
 			if bio.Neon {
@@ -240,18 +253,18 @@ func composeBrickSheet() (image.Image, int) {
 		rows = 2 * h
 	}
 	out := image.NewRGBA(image.Rect(0, 0, w, rows))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			r, g, bl, _ := dimg.At(b.Min.X+x, b.Min.Y+y).RGBA()
-			i := out.PixOffset(x, y)
-			out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = uint8(r>>8), uint8(g>>8), uint8(bl>>8), 255
-		}
-	}
+	draw.Draw(out, image.Rect(0, 0, w, h), dimg, b.Min, draw.Src)
 	if simg != nil {
 		sb := simg.Bounds()
+		jpeg, isYCbCr := simg.(*image.YCbCr)
 		for y := 0; y < h && y < sb.Dy(); y++ {
 			for x := 0; x < w && x < sb.Dx(); x++ {
-				r, g, bl, _ := simg.At(sb.Min.X+x, sb.Min.Y+y).RGBA()
+				var r, g, bl uint32
+				if isYCbCr {
+					r, g, bl, _ = jpeg.YCbCrAt(sb.Min.X+x, sb.Min.Y+y).RGBA()
+				} else {
+					r, g, bl, _ = simg.At(sb.Min.X+x, sb.Min.Y+y).RGBA()
+				}
 				l := (r*30 + g*59 + bl*11) / 100 >> 8
 				i := out.PixOffset(x, h+y)
 				out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = uint8(r>>8), uint8(g>>8), uint8(bl>>8), uint8(min(255, l))

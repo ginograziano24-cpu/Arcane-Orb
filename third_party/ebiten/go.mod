@@ -1,29 +1,31 @@
 module github.com/hajimehoshi/ebiten/v2
 
-go 1.22.0
+go 1.25.0
 
 require (
-	github.com/ebitengine/gomobile v0.0.0-20240911145611-4856209ac325
+	github.com/ebitengine/debugui v0.3.0
+	github.com/ebitengine/gomobile v0.0.0-20260820040257-d11f821a26a6
 	github.com/ebitengine/hideconsole v1.0.0
-	github.com/ebitengine/oto/v3 v3.3.3
-	github.com/ebitengine/purego v0.8.0
-	github.com/gen2brain/mpeg v0.3.2-0.20240412154320-a2ac4fc8a46f
-	github.com/go-text/typesetting v0.2.0
-	github.com/hajimehoshi/bitmapfont/v3 v3.2.0
+	github.com/ebitengine/oto/v3 v3.5.0
+	github.com/ebitengine/purego v0.11.3
+	github.com/gen2brain/mpeg v0.6.2
+	github.com/go-text/typesetting v0.3.5
+	github.com/hajimehoshi/bitmapfont/v4 v4.2.0
 	github.com/hajimehoshi/go-mp3 v0.3.4
-	github.com/jakecoffman/cp v1.2.1
-	github.com/jezek/xgb v1.1.1
+	github.com/jakecoffman/cp/v2 v2.4.0
 	github.com/jfreymuth/oggvorbis v1.0.5
-	github.com/kisielk/errcheck v1.7.0
-	golang.org/x/image v0.20.0
-	golang.org/x/sync v0.8.0
-	golang.org/x/sys v0.25.0
-	golang.org/x/text v0.18.0
-	golang.org/x/tools v0.25.0
+	github.com/kisielk/errcheck v1.20.0
+	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
+	golang.org/x/image v0.45.0
+	golang.org/x/mod v0.40.0
+	golang.org/x/sync v0.22.0
+	golang.org/x/sys v0.47.0
+	golang.org/x/text v0.41.0
+	golang.org/x/tools v0.49.0
 )
 
 require (
+	github.com/jfreymuth/pulse v0.1.3 // indirect
 	github.com/jfreymuth/vorbis v1.0.2 // indirect
-	github.com/pierrec/lz4/v4 v4.1.21 // indirect
-	golang.org/x/mod v0.21.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.29 // indirect
 )

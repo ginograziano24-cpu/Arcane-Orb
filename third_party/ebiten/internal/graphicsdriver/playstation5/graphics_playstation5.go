@@ -17,16 +17,25 @@
 package playstation5
 
 // #include "graphics_playstation5.h"
+// #include <stdlib.h>
 import "C"
 
 import (
 	"fmt"
 	"runtime"
+	"unsafe"
 
+	"github.com/hajimehoshi/ebiten/v2/internal/color"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
+	"github.com/hajimehoshi/ebiten/v2/internal/shaderprecomp"
 )
+
+//export ebitengine_ProjectionMatrixUniformDwordIndex
+func ebitengine_ProjectionMatrixUniformDwordIndex() C.int {
+	return C.int(graphics.ProjectionMatrixUniformDwordIndex)
+}
 
 type playstation5Error struct {
 	name    string
@@ -60,14 +69,18 @@ func (g *Graphics) Initialize() error {
 	return nil
 }
 
+func (g *Graphics) ColorSpace() color.ColorSpace {
+	return color.ColorSpaceSRGB
+}
+
 func (g *Graphics) Begin() error {
 	C.ebitengine_Begin()
 	return nil
 }
 
-func (g *Graphics) End(present bool) error {
+func (g *Graphics) End(mode graphicsdriver.FlushMode) error {
 	var cPresent C.int
-	if present {
+	if mode == graphicsdriver.FlushModePresent {
 		cPresent = 1
 	}
 	C.ebitengine_End(cPresent)
@@ -80,12 +93,14 @@ func (g *Graphics) SetTransparent(transparent bool) {
 func (g *Graphics) SetVertices(vertices []float32, indices []uint32) error {
 	defer runtime.KeepAlive(vertices)
 	defer runtime.KeepAlive(indices)
-	C.ebitengine_SetVertices((*C.float)(&vertices[0]), C.int(len(vertices)), (*C.uint32_t)(&indices[0]), C.int(len(indices)))
+	C.ebitengine_SetVertices((*C.float)(unsafe.SliceData(vertices)), C.int(len(vertices)), (*C.uint32_t)(unsafe.SliceData(indices)), C.int(len(indices)))
 	return nil
 }
 
 func (g *Graphics) NewImage(width, height int) (graphicsdriver.Image, error) {
 	var id C.int
+	width = graphics.InternalImageSize(width)
+	height = graphics.InternalImageSize(height)
 	if err := C.ebitengine_NewImage(&id, C.int(width), C.int(height)); !C.ebitengine_IsErrorNil(&err) {
 		return nil, newPlaystation5Error("(*playstation5.Graphics).NewImage", err)
 	}
@@ -112,13 +127,25 @@ func (g *Graphics) NeedsClearingScreen() bool {
 }
 
 func (g *Graphics) MaxImageSize() int {
-	return 4096 // TODO: Get the value from the SDK.
+	return int(C.ebitengine_MaxImageSize())
 }
 
 func (g *Graphics) NewShader(program *shaderir.Program) (graphicsdriver.Shader, error) {
+	vertexHeader, vertexText, pixelHeader, pixelText, ok := shaderprecomp.PlayStation5Shader(program.SourceID)
+	if !ok {
+		return nil, fmt.Errorf("playstation5: no precompiled shader is registered for the shader source ID %s; shader precompilation is required on PlayStation 5", program.SourceID)
+	}
+	defer runtime.KeepAlive(vertexHeader)
+	defer runtime.KeepAlive(vertexText)
+	defer runtime.KeepAlive(pixelHeader)
+	defer runtime.KeepAlive(pixelText)
+
 	var id C.int
-	// TODO: Give a source code.
-	if err := C.ebitengine_NewShader(&id, nil); !C.ebitengine_IsErrorNil(&err) {
+	if err := C.ebitengine_NewShader(&id,
+		(*C.char)(unsafe.Pointer(unsafe.SliceData(vertexHeader))), C.int(len(vertexHeader)),
+		(*C.char)(unsafe.Pointer(unsafe.SliceData(vertexText))), C.int(len(vertexText)),
+		(*C.char)(unsafe.Pointer(unsafe.SliceData(pixelHeader))), C.int(len(pixelHeader)),
+		(*C.char)(unsafe.Pointer(unsafe.SliceData(pixelText))), C.int(len(pixelText))); !C.ebitengine_IsErrorNil(&err) {
 		return nil, newPlaystation5Error("(*playstation5.Graphics).NewShader", err)
 	}
 	return &Shader{
@@ -126,7 +153,7 @@ func (g *Graphics) NewShader(program *shaderir.Program) (graphicsdriver.Shader, 
 	}, nil
 }
 
-func (g *Graphics) DrawTriangles(dst graphicsdriver.ImageID, srcs [graphics.ShaderSrcImageCount]graphicsdriver.ImageID, shader graphicsdriver.ShaderID, dstRegions []graphicsdriver.DstRegion, indexOffset int, blend graphicsdriver.Blend, uniforms []uint32, fillRule graphicsdriver.FillRule) error {
+func (g *Graphics) DrawTriangles(dst graphicsdriver.ImageID, srcs [graphics.ShaderSrcImageCount]graphicsdriver.ImageID, shader graphicsdriver.ShaderID, dstRegions []graphicsdriver.DstRegion, indexOffset int, blend graphicsdriver.Blend, uniforms []uint32) error {
 	cSrcs := make([]C.int, len(srcs))
 	for i, src := range srcs {
 		cSrcs[i] = C.int(src)
@@ -160,7 +187,7 @@ func (g *Graphics) DrawTriangles(dst graphicsdriver.ImageID, srcs [graphics.Shad
 		cUniforms[i] = C.uint32_t(u)
 	}
 
-	if err := C.ebitengine_DrawTriangles(C.int(dst), &cSrcs[0], C.int(len(cSrcs)), C.int(shader), &cDstRegions[0], C.int(len(cDstRegions)), C.int(indexOffset), cBlend, &cUniforms[0], C.int(len(cUniforms)), C.int(fillRule)); !C.ebitengine_IsErrorNil(&err) {
+	if err := C.ebitengine_DrawTriangles(C.int(dst), unsafe.SliceData(cSrcs), C.int(len(cSrcs)), C.int(shader), unsafe.SliceData(cDstRegions), C.int(len(cDstRegions)), C.int(indexOffset), cBlend, unsafe.SliceData(cUniforms), C.int(len(cUniforms))); !C.ebitengine_IsErrorNil(&err) {
 		return newPlaystation5Error("(*playstation5.Graphics).DrawTriangles", err)
 	}
 	return nil
@@ -179,12 +206,36 @@ func (i *Image) Dispose() {
 }
 
 func (i *Image) ReadPixels(args []graphicsdriver.PixelsArgs) error {
-	// TODO: Implement this
+	defer runtime.KeepAlive(args)
+	for _, a := range args {
+		region := C.ebitengine_Region{
+			min_x: C.int(a.Region.Min.X),
+			min_y: C.int(a.Region.Min.Y),
+			max_x: C.int(a.Region.Max.X),
+			max_y: C.int(a.Region.Max.Y),
+		}
+		C.ebitengine_ReadPixels(C.int(i.id), (*C.uint8_t)(unsafe.Pointer(unsafe.SliceData(a.Pixels))), region)
+	}
+	if err := C.ebitengine_FlushReadPixels(C.int(i.id)); !C.ebitengine_IsErrorNil(&err) {
+		return newPlaystation5Error("(*playstation5.Image).ReadPixels", err)
+	}
 	return nil
 }
 
 func (i *Image) WritePixels(args []graphicsdriver.PixelsArgs) error {
-	// TODO: Implement this
+	defer runtime.KeepAlive(args)
+	for _, a := range args {
+		region := C.ebitengine_Region{
+			min_x: C.int(a.Region.Min.X),
+			min_y: C.int(a.Region.Min.Y),
+			max_x: C.int(a.Region.Max.X),
+			max_y: C.int(a.Region.Max.Y),
+		}
+		C.ebitengine_WritePixels(C.int(i.id), (*C.uint8_t)(unsafe.Pointer(unsafe.SliceData(a.Pixels))), region)
+	}
+	if err := C.ebitengine_FlushWritePixels(C.int(i.id)); !C.ebitengine_IsErrorNil(&err) {
+		return newPlaystation5Error("(*playstation5.Image).WritePixels", err)
+	}
 	return nil
 }
 

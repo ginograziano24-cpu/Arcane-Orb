@@ -51,7 +51,7 @@ func (g *Game) addCurse(rng *rand.Rand) *Mod {
 	c := pool[rng.Intn(len(pool))]
 	r.Add(c.ID, &g.save)
 	r.log("curse", "Cursed: "+c.Name, c.Icon)
-	g.toastImg("Cursed", trJoin(c.Name, " — ", c.Desc), tagColors["curse"], modEmblem(c))
+	g.toastImg("Uh-oh. Cursed!", trJoin(c.Name, " — ", c.Desc), tagColors["curse"], modEmblem(c))
 	g.coach("curse")
 	return c
 }
@@ -75,7 +75,7 @@ func (g *Game) cleanse() *Mod {
 		}
 	}
 	r.Recompute(&g.save)
-	g.snd.PlayKeyed("heal")
+	g.snd.PlayKeyed("purify")
 	return modByID[id]
 }
 

@@ -17,32 +17,56 @@
 package ebitenmobileview
 
 import (
+	"sync"
+
 	"github.com/hajimehoshi/ebiten/v2/internal/ui"
 )
 
 type position struct {
-	x int
-	y int
+	x float64
+	y float64
 }
 
 var (
-	keys    = map[ui.Key]struct{}{}
-	touches = map[ui.TouchID]position{}
-)
+	// inputMu protects the variables below and ptrToID in input_ios.go.
+	// The platform entry points are expected to run on the UI thread only;
+	// inputMu makes that confinement explicit.
+	inputMu sync.Mutex
 
-var (
+	keyPressedTimes  [ui.KeyMax + 1]ui.InputTime
+	keyReleasedTimes [ui.KeyMax + 1]ui.InputTime
+	touches          = map[ui.TouchID]position{}
+
+	// capsLock and numLock stay unknown until a physical keyboard reports them.
+	capsLock ui.LockKeyState
+	numLock  ui.LockKeyState
+
 	touchSlice []ui.TouchForInput
 )
 
+// setKeyReleased records a key release. The release of a key that is not down
+// is ignored: the game never saw the key pressed.
+//
+// setKeyReleased must be called with inputMu held.
+func setKeyReleased(key ui.Key) {
+	if keyPressedTimes[key] <= keyReleasedTimes[key] {
+		return
+	}
+	keyReleasedTimes[key] = ui.Get().InputTime()
+}
+
+// updateInput copies the guarded state to the platform input state.
+//
+// updateInput must be called with inputMu held.
 func updateInput(runes []rune) {
 	touchSlice = touchSlice[:0]
 	for id, position := range touches {
 		touchSlice = append(touchSlice, ui.TouchForInput{
 			ID: id,
-			X:  float64(position.x),
-			Y:  float64(position.y),
+			X:  position.x,
+			Y:  position.y,
 		})
 	}
 
-	ui.Get().UpdateInput(keys, runes, touchSlice)
+	ui.Get().UpdateInput(keyPressedTimes, keyReleasedTimes, runes, touchSlice, capsLock, numLock)
 }

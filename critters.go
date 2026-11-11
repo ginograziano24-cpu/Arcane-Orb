@@ -210,14 +210,13 @@ func (L *Level) popCritter(c *Critter) {
 		L.gainGold(8, c.X, c.Z, true)
 		L.dropPower(c.X, c.Z, true)
 		L.text(V3{c.X, 1.6, c.Z}, "LUCKY!", color.RGBA{255, 220, 90, 255}, true)
-		g.snd.Play("coinbig")
-		g.snd.PlayVol("pw", 0.7)
+		g.snd.Play("lucky")
 	} else {
 		L.gainGold(3, c.X, c.Z, true)
 		if L.rng.Float64() < 0.3 {
 			L.dropPower(c.X, c.Z, true)
 		}
-		g.snd.Play("coinbig")
+		g.snd.Play("shoo")
 	}
 	L.critters++
 }

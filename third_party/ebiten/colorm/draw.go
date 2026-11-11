@@ -16,7 +16,7 @@ package colorm
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/internal/builtinshader"
+	"github.com/hajimehoshi/ebiten/v2/internal/colormshader"
 )
 
 // DrawImageOptions represents options for DrawImage.
@@ -24,6 +24,15 @@ type DrawImageOptions struct {
 	// GeoM is a geometry matrix to draw.
 	// The default (zero) value is identity, which draws the image at (0, 0).
 	GeoM ebiten.GeoM
+
+	// ColorScale is a scale of color.
+	//
+	// ColorScale is slightly different from colorm.ColorM's Scale in terms of alphas.
+	// ColorScale is applied to premultiplied-alpha colors, while colorm.ColorM is applied to straight-alpha colors.
+	// Thus, ColorM.Scale(r, g, b, a) equals to ColorScale.Scale(r*a, g*a, b*a, a).
+	//
+	// The default (zero) value is identity, which is (1, 1, 1, 1).
+	ColorScale ebiten.ColorScale
 
 	// Blend is a blending way of the source color and the destination color.
 	// The default (zero) value is the regular alpha blending.
@@ -44,11 +53,12 @@ func DrawImage(dst, src *ebiten.Image, colorM ColorM, op *DrawImageOptions) {
 
 	opShader := &ebiten.DrawRectShaderOptions{}
 	opShader.GeoM = op.GeoM
+	opShader.ColorScale = op.ColorScale
 	opShader.CompositeMode = ebiten.CompositeModeCustom
 	opShader.Blend = op.Blend
 	opShader.Uniforms = uniforms(colorM)
 	opShader.Images[0] = src
-	s := builtinShader(builtinshader.Filter(op.Filter), builtinshader.AddressUnsafe)
+	s := builtinShader(colormshader.Filter(op.Filter), colormshader.AddressUnsafe)
 	dst.DrawRectShader(src.Bounds().Dx(), src.Bounds().Dy(), s, opShader)
 }
 
@@ -72,11 +82,13 @@ type DrawTrianglesOptions struct {
 
 	// FillRule indicates the rule how an overlapped region is rendered.
 	//
-	// The rules FileRuleNonZero and FillRuleEvenOdd are useful when you want to render a complex polygon.
+	// The rules FillRuleNonZero and FillRuleEvenOdd are useful when you want to render a complex polygon.
 	// A complex polygon is a non-convex polygon like a concave polygon, a polygon with holes, or a self-intersecting polygon.
 	// See examples/vector for actual usages.
 	//
 	// The default (zero) value is ebiten.FillRuleFillAll.
+	//
+	// Deprecated: as of v2.9.
 	FillRule ebiten.FillRule
 
 	// AntiAlias indicates whether the rendering uses anti-alias or not.
@@ -86,6 +98,8 @@ type DrawTrianglesOptions struct {
 	// Use the build tag `ebitenginedebug` to check the number of draw calls if you care.
 	//
 	// The default (zero) value is false.
+	//
+	// Deprecated: as of v2.9.
 	AntiAlias bool
 }
 
@@ -115,6 +129,6 @@ func DrawTriangles(dst *ebiten.Image, vertices []ebiten.Vertex, indices []uint16
 	opShader.AntiAlias = op.AntiAlias
 	opShader.Uniforms = uniforms(colorM)
 	opShader.Images[0] = img
-	s := builtinShader(builtinshader.Filter(op.Filter), builtinshader.Address(op.Address))
+	s := builtinShader(colormshader.Filter(op.Filter), colormshader.Address(op.Address))
 	dst.DrawTrianglesShader(vertices, indices, s, opShader)
 }

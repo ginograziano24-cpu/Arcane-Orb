@@ -16,7 +16,6 @@ package ui
 
 import (
 	"math"
-	"strings"
 	"syscall/js"
 	"unicode"
 )
@@ -36,6 +35,9 @@ var (
 	stringTouchstart = js.ValueOf("touchstart")
 	stringTouchend   = js.ValueOf("touchend")
 	stringTouchmove  = js.ValueOf("touchmove")
+
+	stringCapsLock = js.ValueOf("CapsLock")
+	stringNumLock  = js.ValueOf("NumLock")
 )
 
 type touchInClient struct {
@@ -63,93 +65,84 @@ var codeToMouseButton = map[int]MouseButton{
 	4: MouseButton4,
 }
 
-func eventToKeys(e js.Value) (key0, key1 Key, fromKeyProperty bool) {
+func eventToKeys(e js.Value) (key0, key1 Key) {
 	id := jsCodeToID(e.Get("code"))
-
-	// On mobile browsers, treat enter key as if this is from a `key` property.
-	if IsVirtualKeyboard() && id == KeyEnter {
-		return KeyEnter, -1, true
-	}
 	if id >= 0 {
-		return id, -1, false
+		return id, -1
 	}
 
 	// With a virtual keyboard on mobile devices, e.code is empty. Use a 'key' property instead (#2898).
 	key := e.Get("key")
 
-	// The key property doesn't distinghlish between left and right modifier keys.
+	// The key property doesn't distinguish between left and right modifier keys.
 	// Let's assume both keys are pressed.
 	switch {
 	case key.Equal(stringAlt):
-		return KeyAltLeft, KeyAltRight, true
+		return KeyAltLeft, KeyAltRight
 	case key.Equal(stringControl):
-		return KeyControlLeft, KeyControlRight, true
+		return KeyControlLeft, KeyControlRight
 	case key.Equal(stringMeta):
-		return KeyMetaLeft, KeyMetaRight, true
+		return KeyMetaLeft, KeyMetaRight
 	case key.Equal(stringShift):
-		return KeyShiftLeft, KeyShiftRight, true
+		return KeyShiftLeft, KeyShiftRight
 	}
 
 	for uiKey, jsKey := range uiKeyToJSKey {
 		if key.Equal(jsKey) {
-			return uiKey, -1, true
+			return uiKey, -1
 		}
 	}
 
-	return -1, -1, false
+	return -1, -1
 }
 
 func (u *UserInterface) keyDown(event js.Value) {
-	key0, key1, fromKeyProperty := eventToKeys(event)
+	// Ignore key repeats for now.
+	if event.Get("repeat").Bool() {
+		return
+	}
+	now := u.InputTime()
+	key0, key1 := eventToKeys(event)
 	if key0 >= 0 {
-		// If the key value comes from a 'key' property, a 'keydown' and 'keyup' event might be fired too quickly.
-		// Record the key duration to prevent immediate resetting a key state by a 'keyup' event.
-		// Resetting a key state is delayed until the next tick. See updateInputState.
-		if fromKeyProperty && !u.inputState.KeyPressed[key0] {
-			if u.keyDurationsByKeyProperty == nil {
-				u.keyDurationsByKeyProperty = map[Key]int{}
-			}
-			u.keyDurationsByKeyProperty[key0] = 1
-		}
-		u.inputState.KeyPressed[key0] = true
+		u.inputState.setKeyPressed(key0, now)
 	}
 	if key1 >= 0 {
-		if fromKeyProperty && !u.inputState.KeyPressed[key1] {
-			if u.keyDurationsByKeyProperty == nil {
-				u.keyDurationsByKeyProperty = map[Key]int{}
-			}
-			u.keyDurationsByKeyProperty[key1] = 1
-		}
-		u.inputState.KeyPressed[key1] = true
+		u.inputState.setKeyPressed(key1, now)
 	}
 }
 
 func (u *UserInterface) keyUp(event js.Value) {
-	key0, key1, fromKeyProperty := eventToKeys(event)
+	now := u.InputTime()
+	key0, key1 := eventToKeys(event)
 	if key0 >= 0 {
-		if !fromKeyProperty || u.keyDurationsByKeyProperty[key0] == 0 {
-			u.inputState.KeyPressed[key0] = false
-		}
+		u.inputState.setKeyReleased(key0, now)
 	}
 	if key1 >= 0 {
-		if !fromKeyProperty || u.keyDurationsByKeyProperty[key1] == 0 {
-			u.inputState.KeyPressed[key1] = false
-		}
+		u.inputState.setKeyReleased(key1, now)
 	}
 }
 
 func (u *UserInterface) mouseDown(code int) {
-	u.inputState.MouseButtonPressed[codeToMouseButton[code]] = true
+	b, ok := codeToMouseButton[code]
+	if !ok {
+		return
+	}
+	u.inputState.setMouseButtonPressed(b, u.InputTime())
 }
 
 func (u *UserInterface) mouseUp(code int) {
-	u.inputState.MouseButtonPressed[codeToMouseButton[code]] = false
+	b, ok := codeToMouseButton[code]
+	if !ok {
+		return
+	}
+	u.inputState.setMouseButtonReleased(b, u.InputTime())
 }
 
 func (u *UserInterface) updateInputFromEvent(e js.Value) error {
 	// Avoid using js.Value.String() as String creates a Uint8Array via a TextEncoder and causes a heavy
 	// overhead (#1437).
-	switch t := e.Get("type"); {
+	t := e.Get("type")
+	switch {
 	case t.Equal(stringKeydown):
 		if str := e.Get("key").String(); isKeyString(str) {
 			for _, r := range str {
@@ -169,10 +162,19 @@ func (u *UserInterface) updateInputFromEvent(e js.Value) error {
 		u.setMouseCursorFromEvent(e)
 	case t.Equal(stringWheel):
 		// TODO: What if e.deltaMode is not DOM_DELTA_PIXEL?
-		u.inputState.WheelX = -e.Get("deltaX").Float()
-		u.inputState.WheelY = -e.Get("deltaY").Float()
+		u.inputState.WheelX += -e.Get("deltaX").Float()
+		u.inputState.WheelY += -e.Get("deltaY").Float()
 	case t.Equal(stringTouchstart) || t.Equal(stringTouchend) || t.Equal(stringTouchmove):
 		u.updateTouchesFromEvent(e)
+	}
+
+	// A browser reports the lock key states only as part of an input event. KeyboardEvent and
+	// MouseEvent carry them; TouchEvent does not.
+	switch {
+	case t.Equal(stringKeydown), t.Equal(stringKeyup), t.Equal(stringMousedown), t.Equal(stringMouseup),
+		t.Equal(stringMousemove), t.Equal(stringWheel):
+		u.inputState.CapsLock = NewLockKeyStateFromBool(e.Call("getModifierState", stringCapsLock).Bool())
+		u.inputState.NumLock = NewLockKeyStateFromBool(e.Call("getModifierState", stringNumLock).Bool())
 	}
 
 	u.forceUpdateOnMinimumFPSMode()
@@ -245,10 +247,12 @@ func isKeyString(str string) bool {
 }
 
 var (
-	jsKeyboard                     = js.Global().Get("navigator").Get("keyboard")
-	jsKeyboardGetLayoutMap         js.Value
-	jsKeyboardGetLayoutMapCh       chan js.Value
-	jsKeyboardGetLayoutMapCallback js.Func
+	jsKeyboard                          = js.Global().Get("navigator").Get("keyboard")
+	jsKeyboardLayoutAvailable           bool
+	jsKeyboardGetLayoutMap              js.Value
+	jsKeyboardGetLayoutMapCh            chan js.Value
+	jsKeyboardGetLayoutMapThenCallback  js.Func
+	jsKeyboardGetLayoutMapCatchCallback js.Func
 )
 
 func init() {
@@ -258,10 +262,18 @@ func init() {
 
 	jsKeyboardGetLayoutMap = jsKeyboard.Get("getLayoutMap").Call("bind", jsKeyboard)
 	jsKeyboardGetLayoutMapCh = make(chan js.Value, 1)
-	jsKeyboardGetLayoutMapCallback = js.FuncOf(func(this js.Value, args []js.Value) any {
+	jsKeyboardGetLayoutMapThenCallback = js.FuncOf(func(this js.Value, args []js.Value) any {
 		jsKeyboardGetLayoutMapCh <- args[0]
 		return nil
 	})
+	jsKeyboardGetLayoutMapCatchCallback = js.FuncOf(func(this js.Value, args []js.Value) any {
+		err := args[0]
+		js.Global().Get("console").Call("error", "ui: navigator.keyboard.getLayoutMap() failed:", err)
+		jsKeyboardLayoutAvailable = false
+		jsKeyboardGetLayoutMapCh <- js.Undefined()
+		return nil
+	})
+	jsKeyboardLayoutAvailable = true
 }
 
 func (u *UserInterface) KeyName(key Key) string {
@@ -269,16 +281,19 @@ func (u *UserInterface) KeyName(key Key) string {
 		return ""
 	}
 
+	if !jsKeyboardLayoutAvailable {
+		return ""
+	}
+
 	// keyboardLayoutMap is reset every tick.
 	if u.keyboardLayoutMap.IsUndefined() {
-		if !jsKeyboard.Truthy() {
-			return ""
-		}
-
 		// Invoke getLayoutMap every tick to detect the keyboard change.
 		// TODO: Calling this every tick might be inefficient. Is there a way to detect a keyboard change?
-		jsKeyboardGetLayoutMap.Invoke().Call("then", jsKeyboardGetLayoutMapCallback)
+		jsKeyboardGetLayoutMap.Invoke().Call("then", jsKeyboardGetLayoutMapThenCallback).Call("catch", jsKeyboardGetLayoutMapCatchCallback)
 		u.keyboardLayoutMap = <-jsKeyboardGetLayoutMapCh
+	}
+	if u.keyboardLayoutMap.IsUndefined() {
+		return ""
 	}
 
 	n := u.keyboardLayoutMap.Call("get", uiKeyToJSCode[key])
@@ -300,18 +315,8 @@ func (u *UserInterface) saveCursorPosition() {
 	u.savedOutsideHeight = h
 }
 
-func (u *UserInterface) updateInputState() error {
-	// Reset the key state if a key is pressed by a 'key' property and the key's duration is big enough.
-	for key, duration := range u.keyDurationsByKeyProperty {
-		if duration >= 2 {
-			delete(u.keyDurationsByKeyProperty, key)
-			u.inputState.KeyPressed[key] = false
-			continue
-		}
-		u.keyDurationsByKeyProperty[key]++
-	}
-
-	s := theMonitor.DeviceScaleFactor()
+func (u *UserInterface) updateInputStateForFrame(deviceScaleFactor float64) error {
+	s := deviceScaleFactor
 
 	if !math.IsNaN(u.savedCursorX) && !math.IsNaN(u.savedCursorY) {
 		// If savedCursorX and savedCursorY are valid values, the cursor is saved just before entering or exiting from fullscreen.
@@ -352,8 +357,8 @@ func (u *UserInterface) updateInputState() error {
 		x, y := u.context.clientPositionToLogicalPosition(t.x, t.y, s)
 		u.inputState.Touches = append(u.inputState.Touches, Touch{
 			ID: t.id,
-			X:  int(x),
-			Y:  int(y),
+			X:  x,
+			Y:  y,
 		})
 	}
 
@@ -421,26 +426,4 @@ var uiKeyToJSKey = map[Key]js.Value{
 	KeyNumpad7:        js.ValueOf("7"),
 	KeyNumpad8:        js.ValueOf("8"),
 	KeyNumpad9:        js.ValueOf("9"),
-}
-
-func (i *InputState) resetForBlur() {
-	for j := range i.KeyPressed {
-		i.KeyPressed[j] = false
-	}
-	for j := range i.MouseButtonPressed {
-		i.MouseButtonPressed[j] = false
-	}
-	i.Touches = i.Touches[:0]
-}
-
-func IsVirtualKeyboard() bool {
-	// Detect a virtual keyboard by the user agent.
-	// Note that this is not a correct way to detect a virtual keyboard.
-	// In the future, we should use the `navigator.virtualKeyboard` API.
-	// https://developer.mozilla.org/en-US/docs/Web/API/Navigator/virtualKeyboard
-	ua := js.Global().Get("navigator").Get("userAgent").String()
-	if strings.Contains(ua, "Android") || strings.Contains(ua, "iPhone") || strings.Contains(ua, "iPad") || strings.Contains(ua, "iPod") {
-		return true
-	}
-	return false
 }

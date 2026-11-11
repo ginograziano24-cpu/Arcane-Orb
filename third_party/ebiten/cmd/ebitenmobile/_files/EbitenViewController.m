@@ -20,10 +20,10 @@
 
 #import "Ebitenmobileview.objc.h"
 
-@interface {{.PrefixUpper}}EbitenViewController : UIViewController<EbitenmobileviewRenderer, EbitenmobileviewSetGameNotifier>
+@interface $Placeholder_PrefixUpper$EbitenViewController : UIViewController<EbitenmobileviewRenderer, EbitenmobileviewSetGameNotifier>
 @end
 
-@implementation {{.PrefixUpper}}EbitenViewController {
+@implementation $Placeholder_PrefixUpper$EbitenViewController {
   UIView*        metalView_;
   GLKView*       glkView_;
   bool           started_;
@@ -105,19 +105,22 @@
     return;
   }
 
+  UIView* gameView = nil;
   if (isGL) {
     self.glkView.delegate = (id<GLKViewDelegate>)(self);
-    [self.view addSubview: self.glkView];
+    gameView = self.glkView;
   } else {
-    [self.view addSubview: self.metalView];
-    EbitenmobileviewSetUIView((uintptr_t)(self.metalView), &err);
-    if (err != nil) {
-      [self onErrorOnGameUpdate:err];
-      @synchronized(self) {
-        error_ = true;
-      }
-      return;
+    gameView = self.metalView;
+  }
+  [self.view addSubview: gameView];
+
+  EbitenmobileviewSetUIView((uintptr_t)(gameView), &err);
+  if (err != nil) {
+    [self onErrorOnGameUpdate:err];
+    @synchronized(self) {
+      error_ = true;
     }
+    return;
   }
 
   renderThread_ = [[NSThread alloc] initWithTarget:self
@@ -142,6 +145,18 @@
 
   if (isGL) {
     EAGLContext *context = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
+    if (context == nil) {
+      NSError* ctxErr = [NSError errorWithDomain:@"Ebitengine"
+                                            code:0
+                                        userInfo:@{NSLocalizedDescriptionKey: @"OpenGL ES 3 is not supported"}];
+      [self performSelectorOnMainThread:@selector(onErrorOnGameUpdate:)
+                             withObject:ctxErr
+                          waitUntilDone:NO];
+      @synchronized(self) {
+        error_ = true;
+      }
+      return;
+    }
     [self glkView].context = context;
 
     [EAGLContext setCurrentContext:context];
@@ -319,17 +334,27 @@
       if (key == nil) {
         continue;
       }
-      EbitenmobileviewUpdatePressesOnIOS(press.phase, key.keyCode, key.characters);
+      EbitenmobileviewUpdatePressesOnIOS(press.phase, key.keyCode, key.characters, key.modifierFlags);
     }
   }
 }
 
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
   [self updatePresses:presses];
+  // Let the system handle the presses too: swallowing them here would mark
+  // key presses as handled and starve the text-input system, which types
+  // hardware keys into the focused text view only for unhandled presses.
+  [super pressesBegan:presses withEvent:event];
 }
 
 - (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
   [self updatePresses:presses];
+  [super pressesEnded:presses withEvent:event];
+}
+
+- (void)pressesCancelled:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+  [self updatePresses:presses];
+  [super pressesCancelled:presses withEvent:event];
 }
 
 - (void)suspendGame {

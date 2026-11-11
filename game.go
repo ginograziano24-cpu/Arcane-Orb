@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"math"
 	"math/rand"
+	"runtime/trace"
 	"strings"
 	"time"
 
@@ -61,8 +63,10 @@ type shopItem struct {
 }
 
 type Game struct {
+	opening          *openingFilm
 	sideJobs         []func(*Batch) // drawWorld: the static parts built on their own goroutines
 	sideBatches      []*Batch
+	preHUD           string     // last class-selection portrait queued
 	preBoot          bool       // prefetchTick: the menus' images are queued
 	preKey           string     // prefetchTick: the run origin and act last queued for
 	pieceCost        [3]float64 // drawWorld: last frame's cost of the scenery, its dressing and the arena floor (beginPiece)
@@ -84,6 +88,7 @@ type Game struct {
 	post             *Post
 	titleCache       map[string]*ebiten.Image
 	lastDraw         time.Time
+	framePacer       framePacer
 
 	last       time.Time
 	lastMouseX int
@@ -145,6 +150,7 @@ type Game struct {
 
 	// HUD animation state
 	hudLevel     *Level
+	hudLocation  string
 	hudBoss      float64
 	hudGold      float64
 	goldPop      float64
@@ -183,12 +189,15 @@ type Game struct {
 	achScroll    float64
 	scrollSel    int // pad: selected scroll slot
 	hero         heroPortrait
-	challengeSel string // challenge picked on the Challenges screen
-	deferOverlay bool   // drawWorld leaves its 2D layer for a later pass
+	quips        quipState // the hero speech bubble (quips.go)
+	bgMuted      bool      // sound is silenced while the window is in the background
+	challengeSel string    // challenge picked on the Challenges screen
+	deferOverlay bool      // drawWorld leaves its 2D layer for a later pass
 	dynScale     float64
 	frameAvg     float64
 	dynT         float64
 	setTab       int
+	mapShowBuild bool
 	histScroll   float64
 	savedRun     *savedRun
 	savedChecked bool
@@ -266,6 +275,7 @@ func (g *Game) setState(s State) {
 	g.state = s
 	g.stateT = 0
 	if s == StMenu {
+		g.hudLevel, g.hudLocation = nil, ""
 		g.challengeSel = ""
 		g.savedRun, g.savedChecked = nil, false
 	}
@@ -330,6 +340,8 @@ func (g *Game) Update() error {
 		steamShutdown()
 		return ebiten.Termination
 	}
+	g.paceFrame()
+	g.updateBackgroundMute()
 	perfBegin(secUpdate)
 	defer perfEnd(secUpdate)
 	perfToggle()
@@ -342,7 +354,14 @@ func (g *Game) Update() error {
 	now := nowFn()
 	dt := now.Sub(g.last).Seconds()
 	g.last = now
+	if benchOn {
+		perf.cur.updateCount++
+		perf.cur.discardedUpdateSeconds += max(0, dt-1.0/30)
+	}
 	dt = math.Max(0, math.Min(dt, 1.0/30))
+	if benchOn {
+		perf.cur.updateSeconds += dt
+	}
 	if g.settings.FastAnim {
 		g.stateT += dt // screens play their entrances twice as fast
 	}
@@ -365,6 +384,10 @@ func (g *Game) Update() error {
 	g.ui.Click = inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
 	g.latchInput()
 	g.mouseHeld = ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
+	if g.opening != nil {
+		g.updateOpening(dt)
+		return nil
+	}
 	debugPre(g)
 	if g.updateCoach(dt) {
 		return nil // a first-time tip is up; everything waits
@@ -377,7 +400,7 @@ func (g *Game) Update() error {
 		if g.run == nil || g.state != StSettings || g.prevState == StMenu {
 			g.snd.SetTrack(3)
 		}
-		g.snd.SetIntensity(0.25)
+		g.snd.SetIntensity(0.25, dt)
 	default:
 		if g.run != nil {
 			t := g.run.AI()
@@ -392,9 +415,9 @@ func (g *Game) Update() error {
 			if g.level.Boss != nil {
 				v = math.Max(v, 0.8)
 			}
-			g.snd.SetIntensity(v)
+			g.snd.SetIntensity(v, dt)
 		} else {
-			g.snd.SetIntensity(0.1)
+			g.snd.SetIntensity(0.1, dt)
 		}
 	}
 
@@ -417,6 +440,13 @@ func (g *Game) Update() error {
 			}
 		}
 	case StLevel:
+		// alt-tabbing away mid-chamber pauses instead of quietly losing a
+		// life in the background (never in a duel, a benchmark or a scripted
+		// capture)
+		if g.duel == nil && bench == nil && inputHook == nil && !ebiten.IsFocused() && g.level != nil && g.level.gameOverT <= 0 {
+			g.setState(StPause)
+			return nil
+		}
 		if g.pausePressed() {
 			if g.duel != nil {
 				g.duel.menuOpen = !g.duel.menuOpen // a duel never pauses
@@ -447,6 +477,7 @@ func (g *Game) Update() error {
 			g.level.Update(dt*g.gameSpeed(), in)
 		}
 		g.updateHero(g.level, dt)
+		g.updateQuips(dt)
 		if L := g.level; g.state == StLevel && L.pendingPick > 0 && L.gameOverT <= 0 {
 			g.openCache()
 		}
@@ -730,6 +761,9 @@ func (g *Game) beginWorld() {
 func (g *Game) take(m *Mod) {
 	r := g.run
 	g.react(reactUpgrade)
+	if m.Rarity >= Legendary && !m.Curse {
+		g.queueQuip(quipLegendary) // said when play resumes
+	}
 	g.save.Seen[m.ID] = true
 	if m.Relic {
 		r.log("relic", m.Name, m.Icon)
@@ -737,9 +771,9 @@ func (g *Game) take(m *Mod) {
 		r.log("item", m.Name, m.Icon)
 	}
 	if m.Relic {
-		g.toastImg("Relic acquired", trJoin(m.Name, " — ", m.Desc), rarityColors[m.Rarity], modEmblem(m))
+		g.toastImg("A relic is yours!", trJoin(m.Name, " — ", m.Desc), rarityColors[m.Rarity], modEmblem(m))
 	} else {
-		g.toastImg("Upgrade gained", trJoin(m.Name, " — ", m.Desc), rarityColors[m.Rarity], modEmblem(m))
+		g.toastImg("Fresh upgrade!", trJoin(m.Name, " — ", m.Desc), rarityColors[m.Rarity], modEmblem(m))
 	}
 	if syn := r.Add(m.ID, &g.save); syn != "" {
 		for _, s := range synergies {
@@ -843,6 +877,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	defer g.guard("draw")
 	perfBegin(secDraw)
 	perfScreen = screen.Bounds().Size()
+	if trace.IsEnabled() {
+		defer trace.StartRegion(context.Background(), "game draw").End()
+	}
+	if g.state == StMenu && g.stateT > 0.5 && bench == nil {
+		g.warmShaders()
+	}
 	g.drawFiltered(screen, g.drawFrame)
 	perfEnd(secDraw)
 	g.drawPerf(screen)
@@ -866,6 +906,11 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 	g.ui.time += ddt
 	g.ui.beginNav(g.navLatch)
 	g.drawnSince = true
+	if g.opening != nil {
+		g.drawOpening(screen)
+		captureAfterDraw(g, screen)
+		return
+	}
 	act := 1
 	if g.run != nil {
 		act = g.run.Act
@@ -1082,6 +1127,12 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 	}{}
 	if g.savedRun == nil && !g.savedChecked {
 		g.savedRun, g.savedChecked = loadSavedRun(), true
+		if sr := g.savedRun; sr != nil {
+			prefetch("hud/" + sr.Arch + "_rest")
+			if sr.Act > 0 {
+				prefetchMapBackdrop(sr.Act)
+			}
+		}
 	}
 	if sr := g.savedRun; sr != nil {
 		lbl := fmt.Sprintf("Continue  ·  %s, Act %d", archByIDOK(sr.Arch).Name, sr.Act)
@@ -1162,6 +1213,9 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 		u.textOutlined(s, fmt.Sprintf("Today's daily best: %d", best), fBold, 17, ox, 1038, cGold, alignCenter)
 	}
 	u.text(s, gameVersion, fReg, 16, 1890, 1048, rgba(120, 110, 140, 255), alignRight)
+	if u.button(s, "watchopening", "Watch opening", 1000, 890, 580, 65, cGold, true) {
+		g.startOpening()
+	}
 }
 
 // archPreview draws a paddle silhouette and stat meters on a paddle card.
@@ -1227,6 +1281,11 @@ func (g *Game) drawSeed(s *ebiten.Image) {
 }
 
 func (g *Game) runPanel(s *ebiten.Image) {
+	g.drawRunSummary(s)
+	g.drawRunBuild(s, 30)
+}
+
+func (g *Game) drawRunSummary(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
 	u.panel(s, 30, 30, 360, 330, 0.85)
@@ -1251,10 +1310,14 @@ func (g *Game) runPanel(s *ebiten.Image) {
 	if len(r.Active) > 0 {
 		u.text(s, "Synergies: "+strings.Join(r.Active, ", "), fBold, 19, 50, 308, cAcc, alignLeft)
 	}
-	// inventory
-	u.panel(s, 1530, 30, 360, 1020, 0.85)
-	u.text(s, "Build", fRune, 34, 1550, 42, cGold, alignLeft)
-	y := 100.0
+}
+
+func (g *Game) drawRunBuild(s *ebiten.Image, top float64) {
+	u := g.ui
+	r := g.run
+	u.panel(s, 1530, top, 360, 1050-top, 0.85)
+	u.text(s, "Build", fRune, 34, 1550, top+12, cGold, alignLeft)
+	y := top + 70
 	if ci, ok := classInfo[r.Arch.ID]; ok {
 		fillPath(s, boxPath(u.X(1546), u.Y(y-6), 328*u.S, 58*u.S, 8*u.S, false), ca(darken(ci.Col, 0.3), 0.5), ca(darken(ci.Col, 0.15), 0.3), vgrad(u.Y(y-6), u.Y(y+52)), false)
 		u.drawEmblem(s, glyphImage(ci.Glyph, ci.Col), 1574, y+23, 36, 1)
@@ -1270,7 +1333,7 @@ func (g *Game) runPanel(s *ebiten.Image) {
 		y += 70
 	}
 	if len(r.Order) == 0 && len(r.Fused) == 0 {
-		u.paragraph(s, "Upgrades, relics and fusions you collect will gather here.", fReg, 18, 1710, y+20, 300, ca(cDim, 0.7), alignCenter)
+		u.paragraph(s, "Every upgrade, relic and fusion you find gets a page here. It's a bit empty for now.", fReg, 18, 1710, y+20, 300, ca(cDim, 0.7), alignCenter)
 	}
 	for _, id := range r.Fused {
 		f := fusionByID[id]
@@ -1309,13 +1372,12 @@ func (g *Game) runPanel(s *ebiten.Image) {
 func (g *Game) drawMap(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
-	g.runPanel(s)
+	g.drawRunSummary(s)
 	title := biomes[r.AI()].Name
 	if l := r.Loop(); l > 0 {
 		title = fmt.Sprintf("Endless %d  ·  %s", l, title)
 	}
-	// a dark pool behind the chart so routes read over any painting
-	drawSprite(s, sprSoft, u.X(960-640), u.Y(40), 1280*u.S, 1060*u.S, rgba(0, 0, 0, 175), false)
+	g.drawChamberProjection(s)
 	u.heading(s, title, 56, 30, cGold, 1)
 	pos := func(n *MapNode) (float64, float64) {
 		x := 960 + (float64(n.Lane)-1.5)*230
@@ -1325,25 +1387,31 @@ func (g *Game) drawMap(s *ebiten.Image) {
 		y := 960 - float64(n.Row)*112
 		return x, y
 	}
+	previewIndex, previewReach := -1, false
 	reach := map[int]bool{}
 	for _, i := range r.Reachable() {
 		reach[i] = true
+		if previewIndex < 0 {
+			previewIndex, previewReach = i, true
+		}
+	}
+	if r.Cur < 0 {
+		// The projector is the start of a fresh route. Only legal
+		// entry seals receive a live ley line.
+		for i, n := range r.Map.Nodes {
+			if reach[i] {
+				x, y := pos(n)
+				g.drawChamberLeyLine(s, 960, 1004, x, y, 35)
+			}
+		}
 	}
 	for i, n := range r.Map.Nodes {
 		x0, y0 := pos(n)
 		for _, j := range n.Next {
 			x1, y1 := pos(r.Map.Nodes[j])
 			switch {
-			case (i == r.Cur && reach[j]) || (r.Cur < 0 && false):
-				c := rgba(255, 222, 140, 255)
-				strokeLine(s, u.X(x0), u.Y(y0), u.X(x1), u.Y(y1), 12*u.S, prem(c, 0.18))
-				strokeLine(s, u.X(x0), u.Y(y0), u.X(x1), u.Y(y1), 4*u.S, prem(c, 0.95))
-				// motes of light flowing along the open ley line
-				for k := 0; k < 3; k++ {
-					f := math.Mod(g.stateT*0.6+float64(k)/3, 1)
-					px, py := x0+(x1-x0)*f, y0+(y1-y0)*f
-					drawSprite(s, sprSoft, u.X(px-14), u.Y(py-14), 28*u.S, 28*u.S, ca(c, 0.9*math.Sin(f*math.Pi)), true)
-				}
+			case i == r.Cur && reach[j]:
+				g.drawChamberLeyLine(s, x0, y0, x1, y1, 0)
 			case n.Visited && r.Map.Nodes[j].Visited:
 				strokeLine(s, u.X(x0), u.Y(y0), u.X(x1), u.Y(y1), 4*u.S, prem(u.theme().Accent, 0.85))
 			default:
@@ -1362,6 +1430,7 @@ func (g *Game) drawMap(s *ebiten.Image) {
 		if n.Type == NBoss {
 			rad = 52
 		}
+		g.drawChamberSeal(s, n, x, y, rad, reach[i])
 		c := nodeColors[n.Type]
 		if !reach[i] && !n.Visited {
 			c = darken(c, 0.5)
@@ -1379,7 +1448,11 @@ func (g *Game) drawMap(s *ebiten.Image) {
 				strokeLine(s, u.X(x+math.Cos(an)*r0), u.Y(y+math.Sin(an)*r0), u.X(x+math.Cos(an)*r1), u.Y(y+math.Sin(an)*r1), 2*u.S, prem(lighten(c, 0.4), 0.8))
 			}
 		}
-		if medal := uiIcon("medal_" + nodeKind[n.Type]); medal != nil {
+		var medal *ebiten.Image
+		if n.Visited {
+			medal = uiIcon("medal_" + nodeKind[n.Type])
+		}
+		if medal != nil {
 			// the rendered medal: lit when you can go there, dimmed once
 			// visited, sunk in shadow further along the path
 			hk := u.anim("nodehv"+itoa(i), reach[i] && math.Hypot(u.MX-x, u.MY-y) < rad*1.1, 10)
@@ -1408,11 +1481,11 @@ func (g *Game) drawMap(s *ebiten.Image) {
 				strokePath(s, circlePath(u.X(x), u.Y(y+bob), (rad+14)*u.S), 3*u.S, ca(cWhite, 0.9), false)
 			}
 		} else {
-			u.medallion(s, x, y, rad, c)
+			// The unvisited chamber is a projected seal, not a solid coin.
 			if i == r.Cur {
 				strokePath(s, circlePath(u.X(x), u.Y(y), (rad+13)*u.S), 3*u.S, ca(cWhite, 0.9), false)
 			}
-			g.nodeIcon(s, n.Type, x, y, rad*1.1)
+			g.drawChamberGlyph(s, n, x, y, rad, reach[i])
 		}
 		if o := omenByID[n.Omen]; o != nil && !n.Visited {
 			bx, by := x+rad*0.8, y-rad*0.8
@@ -1430,6 +1503,7 @@ func (g *Game) drawMap(s *ebiten.Image) {
 			hv = math.Hypot(u.MX-x, u.MY-y) < rad
 		}
 		if hv {
+			previewIndex, previewReach = i, reach[i]
 			g.tooltip = nodeNames[n.Type]
 			if o := omenByID[n.Omen]; o != nil && !n.Visited {
 				g.tooltip = trJoin(nodeNames[n.Type], "  ·  ", "Omen: ", o.Name, " — ", o.Desc)
@@ -1439,23 +1513,19 @@ func (g *Game) drawMap(s *ebiten.Image) {
 			}
 		}
 		if clk {
-			g.snd.Play("click")
+			g.snd.Play("seal")
 			g.enterNode(i)
 			return
 		}
 	}
+	g.drawMapSidePanel(s, previewIndex, previewReach)
 	// legend
 	ly := 380.0
 	u.panel(s, 30, ly, 360, 330, 0.85)
 	u.text(s, "Legend", fBold, 24, 50, ly+16, cGold, alignLeft)
 	for i, nm := range nodeNames {
 		yy := ly + 60 + float64(i)*36
-		if medal := uiIcon("medal_" + nodeKind[NodeType(i)]); medal != nil {
-			g.drawUIIconTint(s, medal, 68, yy+12, 34, 1, 1, 1, 1)
-		} else {
-			u.medallion(s, 68, yy+12, 12, nodeColors[i])
-			g.nodeIcon(s, NodeType(i), 68, yy+12, 15)
-		}
+		g.drawChamberGlyph(s, &MapNode{Type: NodeType(i)}, 68, yy+12, 18, true)
 		u.text(s, nm, fReg, 21, 94, yy, cWhite, alignLeft)
 	}
 	if u.button(s, "mapsave", "Save & quit", 60, 920, 300, 56, cAcc, true) {
@@ -1546,6 +1616,18 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 		kind = "RELIC"
 	}
 	u.text(s, kind+"   ·   "+strings.ToUpper(rarityNames[m.Rarity]), fBold, 16, x+w/2, y+24, lighten(rc, 0.15), alignCenter)
+	if h >= 520 {
+		owned := g.run.Mods[m.ID]
+		stack := ""
+		if m.Max > 0 {
+			stack = "Owned " + itoa(owned) + " / " + itoa(m.Max)
+		} else if owned > 0 {
+			stack = "Owned " + itoa(owned)
+		}
+		if stack != "" {
+			u.text(s, stack, fBold, 16, x+w/2, y+48, cDim, alignCenter)
+		}
+	}
 	// emblem medallion (compact on short cards)
 	ey0, er, nameTop := 130.0, 1.0, 212.0
 	switch {
@@ -1794,7 +1876,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		}
 		label := fmt.Sprintf("Regain a life   ·   %d gold", it.Price)
 		if it.Sold {
-			label = "Life regained"
+			label = "Patched up!"
 		} else if r.Lives >= r.maxLives() {
 			label = "Lives full"
 		}
@@ -1952,12 +2034,12 @@ func (g *Game) drawRest(s *ebiten.Image) {
 	if r.Lives < r.maxLives() {
 		if u.button(s, "rest", "Rest  (regain a life)", 380, 380, 560, 76, cGreen, true) {
 			r.Lives++
-			g.snd.PlayKeyed("heal")
+			g.snd.PlayKeyed("life")
 			g.setState(StMap)
 		}
 	} else if u.button(s, "rest", "Rest  (two barriers in the next chamber)", 380, 380, 560, 76, cGreen, true) {
 		r.NextBarrier += 2
-		g.snd.PlayKeyed("heal")
+		g.snd.Play("pw." + itoa(int(PBarrier)) + "." + itoa(g.snd.Key))
 		g.setState(StMap)
 	}
 	if u.button(s, "train", "Train  (a new Uncommon+ upgrade)", 980, 380, 560, 76, cAcc, true) {
@@ -1982,7 +2064,7 @@ func (g *Game) drawRest(s *ebiten.Image) {
 	}
 	if u.button(s, "cleanse", lbl, 980, 476, 560, 76, tagColors["curse"], nc > 0) {
 		if c := g.cleanse(); c != nil {
-			g.toastImg("Curse lifted", trJoin(c.Name, " fades from your soul."), cGreen, modEmblem(c))
+			g.toastImg("Curse broken!", trJoin(c.Name, " fades from your soul."), cGreen, modEmblem(c))
 		}
 		g.setState(StMap)
 	}

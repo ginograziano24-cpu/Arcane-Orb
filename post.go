@@ -124,6 +124,7 @@ func Fragment(dst vec4, src vec2, color vec4) vec4 {
 `
 
 type Post struct {
+	inputs              *postUniformInputs
 	upscale             *ebiten.Shader
 	graded              *ebiten.Image
 	bright, blur, grade *ebiten.Shader
@@ -131,6 +132,35 @@ type Post struct {
 	small, small2       *ebiten.Image
 	bloomFull           *ebiten.Image
 	ok                  bool
+}
+
+// Draw shader calls copy uniform values immediately. Keep the maps and their
+// backing float slices per Post rather than boxing/allocating them every frame.
+// The scalar slices are accepted as one-element uniforms by the local engine.
+type postUniformInputs struct {
+	bright, horizontal, vertical, grade, upscale map[string]any
+	scalars                                      [4]float32
+	tint, lift                                   [3]float32
+	sharp                                        [1]float32
+	xdir, ydir                                   [2]float32
+}
+
+func (p *Post) shaderInputs() *postUniformInputs {
+	if p.inputs == nil {
+		u := &postUniformInputs{sharp: [1]float32{.85}, xdir: [2]float32{1.5, 0}, ydir: [2]float32{0, 1.5}}
+		u.bright = map[string]any{"Threshold": u.scalars[0:1]}
+		u.horizontal = map[string]any{"Dir": u.xdir[:]}
+		u.vertical = map[string]any{"Dir": u.ydir[:]}
+		u.grade = map[string]any{"Tint": u.tint[:], "Lift": u.lift[:], "Saturation": u.scalars[1:2], "Contrast": u.scalars[2:3], "Vignette": u.scalars[3:4]}
+		u.upscale = map[string]any{"Sharp": u.sharp[:]}
+		p.inputs = u
+	}
+	return p.inputs
+}
+
+func (u *postUniformInputs) setGrade(g Grade) {
+	u.scalars = [4]float32{g.Threshold, g.Saturation, g.Contrast, g.Vig}
+	u.tint, u.lift = g.Tint, g.Lift
 }
 
 type Grade struct {
@@ -214,7 +244,7 @@ func (p *Post) upscaleTo(dst, src *ebiten.Image) {
 		{DstX: dw, DstY: dh, SrcX: sw, SrcY: sh, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1},
 		{DstX: 0, DstY: dh, SrcX: 0, SrcY: sh, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1},
 	}
-	op := &ebiten.DrawTrianglesShaderOptions{Images: [4]*ebiten.Image{src}, Uniforms: map[string]any{"Sharp": float32(0.85)}}
+	op := &ebiten.DrawTrianglesShaderOptions{Images: [4]*ebiten.Image{src}, Uniforms: p.shaderInputs().upscale}
 	dst.DrawTrianglesShader(vs, []uint16{0, 1, 2, 0, 2, 3}, p.upscale, op)
 }
 
@@ -223,6 +253,8 @@ func (p *Post) applyAt(dst *ebiten.Image, g Grade, enabled bool) {
 		dst.DrawImage(p.scene, nil)
 		return
 	}
+	u := p.shaderInputs()
+	u.setGrade(g)
 	w, h := p.scene.Bounds().Dx(), p.scene.Bounds().Dy()
 	sw, sh := p.small.Bounds().Dx(), p.small.Bounds().Dy()
 	// downsample
@@ -233,15 +265,15 @@ func (p *Post) applyAt(dst *ebiten.Image, g Grade, enabled bool) {
 	// bright pass
 	p.small.Clear()
 	p.small.DrawRectShader(sw, sh, p.bright, &ebiten.DrawRectShaderOptions{
-		Images: [4]*ebiten.Image{p.small2}, Uniforms: map[string]any{"Threshold": g.Threshold}})
+		Images: [4]*ebiten.Image{p.small2}, Uniforms: u.bright})
 	// blur (two separable passes, twice)
 	for i := 0; i < 2; i++ {
 		p.small2.Clear()
 		p.small2.DrawRectShader(sw, sh, p.blur, &ebiten.DrawRectShaderOptions{
-			Images: [4]*ebiten.Image{p.small}, Uniforms: map[string]any{"Dir": []float32{1.5, 0}}})
+			Images: [4]*ebiten.Image{p.small}, Uniforms: u.horizontal})
 		p.small.Clear()
 		p.small.DrawRectShader(sw, sh, p.blur, &ebiten.DrawRectShaderOptions{
-			Images: [4]*ebiten.Image{p.small2}, Uniforms: map[string]any{"Dir": []float32{0, 1.5}}})
+			Images: [4]*ebiten.Image{p.small2}, Uniforms: u.vertical})
 	}
 	// upscale bloom
 	p.bloomFull.Clear()
@@ -251,11 +283,8 @@ func (p *Post) applyAt(dst *ebiten.Image, g Grade, enabled bool) {
 	p.bloomFull.DrawImage(p.small, op)
 	// grade + composite
 	dst.DrawRectShader(w, h, p.grade, &ebiten.DrawRectShaderOptions{
-		Images: [4]*ebiten.Image{p.scene, p.bloomFull},
-		Uniforms: map[string]any{
-			"Tint": g.Tint[:], "Lift": g.Lift[:], "Saturation": g.Saturation,
-			"Contrast": g.Contrast, "Vignette": g.Vig,
-		}})
+		Images:   [4]*ebiten.Image{p.scene, p.bloomFull},
+		Uniforms: u.grade})
 }
 
 var worldGrades = map[int]Grade{

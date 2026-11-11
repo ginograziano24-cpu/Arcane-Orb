@@ -17,10 +17,11 @@ package ebiten
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/builtinshader"
-	"github.com/hajimehoshi/ebiten/v2/internal/graphics"
-	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
+	"github.com/hajimehoshi/ebiten/v2/internal/colormshader"
+	"github.com/hajimehoshi/ebiten/v2/internal/legacyshader"
 	"github.com/hajimehoshi/ebiten/v2/internal/ui"
 )
 
@@ -29,7 +30,16 @@ import (
 // For the details about the shader, see https://ebitengine.org/en/documents/shader.html.
 type Shader struct {
 	shader *ui.Shader
-	unit   shaderir.Unit
+
+	// unit is the unit the shader was authored in (//kage:unit). The compiled shader always runs in
+	// the pixel unit; this is kept only to enforce the user-facing rules of the texel unit, such as
+	// requiring source images to be the same size.
+	unit legacyshader.Unit
+}
+
+// unitIsTexels reports whether the shader was authored in the texel unit.
+func (s *Shader) unitIsTexels() bool {
+	return s.unit == legacyshader.Texels
 }
 
 // NewShader compiles a shader program in the shading language Kage, and returns the result.
@@ -42,13 +52,13 @@ func NewShader(src []byte) (*Shader, error) {
 }
 
 func newShader(src []byte, name string) (*Shader, error) {
-	ir, err := graphics.CompileShader(src)
+	ir, unit, err := legacyshader.CompileShader(src)
 	if err != nil {
 		return nil, err
 	}
 	return &Shader{
 		shader: ui.NewShader(ir, name),
-		unit:   ir.Unit,
+		unit:   unit,
 	}, nil
 }
 
@@ -86,24 +96,34 @@ func (s *Shader) appendUniforms(dst []uint32, uniforms map[string]any) []uint32 
 }
 
 var (
-	builtinShaders  [builtinshader.FilterCount][builtinshader.AddressCount][2]*Shader
-	builtinShadersM sync.Mutex
+	builtinShadersForRead atomic.Pointer[[builtinshader.FilterCount][builtinshader.AddressCount][2]*Shader]
+	builtinShadersM       sync.Mutex
 )
 
 func builtinShader(filter builtinshader.Filter, address builtinshader.Address, useColorM bool) *Shader {
-	builtinShadersM.Lock()
-	defer builtinShadersM.Unlock()
-
 	var c int
 	if useColorM {
 		c = 1
 	}
-	if s := builtinShaders[filter][address][c]; s != nil {
-		return s
+	if read := builtinShadersForRead.Load(); read != nil {
+		if s := (*read)[filter][address][c]; s != nil {
+			return s
+		}
+	}
+
+	builtinShadersM.Lock()
+	defer builtinShadersM.Unlock()
+
+	// Double check in case another goroutine already created a shader.
+	if read := builtinShadersForRead.Load(); read != nil {
+		if s := (*read)[filter][address][c]; s != nil {
+			return s
+		}
 	}
 
 	var shader *Shader
-	if address == builtinshader.AddressUnsafe && !useColorM {
+	if (filter == builtinshader.FilterNearest || filter == builtinshader.FilterLinear) &&
+		address == builtinshader.AddressUnsafe && !useColorM {
 		switch filter {
 		case builtinshader.FilterNearest:
 			shader = &Shader{shader: ui.NearestFilterShader}
@@ -111,13 +131,20 @@ func builtinShader(filter builtinshader.Filter, address builtinshader.Address, u
 			shader = &Shader{shader: ui.LinearFilterShader}
 		}
 	} else {
-		src := builtinshader.ShaderSource(filter, address, useColorM)
+		var src []byte
+		if useColorM {
+			src = colormshader.ShaderSource(colormshader.Filter(filter), colormshader.Address(address))
+		} else {
+			src = builtinshader.ShaderSource(filter, address)
+		}
 		var name string
 		switch filter {
 		case builtinshader.FilterNearest:
 			name = "nearest"
 		case builtinshader.FilterLinear:
 			name = "linear"
+		case builtinshader.FilterPixelated:
+			name = "pixelated"
 		}
 		switch address {
 		case builtinshader.AddressClampToZero:
@@ -135,6 +162,11 @@ func builtinShader(filter builtinshader.Filter, address builtinshader.Address, u
 		shader = s
 	}
 
-	builtinShaders[filter][address][c] = shader
+	var shaders [builtinshader.FilterCount][builtinshader.AddressCount][2]*Shader
+	if ptr := builtinShadersForRead.Load(); ptr != nil {
+		shaders = *ptr
+	}
+	shaders[filter][address][c] = shader
+	builtinShadersForRead.Store(&shaders)
 	return shader
 }

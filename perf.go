@@ -31,16 +31,19 @@ const (
 var secNames = [numSecs]string{"update", "world", "flush", "post", "hud", "draw"}
 
 type perfFrame struct {
-	frame  time.Duration // wall time since the previous frame
-	sec    [numSecs]time.Duration
-	quads  int
-	world  int // 3D draw calls (DrawTriangles runs in Batch.flush)
-	sdf    int // SDF shape draws
-	sprite int // drawSprite calls
-	text   int // text draws
-	rect   int // vector rect fills
-	allocs uint64
-	bytes  uint64
+	frame                  time.Duration // wall time since the previous frame
+	updateSeconds          float64       // elapsed time delivered to game updates during a benchmark
+	discardedUpdateSeconds float64
+	updateCount            int
+	sec                    [numSecs]time.Duration
+	quads                  int
+	world                  int // 3D draw calls (DrawTriangles runs in Batch.flush)
+	sdf                    int // SDF shape draws
+	sprite                 int // drawSprite calls
+	text                   int // text draws
+	rect                   int // vector rect fills
+	allocs                 uint64
+	bytes                  uint64
 }
 
 type perfState struct {
@@ -107,24 +110,54 @@ func perfToggle() {
 
 // summary condenses frames into averages and the 1% low frame rate.
 type perfSummary struct {
-	n                  int
-	fps, low1, frameMS float64
-	sec                [numSecs]float64 // ms
-	quads, world, sdf  float64
-	sprite, text, rect float64
-	allocs, kb         float64
+	n                                     int
+	updateSeconds                         float64
+	discardedUpdateSeconds                float64
+	updateCount, zeroDrawIntervals        int
+	fps, low1, frameMS                    float64
+	low01                                 float64
+	p95MS, p99MS, p999MS, maxMS, stddevMS float64
+	over60, over120, over144, over33      int
+	sec                                   [numSecs]float64 // ms
+	quads, world, sdf                     float64
+	sprite, text, rect                    float64
+	allocs, kb                            float64
 }
 
 func summarize(fs []perfFrame) perfSummary {
 	var s perfSummary
 	var times []float64
+	var mean, m2 float64
 	for _, f := range fs {
+		// A coarse clock can give two draws the same timestamp. Their
+		// updates still count toward simulation time.
+		s.updateSeconds += f.updateSeconds
+		s.discardedUpdateSeconds += f.discardedUpdateSeconds
+		s.updateCount += f.updateCount
+		if f.frame == 0 && f.updateCount > 0 {
+			s.zeroDrawIntervals++
+		}
 		if f.frame <= 0 {
 			continue
 		}
 		s.n++
 		ms := f.frame.Seconds() * 1000
 		times = append(times, ms)
+		delta := ms - mean
+		mean += delta / float64(s.n)
+		m2 += delta * (ms - mean)
+		if ms > 1000.0/60 {
+			s.over60++
+		}
+		if ms > 1000.0/120 {
+			s.over120++
+		}
+		if ms > 1000.0/144 {
+			s.over144++
+		}
+		if ms > 1000.0/30 {
+			s.over33++
+		}
 		s.frameMS += ms
 		for i := range f.sec {
 			s.sec[i] += f.sec[i].Seconds() * 1000
@@ -156,6 +189,9 @@ func summarize(fs []perfFrame) perfSummary {
 	s.kb /= n
 	s.fps = 1000 / s.frameMS
 	sort.Float64s(times)
+	s.stddevMS = math.Sqrt(m2 / n)
+	s.p95MS, s.p99MS, s.p999MS = framePercentile(times, .95), framePercentile(times, .99), framePercentile(times, .999)
+	s.maxMS = times[len(times)-1]
 	// 1% low: the average of the slowest 1% of frames
 	k := max(1, len(times)/100)
 	w := 0.0
@@ -163,7 +199,26 @@ func summarize(fs []perfFrame) perfSummary {
 		w += t
 	}
 	s.low1 = 1000 / (w / float64(k))
+	k01 := max(1, len(times)/1000)
+	w01 := 0.0
+	for _, t := range times[len(times)-k01:] {
+		w01 += t
+	}
+	s.low01 = 1000 / (w01 / float64(k01))
 	return s
+}
+
+// framePercentile uses linear interpolation on an already sorted sample.
+func framePercentile(sorted []float64, q float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	at := math.Max(0, math.Min(1, q)) * float64(len(sorted)-1)
+	i := int(at)
+	if i == len(sorted)-1 {
+		return sorted[i]
+	}
+	return sorted[i] + (sorted[i+1]-sorted[i])*(at-float64(i))
 }
 
 // drawPerf draws the F3 overlay in screen pixels at the top left.

@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 
@@ -130,7 +131,7 @@ func prepareGomobileCommands() (string, error) {
 	if err := runGo("mod", "init", modname); err != nil {
 		return tmp, err
 	}
-	if err := os.WriteFile("tools.go", []byte(fmt.Sprintf(`%s
+	if err := os.WriteFile("tools.go", fmt.Appendf(nil, `%s
 
 package %s
 
@@ -138,19 +139,19 @@ import (
 	_ "github.com/ebitengine/gomobile/cmd/gobind"
 	_ "github.com/ebitengine/gomobile/cmd/gomobile"
 )
-`, buildtags, modname)), 0644); err != nil {
+`, buildtags, modname), 0644); err != nil {
 		return tmp, err
 	}
 
-	h, err := gomobileHash()
-	if err != nil {
-		return tmp, err
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return tmp, fmt.Errorf("ebitenmobile: debug.ReadBuildInfo failed")
 	}
-
-	// To record gomobile to go.sum for Go 1.16 and later, go-get gomobile instead of github.com/ebitengine/gomobile (#1487).
-	// This also records gobind as gomobile depends on gobind indirectly.
-	// Using `...` doesn't work on Windows since mobile/internal/mobileinit cannot be compiled on Windows w/o Cgo (#1493).
-	if err := runGo("get", "github.com/ebitengine/gomobile/cmd/gomobile@"+h); err != nil {
+	args := []string{"mod", "edit"}
+	for _, m := range info.Deps {
+		args = append(args, "-require="+m.Path+"@"+m.Version)
+	}
+	if err := runGo(args...); err != nil {
 		return tmp, err
 	}
 	if localgm := os.Getenv("EBITENMOBILE_GOMOBILE"); localgm != "" {
@@ -164,19 +165,13 @@ import (
 	// runtime.Version() is the current executing Go version. For example, this is the version of the toolchain directive in go.mod.
 	// This might differ from the Go command version under the temporary directory.
 	// To avoid the version mismatch, set the toolchain explicitly (#3086).
-	if err := runGo("mod", "edit", "-toolchain="+runtime.Version()); err != nil {
+	t, err := toolchainParameter()
+	if err != nil {
 		return tmp, err
 	}
-	if err := runGo("mod", "tidy"); err != nil {
+	if err := runGo("mod", "edit", "-toolchain="+t); err != nil {
 		return tmp, err
 	}
-	if err := runGo("build", "-o", exe(filepath.Join("bin", "gomobile")), "github.com/ebitengine/gomobile/cmd/gomobile"); err != nil {
-		return tmp, err
-	}
-	if err := runGo("build", "-o", exe(filepath.Join("bin", "gobind-original")), "github.com/ebitengine/gomobile/cmd/gobind"); err != nil {
-		return tmp, err
-	}
-
 	if err := os.Mkdir("src", 0755); err != nil {
 		return tmp, err
 	}
@@ -197,8 +192,14 @@ import (
 		return tmp, err
 	}
 
-	// The newly added Go files like gobind.go might add new dependencies.
+	// Include all helper sources before tidy so their dependency versions are retained.
 	if err := runGo("mod", "tidy"); err != nil {
+		return tmp, err
+	}
+	if err := runGo("build", "-o", exe(filepath.Join("bin", "gomobile")), "github.com/ebitengine/gomobile/cmd/gomobile"); err != nil {
+		return tmp, err
+	}
+	if err := runGo("build", "-o", exe(filepath.Join("bin", "gobind-original")), "github.com/ebitengine/gomobile/cmd/gobind"); err != nil {
 		return tmp, err
 	}
 	if err := runGo("build", "-o", exe(filepath.Join("bin", "gobind")), "-tags", "ebitenmobilegobind", filepath.Join("src", "gobind.go")); err != nil {
@@ -212,15 +213,12 @@ import (
 	return tmp, nil
 }
 
-func gomobileHash() (string, error) {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "", fmt.Errorf("ebitenmobile: debug.ReadBuildInfo failed")
+func toolchainParameter() (string, error) {
+	pattern := regexp.MustCompile(`\bgo\d+\.\d+(\.\d+)?`)
+	rawVersion := runtime.Version()
+	m := pattern.FindStringSubmatch(rawVersion)
+	if len(m) == 0 {
+		return "", fmt.Errorf("ebitenmobile: unexpected version: %s", rawVersion)
 	}
-	for _, m := range info.Deps {
-		if m.Path == "github.com/ebitengine/gomobile" {
-			return m.Version, nil
-		}
-	}
-	return "", fmt.Errorf("ebitenmobile: getting the gomobile version failed")
+	return m[0], nil
 }

@@ -35,12 +35,14 @@ package vibrate
 //                                                error:&error];
 //     if (error) {
 //       NSLog(@"CHHapticEngine::initAndReturnError failed: %@", error);
+//       [engine release];
 //       return nil;
 //     }
 //
 //     [engine startAndReturnError:&error];
 //     if (error) {
 //       NSLog(@"CHHapticEngine::startAndReturnError failed %@", error);
+//       [engine release];
 //       return nil;
 //     }
 //     return engine;
@@ -79,8 +81,8 @@ package vibrate
 //       };
 //
 //       NSError* error = nil;
-//       CHHapticPattern* pattern = [[CHHapticPattern alloc] initWithDictionary:hapticDict
-//                                                                        error:&error];
+//       CHHapticPattern* pattern = [[[CHHapticPattern alloc] initWithDictionary:hapticDict
+//                                                                         error:&error] autorelease];
 //       if (error) {
 //         return;
 //       }
@@ -93,13 +95,15 @@ package vibrate
 //
 //       [player startAtTime:0 error:&error];
 //       if (error) {
-//         NSLog(@"3, %@", [error localizedDescription]);
+//         NSLog(@"CHHapticPatternPlayer::startAtTime failed: %@", [error localizedDescription]);
 //         return;
 //       }
 //     }
 //   }
 // }
 //
+// #cgo noescape vibrate
+// #cgo nocallback vibrate
 // static void vibrate(double duration, double intensity) {
 //   dispatch_async(dispatch_get_main_queue(), ^{
 //     vibrateOnMainThread(duration, intensity);
@@ -111,7 +115,7 @@ import (
 	"time"
 )
 
-func Vibrate(duration time.Duration, magnitude float64) {
+func vibrate(duration time.Duration, magnitude float64) {
 	go func() {
 		C.vibrate(C.double(float64(duration)/float64(time.Second)), C.double(magnitude))
 	}()

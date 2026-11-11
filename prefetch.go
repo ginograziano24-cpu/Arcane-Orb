@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/color"
+	"runtime/trace"
 	"strings"
 	"sync"
 
@@ -51,15 +53,23 @@ func preEntry(key string) *preImg {
 // ...), building it here unless it is built or being built already. Its
 // img is nil if the asset doesn't exist.
 func loadImage(key string) *preImg {
+	if trace.IsEnabled() {
+		defer trace.StartRegion(context.Background(), "image request "+key).End()
+	}
 	e := preEntry(key)
 	e.once.Do(func() {
+		if trace.IsEnabled() {
+			defer trace.StartRegion(context.Background(), "image build "+key).End()
+		}
 		src, aux := buildImage(key)
 		if src == nil {
 			return
 		}
 		b := src.Bounds()
 		e.w, e.h, e.aux = b.Dx(), b.Dy(), aux
-		e.avg = meanColour(src)
+		if strings.HasPrefix(key, "floor/ground_") {
+			e.avg = meanColour(src)
+		}
 		e.img = ebiten.NewImageFromImage(src)
 	})
 	return e
@@ -149,17 +159,33 @@ func prefetchAct(a int) {
 	}
 }
 
+// The map uses the signature world's sky and a fixed seed for each act.
+func prefetchMapBackdrop(act int) {
+	prefetch("bg/" + backdropAssetName(biomes[(act-1)%numActs].SkyKind, (act*7)%2))
+}
+
 // prefetchTick queues images ahead of need: at start the origins'
 // portraits and the set-piece scenes, and in a run its origin's HUD
 // portraits and the worlds of the act it is in and the next.
 func (g *Game) prefetchTick() {
 	if !g.preBoot {
 		g.preBoot = true
+		prefetchMapBackdrop(1)
 		for id := range classStyle {
 			prefetch("portrait/" + id)
 		}
 		prefetch("scene/rest", "scene/shop", "scene/treasure", "scene/event")
+		// These sheets are shared across chambers. Queue their decoding on
+		// the existing worker while the player is still at the title screen.
+		prefetch("bricks/sheet", "floor/paddles")
 		go prefetchModels()
+	}
+	if g.state == StArch && g.archSel >= 0 && g.archSel < len(archetypes) {
+		id := archetypes[g.archSel].ID
+		if id != g.preHUD {
+			g.preHUD = id
+			prefetch("hud/" + id + "_rest")
+		}
 	}
 	r := g.run
 	if r == nil || r.Arch == nil {
@@ -170,6 +196,7 @@ func (g *Game) prefetchTick() {
 		return
 	}
 	g.preKey = key
+	prefetchMapBackdrop(r.Act)
 	for _, pose := range heroPoses {
 		prefetch("hud/" + r.Arch.ID + "_" + pose)
 	}

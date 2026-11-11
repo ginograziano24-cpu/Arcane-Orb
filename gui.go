@@ -53,7 +53,7 @@ var themes = [7]Theme{
 // themeWorld picks which world's framing the current screen uses.
 func (g *Game) themeWorld() int {
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex:
+	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StMap:
 		return themeArcane
 	case StLevel, StPause:
 		if g.level != nil {

@@ -55,37 +55,34 @@ type inst struct {
 
 // voice is one sounding note.
 type voice struct {
-	in        *inst
-	delay     int // samples before it starts in the current block
-	age       int
-	gate      int // gate length in samples
-	vel       float64
-	key       float64 // MIDI note
-	freq, tgt float64
-	gl        float64 // glide coefficient
-	o         [8]osc
-	pan       [8]float64
-	ratio     [8]float64
-	f         [4]svf
-	e, fe     adsr
-	n, n2     noise
-	ph        float64
-	fade      float64 // 1 normally; decays when choked
-	choked    bool
-	retrig    int // age at the last legato retrigger
-	x         [4]float64
-	dead      bool
+	in         *inst
+	delay      int // samples before it starts in the current block
+	age        int
+	gate       int // gate length in samples
+	vel        float64
+	key        float64 // MIDI note
+	freq, tgt  float64
+	gl         float64 // glide coefficient
+	o          [8]osc
+	panL, panR [8]float64
+	ratio      [8]float64
+	f          [4]svf
+	e, fe      adsr
+	n, n2      noise
+	ph         float64
+	fade       float64 // 1 normally; decays when choked
+	choked     bool
+	retrig     int // age at the last legato retrigger
+	x          [4]float64
+	dead       bool
 }
 
-var voiceSeed uint32 = 12345
-
-func newVoice(in *inst, key, vel float64, gate int) *voice {
+func newVoice(in *inst, key, vel float64, gate int, seed uint32) *voice {
 	v := &voice{in: in, key: key, vel: vel, gate: gate, fade: 1}
 	v.freq = midiHz(key)
 	v.tgt = v.freq
-	voiceSeed = voiceSeed*1664525 + 1013904223
-	v.n.s = voiceSeed | 1
-	v.n2.s = (voiceSeed >> 7) ^ 0x5bd1e995
+	v.n.s = seed | 1
+	v.n2.s = (seed >> 7) ^ 0x5bd1e995
 	v.e = adsr{a: in.a, d: in.d, s: in.s, r: in.r}
 	v.fe = adsr{a: 0.0005, d: in.fdec, s: 0, r: in.fdec}
 	switch in.kind {
@@ -97,7 +94,7 @@ func newVoice(in *inst, key, vel float64, gate int) *voice {
 				u = float64(i)/float64(nv-1)*2 - 1
 			}
 			v.o[i].ph = v.n.next()*0.5 + 0.5
-			v.pan[i] = u
+			v.panL[i], v.panR[i] = 1-0.6*u, 1+0.6*u
 			v.ratio[i] = fpow2(in.detune * u / 12)
 		}
 	case iBrass:
@@ -200,6 +197,7 @@ func (v *voice) kick(l, r []float64, s, n int) {
 	}
 	dk := decayCoef(in.decay)
 	pk := decayCoef(in.pd)
+	driveGain := ftanh(in.drive)
 	if v.age == 0 {
 		v.x[3] = 1
 	}
@@ -224,7 +222,7 @@ func (v *voice) kick(l, r []float64, s, n int) {
 			y += v.f[0].hp(v.n.next()) * in.click * (1 - t/0.005)
 		}
 		if in.drive > 0 {
-			y = ftanh(y*in.drive) / ftanh(in.drive)
+			y = ftanh(y*in.drive) / driveGain
 		}
 		v.out(l, r, i, y, y)
 		v.age++
@@ -541,8 +539,12 @@ func (v *voice) super(l, r []float64, s, n int) {
 			v.choke() // released to -40 dB: fade the rest out quickly
 		}
 		fe := v.fe.next(gate && v.age < 88)
-		f := v.freq * v.vibrato(t)
-		if v.age&7 == 0 {
+		updatePitch := v.age&7 == 0
+		var f float64
+		if updatePitch || in.sub > 0 {
+			f = v.freq * v.vibrato(t)
+		}
+		if updatePitch {
 			for j := 0; j < nv; j++ {
 				v.o[j].setHz(f * v.ratio[j])
 			}
@@ -553,9 +555,8 @@ func (v *voice) super(l, r []float64, s, n int) {
 		var a, b float64
 		for j := 0; j < nv; j++ {
 			x := v.o[j].saw()
-			p := v.pan[j]
-			a += x * (1 - 0.6*p)
-			b += x * (1 + 0.6*p)
+			a += x * v.panL[j]
+			b += x * v.panR[j]
 		}
 		a, b = a*norm, b*norm
 		if in.sub > 0 {

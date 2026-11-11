@@ -16,6 +16,7 @@
 package vorbis
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -78,7 +79,8 @@ func DecodeF32(src io.Reader) (*Stream, error) {
 		return nil, fmt.Errorf("vorbis: number of channels must be 1 or 2 but was %d", r.Channels())
 	}
 
-	var s io.ReadSeeker = newFloat32BytesReadSeeker(r)
+	_, seekable := src.(io.Seeker)
+	var s io.ReadSeeker = newFloat32BytesReadSeeker(r, seekable)
 	length := r.Length() * int64(r.Channels()) * bitDepthInBytesFloat32
 	if r.Channels() == 1 {
 		s = convert.NewStereoF32(s, true)
@@ -91,7 +93,7 @@ func DecodeF32(src io.Reader) (*Stream, error) {
 		sampleRate: r.SampleRate(),
 	}
 	// Read some data for performance (#297).
-	if _, ok := src.(io.Seeker); ok {
+	if seekable {
 		if _, err := stream.Read(make([]byte, 65536)); err != nil && err != io.EOF {
 			return nil, err
 		}
@@ -104,23 +106,17 @@ func DecodeF32(src io.Reader) (*Stream, error) {
 
 type i16Stream struct {
 	posInBytes   int64
+	seekable     bool
 	vorbisReader *oggvorbis.Reader
 	i16Reader    io.Reader
 }
 
 func (s *i16Stream) Read(b []byte) (int, error) {
 	if s.i16Reader == nil {
-		s.i16Reader = newInt16BytesReaderFromFloat32Reader(s.vorbisReader)
+		s.i16Reader = newInt16BytesReaderFromFloat32Reader(s.vorbisReader, s.vorbisReader.Channels())
 	}
 
-	l := s.totalBytes() - s.posInBytes
-	if l > int64(len(b)) {
-		l = int64(len(b))
-	}
-	if l < 0 {
-		return 0, io.EOF
-	}
-
+	l := int64(len(b))
 retry:
 	n, err := s.i16Reader.Read(b[:l])
 	if err != nil && err != io.EOF {
@@ -130,16 +126,16 @@ retry:
 		// When l is too small, decoder's Read might return 0 for a while. Let's retry.
 		goto retry
 	}
-
 	s.posInBytes += int64(n)
-	if s.posInBytes == s.totalBytes() || err == io.EOF {
-		return n, io.EOF
-	}
-	return n, nil
+	return n, err
 }
 
 func (s *i16Stream) Seek(offset int64, whence int) (int64, error) {
-	next := int64(0)
+	if !s.seekable {
+		return 0, fmt.Errorf("vorbis: the source must be io.Seeker but not: %w", errors.ErrUnsupported)
+	}
+
+	var next int64
 	switch whence {
 	case io.SeekStart:
 		next = offset
@@ -147,14 +143,20 @@ func (s *i16Stream) Seek(offset int64, whence int) (int64, error) {
 		next = int64(s.posInBytes) + offset
 	case io.SeekEnd:
 		next = int64(s.totalBytes()) + offset
+	default:
+		return 0, fmt.Errorf("vorbis: whence must be io.SeekStart, io.SeekCurrent, or io.SeekEnd but was %d", whence)
+	}
+	if next < 0 {
+		return 0, fmt.Errorf("vorbis: position must be >= 0 but was %d", next)
 	}
 	sampleSize := int64(s.vorbisReader.Channels()) * bitDepthInBytesInt16
-	s.posInBytes = next / sampleSize * sampleSize
-	if err := s.vorbisReader.SetPosition(next / sampleSize); err != nil {
+	pos := next / sampleSize * sampleSize
+	if err := s.vorbisReader.SetPosition(pos / sampleSize); err != nil {
 		return 0, err
 	}
+	s.posInBytes = pos
 	s.i16Reader = nil
-	return next, nil
+	return s.posInBytes, nil
 }
 
 func (s *i16Stream) totalBytes() int64 {
@@ -173,12 +175,14 @@ func decodeI16(in io.Reader) (*i16Stream, error) {
 		return nil, fmt.Errorf("vorbis: number of channels must be 1 or 2 but was %d", r.Channels())
 	}
 
+	_, seekable := in.(io.Seeker)
 	s := &i16Stream{
+		seekable:     seekable,
 		posInBytes:   0,
 		vorbisReader: r,
 	}
 	// Read some data for performance (#297).
-	if _, ok := in.(io.Seeker); ok {
+	if seekable {
 		if _, err := s.Read(make([]byte, 65536)); err != nil && err != io.EOF {
 			return nil, err
 		}
@@ -206,7 +210,7 @@ func DecodeWithoutResampling(src io.Reader) (*Stream, error) {
 	var s io.ReadSeeker = i16Stream
 	length := i16Stream.totalBytes()
 	if i16Stream.vorbisReader.Channels() == 1 {
-		s = convert.NewStereoI16(s, true, false)
+		s = convert.NewStereoI16ReadSeeker(s, true, convert.FormatS16)
 		length *= 2
 	}
 
@@ -240,7 +244,7 @@ func DecodeWithSampleRate(sampleRate int, src io.Reader) (*Stream, error) {
 	var s io.ReadSeeker = i16Stream
 	length := i16Stream.totalBytes()
 	if i16Stream.vorbisReader.Channels() == 1 {
-		s = convert.NewStereoI16(s, true, false)
+		s = convert.NewStereoI16ReadSeeker(s, true, convert.FormatS16)
 		length *= 2
 	}
 	if i16Stream.vorbisReader.SampleRate() != sampleRate {

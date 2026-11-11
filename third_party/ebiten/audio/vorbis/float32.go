@@ -15,6 +15,8 @@
 package vorbis
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"math"
 
@@ -23,22 +25,30 @@ import (
 
 var _ io.ReadSeeker = (*float32BytesReadSeeker)(nil)
 
-func newFloat32BytesReadSeeker(r *oggvorbis.Reader) *float32BytesReadSeeker {
-	return &float32BytesReadSeeker{r: r}
+func newFloat32BytesReadSeeker(r *oggvorbis.Reader, seekable bool) *float32BytesReadSeeker {
+	return &float32BytesReadSeeker{
+		r:        r,
+		seekable: seekable,
+	}
 }
 
 type float32BytesReadSeeker struct {
-	r    *oggvorbis.Reader
-	fbuf []float32
-	pos  int64
+	r        *oggvorbis.Reader
+	seekable bool
+	fbuf     []float32
+	pos      int64
 }
 
 func (r *float32BytesReadSeeker) Read(buf []byte) (int, error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
+	// A buffer shorter than one frame cannot receive any converted data.
+	if len(buf) < 4*r.r.Channels() {
+		return 0, io.ErrShortBuffer
+	}
 
-	l := max(len(buf)/4/r.r.Channels()*r.r.Channels(), 1)
+	l := len(buf) / 4 / r.r.Channels() * r.r.Channels()
 	if cap(r.fbuf) < l {
 		r.fbuf = make([]float32, l)
 	}
@@ -48,7 +58,7 @@ func (r *float32BytesReadSeeker) Read(buf []byte) (int, error) {
 		return 0, err
 	}
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		v := math.Float32bits(r.fbuf[i])
 		buf[4*i] = byte(v)
 		buf[4*i+1] = byte(v >> 8)
@@ -62,19 +72,28 @@ func (r *float32BytesReadSeeker) Read(buf []byte) (int, error) {
 }
 
 func (r *float32BytesReadSeeker) Seek(offset int64, whence int) (int64, error) {
+	if !r.seekable {
+		return 0, fmt.Errorf("vorbis: the source must be io.Seeker but not: %w", errors.ErrUnsupported)
+	}
+
 	sampleSize := int64(r.r.Channels()) * 4
-	offset = offset / sampleSize * sampleSize
 
 	switch whence {
 	case io.SeekStart:
 	case io.SeekCurrent:
 		offset += r.pos
 	case io.SeekEnd:
-		offset += r.r.Length()
+		offset += r.r.Length() * sampleSize
+	default:
+		return 0, fmt.Errorf("vorbis: whence must be io.SeekStart, io.SeekCurrent, or io.SeekEnd but was %d", whence)
 	}
-	r.pos = offset
-	if err := r.r.SetPosition(r.pos / sampleSize); err != nil {
+	if offset < 0 {
+		return 0, fmt.Errorf("vorbis: position must be >= 0 but was %d", offset)
+	}
+	pos := offset / sampleSize * sampleSize
+	if err := r.r.SetPosition(pos / sampleSize); err != nil {
 		return 0, err
 	}
+	r.pos = pos
 	return r.pos, nil
 }

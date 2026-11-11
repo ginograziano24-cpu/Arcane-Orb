@@ -1,0 +1,10 @@
+{
+  "bytes": 18491528,
+  "file": "assets/music/groove.aopcm",
+  "format": "stereo signed16 little-endian, custom loop header",
+  "loopJoin": "100ms continuation-to-head crossfade; listening review pending",
+  "regenerate": "go run ./tools/musiccache",
+  "sampleRate": 44100,
+  "sha256": "539478d4bade76980bb341836982526f21d722a9c96998d3c00e662eb16f4aa8",
+  "synthSourceSHA256": "2682ba8d527f0e4d19010e40e5995d715fdaefe8499a73c80ab187adc0c29b2d"
+}

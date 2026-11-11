@@ -1,0 +1,44 @@
+{
+  "guardian": {
+    "name": "Dame Oriel",
+    "silhouette": "upright armored shield; strong vertical plume",
+    "face": "open or raised visor with a readable face",
+    "acting": "disciplined protective catches"
+  },
+  "berserker": {
+    "name": "Brakka",
+    "silhouette": "broad muscular shoulders, fur, axe; wider stance",
+    "face": "weathered expressive face and braids",
+    "acting": "impatient physical energy"
+  },
+  "arcane": {
+    "name": "Professor Vell",
+    "silhouette": "tall narrow scholarly robe and distinct headwear",
+    "face": "older scholarly face; no generic void hood",
+    "acting": "precise curious gestures"
+  },
+  "engineer": {
+    "name": "Rivet",
+    "silhouette": "compact asymmetric mechanical backpack and tools",
+    "face": "visible face with functional goggles",
+    "acting": "quick practical calibration"
+  },
+  "lucky": {
+    "name": "Lucky Sol",
+    "silhouette": "lean tailored coat, asymmetric hat and card fan",
+    "face": "readable confident expression",
+    "acting": "relaxed coin-flip timing"
+  },
+  "pyro": {
+    "name": "Cinder",
+    "silhouette": "asymmetric flame-shaped hair/scarf and shorter costume",
+    "face": "open expressive face; no repeated hood",
+    "acting": "eager expansive gestures"
+  },
+  "storm": {
+    "name": "Zephyr",
+    "silhouette": "lean windswept profile and trailing split cloak",
+    "face": "distinct face framed by swept pale hair",
+    "acting": "light restless movement"
+  }
+}

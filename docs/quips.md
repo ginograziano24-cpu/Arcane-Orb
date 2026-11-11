@@ -1,4 +1,10 @@
-# Arcane Orb: hero quips (draft 1)
+# Arcane Orb: hero quips (draft 1, now in game)
+
+> **Status (2026-11-11):** implemented in `quips.go` with these exact lines,
+> translated into all 7 languages (`tools/i18n/src/20.jsonl`). Each line also
+> plays a short synthesised voice babble in the hero's register. Change a line
+> here, in `heroQuips` (quips.go) and in 20.jsonl together. Settings > Audio >
+> "Hero quips" turns them off.
 
 Roadmap step 2. Short lines shown in a speech bubble next to the HUD
 portrait. A cooldown keeps them rare (about one every 1–2 minutes), and a
@@ -70,3 +76,19 @@ item picked up) · **Last life** · **Win** (story finished)
 - **Legendary:** "Now THAT is electric."
 - **Last life:** "Keep moving, keep moving..."
 - **Win:** "Look up. The stars are back."
+
+## Combo commentary (added 2026-11-11)
+
+A hot streak gets a running commentary. At a 50-hit combo the hero says one
+of three lines (they take turns, at most once every 45 s); at 100 one of two
+more; at 150 a last one. These live in `heroComboQuips` (quips.go).
+
+| Hero | ×50 (take turns) | ×100 | ×150 |
+|---|---|---|---|
+| Oriel | Nothing gets through! / That's it, nice and steady! / Formation's holding. Good. | A hundred! Somebody write this down! / Okay. I'm actually impressed. | I'm telling everyone about this at dinner. |
+| Brakka | MORE BRICKS! / Ha! Is that all you've got? / Keep 'em coming! | I could do this ALL DAY! / Best. Day. Of my LIFE! | Somebody stop me. Actually, don't. |
+| Vell | Textbook! Literally, chapter four. / Mind the angles, mind the angles... / A most elegant chain reaction. | One hundred! I must take notes. / Remarkable. Utterly remarkable. | I'm rewriting the textbook. Again. |
+| Rivet | Running at peak efficiency! / Huh. Working better than planned. / Okay, okay, the numbers love this. | A hundred? I'm logging that. / This is going straight in my notebook. | Nobody touch anything. It's perfect. |
+| Sol | Jackpot, baby! / Hot streak! Don't jinx it. / Let it ride! | The house is SWEATING. / I'd bet on me. I DID bet on me. | Somebody call my bookie! |
+| Cinder | Burn, baby, burn! / Ooh, it's catching! / Hehe. More. MORE. | It's so BEAUTIFUL! / Everything's on fire and I love it! | Best. Bonfire. Ever. Again! |
+| Zephyr | Feel that static! / Faster! Faster! / Whoo! Don't stop now! | I can see the sky from up here! / Now we're flying! | So THIS is what lightning feels like! |

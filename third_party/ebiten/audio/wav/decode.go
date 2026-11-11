@@ -32,7 +32,7 @@ const (
 // Stream is a decoded audio stream.
 //
 // The format is signed 16bit integer little endian PCM (DecodeWithoutResampling, etc.),
-// or 32bit float little endian PCM (DeocdeF32).
+// or 32bit float little endian PCM (DecodeF32).
 // The channel count is 2.
 type Stream struct {
 	inner      io.ReadSeeker
@@ -47,9 +47,7 @@ func (s *Stream) Read(p []byte) (int, error) {
 
 // Seek is implementation of io.Seeker's Seek.
 //
-// Note that Seek can take long since decoding is a relatively heavy task.
-//
-// If the underlying source is not an io.Seeker, Seek panics.
+// If the underlying source is not an io.Seeker, Seek returns an error.
 func (s *Stream) Seek(offset int64, whence int) (int64, error) {
 	return s.inner.Seek(offset, whence)
 }
@@ -67,11 +65,11 @@ func (s *Stream) SampleRate() int {
 // DecodeF32 decodes WAV (RIFF) data to playable stream in 32bit float, little endian, 2 channels (stereo) format.
 //
 // The src format must be 1 or 2 channels, 8bit or 16bit little endian PCM.
-// The src format is converted into 2 channels and 16bit.
+// The src format is converted into 2 channels and 32bit float.
 //
 // DecodeF32 returns error when decoding fails or IO error happens.
 //
-// The returned Stream's Seek is available only when src is an io.Seeker.
+// The returned Stream's Seek returns an error when src is not an io.Seeker.
 //
 // A Stream doesn't close src even if src implements io.Closer.
 // Closing the source is src owner's responsibility.
@@ -88,9 +86,9 @@ func DecodeF32(src io.Reader) (*Stream, error) {
 // The src format must be 1 or 2 channels, 8bit or 16bit little endian PCM.
 // The src format is converted into 2 channels and 16bit.
 //
-// DecodeWithoutSampleRate returns error when decoding fails or IO error happens.
+// DecodeWithoutResampling returns error when decoding fails or IO error happens.
 //
-// The returned Stream's Seek is available only when src is an io.Seeker.
+// The returned Stream's Seek returns an error when src is not an io.Seeker.
 //
 // A Stream doesn't close src even if src implements io.Closer.
 // Closing the source is src owner's responsibility.
@@ -111,7 +109,7 @@ func DecodeWithoutResampling(src io.Reader) (*Stream, error) {
 //
 // DecodeWithSampleRate automatically resamples the stream to fit with sampleRate if necessary.
 //
-// The returned Stream's Seek is available only when src is an io.Seeker.
+// The returned Stream's Seek returns an error when src is not an io.Seeker.
 //
 // A Stream doesn't close src even if src implements io.Closer.
 // Closing the source is src owner's responsibility.
@@ -170,25 +168,27 @@ chunks:
 		}
 		headerSize += 8
 		size := int64(buf[4]) | int64(buf[5])<<8 | int64(buf[6])<<16 | int64(buf[7])<<24
+		// A chunk is word-aligned: an odd-sized chunk is followed by a pad byte, which is not counted in the size.
+		paddedSize := size + size%2
 		switch {
 		case bytes.Equal(buf[0:4], []byte("fmt ")):
 			// Size of 'fmt' header is usually 16, but can be more than 16.
 			if size < 16 {
 				return nil, fmt.Errorf("wav: invalid header: maybe non-PCM file?")
 			}
-			buf := make([]byte, size)
-			n, err := io.ReadFull(src, buf)
-			if n != len(buf) {
+			var fmtBuf [16]byte
+			n, err := io.ReadFull(src, fmtBuf[:])
+			if n != len(fmtBuf) {
 				return nil, fmt.Errorf("wav: invalid header")
 			}
 			if err != nil {
 				return nil, err
 			}
-			format := int(buf[0]) | int(buf[1])<<8
+			format := int(fmtBuf[0]) | int(fmtBuf[1])<<8
 			if format != 1 {
 				return nil, fmt.Errorf("wav: format must be linear PCM")
 			}
-			channelCount := int(buf[2]) | int(buf[3])<<8
+			channelCount := int(fmtBuf[2]) | int(fmtBuf[3])<<8
 			switch channelCount {
 			case 1:
 				mono = true
@@ -197,32 +197,55 @@ chunks:
 			default:
 				return nil, fmt.Errorf("wav: number of channels must be 1 or 2 but was %d", channelCount)
 			}
-			bitsPerSample = int(buf[14]) | int(buf[15])<<8
+			bitsPerSample = int(fmtBuf[14]) | int(fmtBuf[15])<<8
+			// TODO: Support signed 24bit integer format (#2215).
 			if bitsPerSample != 8 && bitsPerSample != 16 {
 				return nil, fmt.Errorf("wav: bits per sample must be 8 or 16 but was %d", bitsPerSample)
 			}
-			sampleRate = int(buf[4]) | int(buf[5])<<8 | int(buf[6])<<16 | int(buf[7])<<24
-			headerSize += size
+			sampleRate = int(fmtBuf[4]) | int(fmtBuf[5])<<8 | int(fmtBuf[6])<<16 | int(fmtBuf[7])<<24
+			if sampleRate <= 0 {
+				return nil, fmt.Errorf("wav: sample rate must be positive but was %d", sampleRate)
+			}
+			if _, err := io.CopyN(io.Discard, src, paddedSize-16); err != nil {
+				return nil, fmt.Errorf("wav: invalid header")
+			}
+			headerSize += paddedSize
 		case bytes.Equal(buf[0:4], []byte("data")):
 			dataSize = size
 			break chunks
 		default:
-			buf := make([]byte, size)
-			n, err := io.ReadFull(src, buf)
-			if n != len(buf) {
+			if _, err := io.CopyN(io.Discard, src, paddedSize); err != nil {
 				return nil, fmt.Errorf("wav: invalid header")
 			}
-			if err != nil {
-				return nil, err
-			}
-			headerSize += size
+			headerSize += paddedSize
 		}
 	}
+
+	if bitsPerSample == 0 {
+		return nil, fmt.Errorf("wav: invalid header: 'fmt ' not found before 'data'")
+	}
+
+	// A partial frame at the tail of the data chunk cannot be decoded. Discard it.
+	bytesPerFrame := int64(bitsPerSample / 8)
+	if !mono {
+		bytesPerFrame *= 2
+	}
+	dataSize = dataSize / bytesPerFrame * bytesPerFrame
 
 	var s io.ReadSeeker = newSectionReader(src, headerSize, dataSize)
 
 	if mono || bitsPerSample != 16 {
-		s = convert.NewStereoI16(s, mono, bitsPerSample != 16)
+		var format convert.Format
+		switch bitsPerSample {
+		case 8:
+			format = convert.FormatU8
+		case 16:
+			format = convert.FormatS16
+		default:
+			// TODO: Support signed 24bit integer format (#2215).
+			return nil, fmt.Errorf("wav: unsupported bits per sample: %d", bitsPerSample)
+		}
+		s = convert.NewStereoI16ReadSeeker(s, mono, format)
 		if mono {
 			dataSize *= 2
 		}
@@ -252,7 +275,7 @@ chunks:
 //
 // Decode automatically resamples the stream to fit with the audio context if necessary.
 //
-// The returned Stream's Seek is available only when src is an io.Seeker.
+// The returned Stream's Seek returns an error when src is not an io.Seeker.
 //
 // A Stream doesn't close src even if src implements io.Closer.
 // Closing the source is src owner's responsibility.

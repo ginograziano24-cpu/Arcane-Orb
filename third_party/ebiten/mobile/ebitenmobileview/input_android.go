@@ -70,9 +70,21 @@ const (
 
 // https://developer.android.com/reference/android/view/InputDevice
 const (
+	sourceUnknown  = 0x00000000
 	sourceKeyboard = 0x00000101
 	sourceGamepad  = 0x00000401
 	sourceJoystick = 0x01000010
+)
+
+// https://developer.android.com/reference/android/view/KeyCharacterMap#VIRTUAL_KEYBOARD
+const (
+	virtualKeyboard = -1
+)
+
+// https://developer.android.com/reference/android/view/KeyEvent#getMetaState()
+const (
+	metaCapsLockOn = 0x00100000
+	metaNumLockOn  = 0x00200000
 )
 
 // See https://github.com/libsdl-org/SDL/blob/47f2373dc13b66c48bf4024fcdab53cd0bdd59bb/src/joystick/android/SDL_sysjoystick.c#L71-L172
@@ -119,7 +131,9 @@ var androidKeyToSDL = map[int]int{
 	keycodeButton16:     35,
 }
 
-func UpdateTouchesOnAndroid(action int, id int, x, y int) {
+func UpdateTouchesOnAndroid(action int, id int, x, y float64) {
+	inputMu.Lock()
+	defer inputMu.Unlock()
 	switch action {
 	case 0x00, 0x05, 0x02: // ACTION_DOWN, ACTION_POINTER_DOWN, ACTION_MOVE
 		touches[ui.TouchID(id)] = position{x, y}
@@ -130,7 +144,9 @@ func UpdateTouchesOnAndroid(action int, id int, x, y int) {
 	}
 }
 
-func OnKeyDownOnAndroid(keyCode int, unicodeChar int, source int, deviceID int) {
+func OnKeyDownOnAndroid(keyCode int, unicodeChar int, source int, deviceID int, metaState int) {
+	inputMu.Lock()
+	defer inputMu.Unlock()
 	switch {
 	case source&sourceGamepad == sourceGamepad:
 		// A gamepad can be detected as a keyboard. Detect the device as a gamepad first.
@@ -139,10 +155,11 @@ func OnKeyDownOnAndroid(keyCode int, unicodeChar int, source int, deviceID int) 
 		}
 	case source&sourceJoystick == sourceJoystick:
 		// DPAD keys can come here, but they are also treated as an axis at a motion event. Ignore them.
-	case source&sourceKeyboard == sourceKeyboard:
+	case source&sourceKeyboard == sourceKeyboard, source == sourceUnknown && deviceID == virtualKeyboard:
 		if key, ok := androidKeyToUIKey[keyCode]; ok {
-			keys[key] = struct{}{}
+			keyPressedTimes[key] = ui.Get().InputTime()
 		}
+		updateLockKeys(source, metaState)
 		var runes []rune
 		if r := rune(unicodeChar); r != 0 && unicode.IsPrint(r) {
 			runes = []rune{r}
@@ -151,7 +168,9 @@ func OnKeyDownOnAndroid(keyCode int, unicodeChar int, source int, deviceID int) 
 	}
 }
 
-func OnKeyUpOnAndroid(keyCode int, source int, deviceID int) {
+func OnKeyUpOnAndroid(keyCode int, source int, deviceID int, metaState int) {
+	inputMu.Lock()
+	defer inputMu.Unlock()
 	switch {
 	case source&sourceGamepad == sourceGamepad:
 		// A gamepad can be detected as a keyboard. Detect the device as a gamepad first.
@@ -160,12 +179,23 @@ func OnKeyUpOnAndroid(keyCode int, source int, deviceID int) {
 		}
 	case source&sourceJoystick == sourceJoystick:
 		// DPAD keys can come here, but they are also treated as an axis at a motion event. Ignore them.
-	case source&sourceKeyboard == sourceKeyboard:
+	case source&sourceKeyboard == sourceKeyboard, source == sourceUnknown && deviceID == virtualKeyboard:
 		if key, ok := androidKeyToUIKey[keyCode]; ok {
-			delete(keys, key)
+			setKeyReleased(key)
 		}
+		updateLockKeys(source, metaState)
 		updateInput(nil)
 	}
+}
+
+// updateLockKeys takes the lock key states from a key event's meta state.
+// A virtual keyboard has no lock keys and reports none, so only a physical keyboard is a source.
+func updateLockKeys(source int, metaState int) {
+	if source&sourceKeyboard != sourceKeyboard {
+		return
+	}
+	capsLock = ui.NewLockKeyStateFromBool(metaState&metaCapsLockOn != 0)
+	numLock = ui.NewLockKeyStateFromBool(metaState&metaNumLockOn != 0)
 }
 
 func OnGamepadAxisChanged(deviceID int, axisID int, value float32) {

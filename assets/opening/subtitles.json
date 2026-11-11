@@ -1,0 +1,202 @@
+[
+  {
+    "rate": 2,
+    "time": 0.25,
+    "file": "00.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Tonight was supposed to be simple.",
+    "duration": 2.024172335600907,
+    "end": 2.274172335600907,
+    "nextGap": 0.8758276643990928
+  },
+  {
+    "rate": 2,
+    "time": 3.15,
+    "file": "01.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Archmage Fumbleton had a date with Mirabel. First, a little tidying.",
+    "duration": 4.633877551020408,
+    "end": 7.783877551020408,
+    "nextGap": 3.4661224489795917
+  },
+  {
+    "rate": 2,
+    "time": 11.25,
+    "file": "02.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "One Instant Tidy scroll. What could possibly go wrong?",
+    "duration": 3.633877551020408,
+    "end": 14.883877551020408,
+    "nextGap": 0.366122448979592
+  },
+  {
+    "rate": 2,
+    "time": 15.25,
+    "file": "03.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Oh. That.",
+    "duration": 1.814421768707483,
+    "end": 17.064421768707483,
+    "nextGap": 1.0355782312925186
+  },
+  {
+    "rate": 2,
+    "time": 18.1,
+    "file": "04.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Three guardians cleaned his tower. Then they kept going.",
+    "duration": 3.4939229024943312,
+    "end": 21.593922902494334,
+    "nextGap": 2.2060770975056663
+  },
+  {
+    "rate": 2,
+    "time": 23.8,
+    "file": "05.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "He tried to stop them. He made them bigger.",
+    "duration": 3.1039909297052155,
+    "end": 26.903990929705216,
+    "nextGap": 1.0960090702947838
+  },
+  {
+    "rate": 2,
+    "time": 28.0,
+    "file": "06.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Hills. Rivers. Even the sky. Everything became bricks.",
+    "duration": 5.184081632653061,
+    "end": 33.18408163265306,
+    "nextGap": 0.01591836734694141
+  },
+  {
+    "rate": 2,
+    "time": 33.2,
+    "file": "07.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Mirabel arrived right on time. And found a very different problem.",
+    "duration": 4.108798185941043,
+    "end": 37.30879818594104,
+    "nextGap": 0.8912018140589595
+  },
+  {
+    "rate": 2,
+    "time": 38.2,
+    "file": "08.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "So she made an orb of pure magic. One spell to break another.",
+    "duration": 4.018820861678004,
+    "end": 42.218820861678005,
+    "nextGap": 1.381179138321997
+  },
+  {
+    "rate": 2,
+    "time": 43.6,
+    "file": "09.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Then she called in a few friends.",
+    "duration": 2.0392290249433107,
+    "end": 45.63922902494331,
+    "nextGap": 2.4607709750566897
+  },
+  {
+    "rate": 2,
+    "time": 48.1,
+    "file": "10.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "The Orb. It breaks whatever it hits. Mostly bricks.",
+    "duration": 4.409070294784581,
+    "end": 52.50907029478458,
+    "nextGap": 3.0409297052154187
+  },
+  {
+    "rate": 2,
+    "time": 55.55,
+    "file": "11.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Dame Oriel.",
+    "duration": 1.2543310657596372,
+    "end": 56.804331065759634,
+    "nextGap": 0.7456689342403635
+  },
+  {
+    "rate": 2,
+    "time": 57.55,
+    "file": "12.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Brakka.",
+    "duration": 1.0543764172335601,
+    "end": 58.60437641723356,
+    "nextGap": 0.9456235827664372
+  },
+  {
+    "rate": 2,
+    "time": 59.55,
+    "file": "13.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Professor Vell.",
+    "duration": 1.369297052154195,
+    "end": 60.91929705215419,
+    "nextGap": 0.6307029478458048
+  },
+  {
+    "rate": 2,
+    "time": 61.55,
+    "file": "14.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Rivet.",
+    "duration": 1.074421768707483,
+    "end": 62.62442176870748,
+    "nextGap": 0.9255782312925191
+  },
+  {
+    "rate": 2,
+    "time": 63.55,
+    "file": "15.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Lucky Sol.",
+    "duration": 1.2443537414965986,
+    "end": 64.7943537414966,
+    "nextGap": 0.7556462585034041
+  },
+  {
+    "rate": 2,
+    "time": 65.55,
+    "file": "16.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Cinder.",
+    "duration": 1.0993650793650793,
+    "end": 66.64936507936508,
+    "nextGap": 0.9006349206349142
+  },
+  {
+    "rate": 2,
+    "time": 67.55,
+    "file": "17.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Zephyr.",
+    "duration": 1.1093877551020408,
+    "end": 68.65938775510203,
+    "nextGap": 1.3406122448979687
+  },
+  {
+    "rate": 2,
+    "time": 70.0,
+    "file": "18.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Seven unlikely heroes. Seven orbs. Most of them read the instructions.",
+    "duration": 5.278820861678004,
+    "end": 75.278820861678,
+    "nextGap": 0.9711791383220003
+  },
+  {
+    "rate": 2,
+    "time": 76.25,
+    "file": "19.wav",
+    "voice": "Microsoft Zira Desktop",
+    "text": "Smash the walls. Beat the bosses. Bring back the sky.",
+    "duration": 4.46907029478458,
+    "end": 80.71907029478459,
+    "nextGap": 0.7809297052154136
+  }
+]
