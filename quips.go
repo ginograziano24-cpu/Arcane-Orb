@@ -214,8 +214,15 @@ func (g *Game) heroVoice(arch, line string) {
 	if !ok || g.snd == nil {
 		return
 	}
+	vol := 0.75
+	if g.settings != nil {
+		vol *= 1 - clamp01(g.settings.VoiceCut)
+	}
+	if vol <= 0 {
+		return
+	}
 	n := min(4, max(1, len(strings.Fields(line))/2))
-	g.snd.PlayVol("voice."+itoa(vi)+"."+itoa(n), 0.75)
+	g.snd.PlayVol("voice."+itoa(vi)+"."+itoa(n), vol)
 }
 
 // updateQuips ages the bubble and the cooldowns.

@@ -27,6 +27,7 @@ type Settings struct {
 	FastAnim   bool                 `json:"fast_animations"`           // shorter transitions, no slow-motion or hit-stop
 	NoTips     bool                 `json:"no_tips"`                   // hide first-time coach tips
 	NoQuips    bool                 `json:"no_quips,omitempty"`        // silence the heroes' speech bubbles and voices
+	VoiceCut   float64              `json:"voice_cut,omitempty"`       // quip voices: 0 = full volume, 1 = silent
 	MuteBg     bool                 `json:"mute_background,omitempty"` // no sound while another window has focus
 	CenterHUD  bool                 `json:"center_hud"`                // ultrawide: keep the HUD in the 16:9 centre
 	TopDown    bool                 `json:"top_down"`                  // always use the steep, top-down camera

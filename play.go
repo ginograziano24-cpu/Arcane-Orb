@@ -79,6 +79,7 @@ type Ball struct {
 	Storm           float64 // Stormcaller supercharge seconds left
 	Hit             float64 // impact pulse, 1 at contact fading to 0
 	HitNX, HitNZ    float64 // the surface normal it last struck
+	Idle            float64 // seconds since it touched the paddle or hurt a brick (antistall.go)
 }
 
 type Power int
@@ -668,6 +669,7 @@ func (L *Level) Update(dt float64, in Input) {
 			}
 		}
 		b.R += (L.ballR() - b.R) * math.Min(1, dt*6)
+		b.Idle += dt
 		if L.titanT > 0 && b.PierceLeft < 2 {
 			b.PierceLeft = 2
 		}
@@ -941,6 +943,7 @@ func (L *Level) collideWalls(b *Ball) {
 		}
 		L.env.onBump(side, b.Z)
 		fixAngle(b)
+		L.stallNudge(b)
 		b.Rico++
 		b.PierceLeft = max(b.PierceLeft, L.g.run.Stats.Pierce)
 		L.g.snd.Play("wall." + itoa(L.Biome.ID))
@@ -1090,6 +1093,7 @@ func (L *Level) collidePaddle(b *Ball) {
 	}
 	b.VX, b.VZ = sp*math.Sin(ang), sp*math.Cos(ang)
 	b.Z = z1 + b.R
+	b.Idle = 0
 	L.passiveOnPaddle(b, t)
 	b.PierceLeft = r.Stats.Pierce
 	b.Momentum = 0
@@ -1265,6 +1269,9 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	r := g.run
 	s := &r.Stats
 	L.impacts++
+	if b.Kind != levelgen.Steel && !L.shielded(b) {
+		ball.Idle = 0 // real progress: not a stall
+	}
 	charged := ball.Charged
 	crit := L.rng.Float64() < s.CritChance || charged
 	ball.Charged = false

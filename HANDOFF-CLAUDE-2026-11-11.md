@@ -1,6 +1,6 @@
 # Claude handoff, 2026-11-11
 
-Read this first, then `ROADMAP.md`. `HANDOFF.md` still describes the
+Read this first, then **`ROADMAP-50.md`** (the new 50-item list the user asked for; work it top-down) and `ROADMAP.md`. `HANDOFF.md` still describes the
 renderer, the harness and the build in general.
 
 ## First thing next session: compile and test
@@ -133,6 +133,22 @@ In `sfx.go`:
   entering the first chamber, where the 11-10 profile showed 7.3 ms of
   shader creation inside the chamber-entry hitch. Check the first
   chamber entry in a trace.
+
+### 6. From ROADMAP-50 so far
+
+- #2 Anti-stall (`antistall.go`, test in `antistall_test.go`).
+- #44 Hero voices volume slider (Settings > Audio).
+
+## Where the code lives now
+
+- GitHub: branch `claude/sync-2026-11-11` of ginograziano24-cpu/Arcane-Orb
+  holds the PC copy (Nov 6-10 work, which had never been pushed) plus this
+  session. Not merged into `main` yet; ask the user.
+- The PC folder `Downloads\RoguelikeBreaker\ArcaneOrb-Updated\Source` has
+  the same files.
+- `third_party/ebiten` is upstream Ebitengine v2.10.6 plus the Arcane
+  patches (image.go, run.go, internal/mipmap, internal/ui and the
+  arcane_shader_windows files); everything else matches upstream.
 
 ## Files
 

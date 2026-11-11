@@ -128,7 +128,8 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 			g.snd.Music = st.Music * st.Master
 			g.snd.updateVolumes()
 		}
-		y += 214
+		st.VoiceCut = 1 - u.slider(s, "Hero voices", 520, y+192, 880, 1-st.VoiceCut, g.mouseHeld)
+		y += 276
 		st.NoQuips = !toggle("quips", "Hero quips (speech bubbles and voices)", !st.NoQuips)
 		st.MuteBg = toggle("mutebg", "Mute while the game is in the background", st.MuteBg)
 	case 1:

@@ -808,6 +808,7 @@
 "Heavy Purse"
 "Hehe. More. MORE."
 "Hero quips (speech bubbles and voices)"
+"Hero voices"
 "Hex Feeder"
 "Hex of Haste"
 "Hexed"
