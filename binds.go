@@ -156,6 +156,9 @@ var padNames = map[ebiten.StandardGamepadButton]string{
 }
 
 func padLabel(b ebiten.StandardGamepadButton) string {
+	if n := familyLabel(b); n != "" {
+		return n
+	}
 	if n, ok := padNames[b]; ok {
 		return n
 	}
@@ -167,6 +170,9 @@ func (g *Game) bindText(id string) string {
 	pad := g.padActive
 	switch id {
 	case "move":
+		if pad && g.settings.PadLeft {
+			return "the right stick"
+		}
 		if pad {
 			return "the left stick"
 		}
@@ -177,13 +183,25 @@ func (g *Game) bindText(id string) string {
 		}
 		return "a click or " + keyLabel(g.bind("launch").Keys[0])
 	case "ability":
+		if pad && g.settings.PadLeft {
+			if padFamily == padXbox {
+				return padLabel(g.bind("ability").Pad) + ", LB or LT"
+			}
+			return padLabel(g.bind("ability").Pad) + ", " + padLabel(ebiten.StandardGamepadButtonFrontTopLeft) + " / " + padLabel(ebiten.StandardGamepadButtonFrontBottomLeft)
+		}
 		if pad {
-			return padLabel(g.bind("ability").Pad) + ", RB or RT"
+			if padFamily == padXbox {
+				return padLabel(g.bind("ability").Pad) + ", RB or RT"
+			}
+			return padLabel(g.bind("ability").Pad) + ", " + padLabel(ebiten.StandardGamepadButtonFrontTopRight) + " / " + padLabel(ebiten.StandardGamepadButtonFrontBottomRight)
 		}
 		return "right click or " + keyLabel(g.bind("ability").Keys[0])
 	case "scrolls":
+		if pad && g.settings.PadLeft {
+			return padLabel(ebiten.StandardGamepadButtonFrontTopRight) + tr(" to choose and ") + padLabel(g.bind("readsel").Pad) + tr(" to read")
+		}
 		if pad {
-			return "LB to choose and " + padLabel(g.bind("readsel").Pad) + " to read"
+			return padLabel(ebiten.StandardGamepadButtonFrontTopLeft) + tr(" to choose and ") + padLabel(g.bind("readsel").Pad) + tr(" to read")
 		}
 		return keyLabel(g.bind("scroll1").Keys[0]) + ", " + keyLabel(g.bind("scroll2").Keys[0]) + " or " + keyLabel(g.bind("scroll3").Keys[0])
 	}
@@ -289,5 +307,82 @@ func (g *Game) drawControls(s *ebiten.Image, y float64) {
 	}
 	if u.button(s, "bindreset", "Reset to defaults", 520, 900, 220, 60, cAcc, g.settings.Binds != nil) {
 		g.resetBinds()
+		g.settings.PadLeft = false
 	}
+	lh := "Left-handed pad: off"
+	acc := cAcc
+	if g.settings.PadLeft {
+		lh, acc = "Left-handed pad: on", cGold
+	}
+	if u.button(s, "padleft", lh, 1180, 900, 260, 60, acc, true) {
+		g.setLeftHanded(!g.settings.PadLeft)
+	}
+	al, alc := "Auto-launch: off", cAcc
+	if g.settings.AutoLaunch {
+		al, alc = "Auto-launch: on", cGold
+	}
+	if u.button(s, "autolaunch", al, 760, 900, 400, 60, alc, true) {
+		g.settings.AutoLaunch = !g.settings.AutoLaunch
+	}
+	if u.hover(760, 900, 400, 60) {
+		g.tooltip = "The orb leaves your paddle by itself after a moment, so you only need to steer."
+	}
+	if u.hover(1180, 900, 260, 60) {
+		g.tooltip = "Right stick steers, the d-pad launches (down), uses the ability (left) and reads a scroll (up), LB or LT fire the ability and RB picks a scroll."
+	}
+}
+
+// ---------------------------------------------------------------- left-handed pad
+
+// leftPad maps the gamepad for the left hand: the right stick steers, the
+// d-pad takes the face buttons' jobs (down launches, left the ability, up
+// reads a scroll), the left shoulders fire the ability and the right bumper
+// picks a scroll. Turning it off puts the default pad buttons back; keys
+// are untouched either way.
+var leftPadButtons = map[string]ebiten.StandardGamepadButton{
+	"launch":  ebiten.StandardGamepadButtonLeftBottom,
+	"ability": ebiten.StandardGamepadButtonLeftLeft,
+	"readsel": ebiten.StandardGamepadButtonLeftTop,
+	"pause":   ebiten.StandardGamepadButtonCenterLeft,
+}
+
+func (g *Game) setLeftHanded(on bool) {
+	g.settings.PadLeft = on
+	for _, d := range bindDefaults {
+		if !d.HasPad {
+			continue
+		}
+		b := *g.bind(d.ID)
+		b.Pad = d.Pad
+		if on {
+			if p, ok := leftPadButtons[d.ID]; ok {
+				b.Pad = p
+			}
+		}
+		g.setBind(&b)
+	}
+}
+
+// padSteerAxis is the stick that steers, by handedness.
+func (g *Game) padSteerAxis() ebiten.StandardGamepadAxis {
+	if g.settings.PadLeft {
+		return ebiten.StandardGamepadAxisRightStickHorizontal
+	}
+	return ebiten.StandardGamepadAxisLeftStickHorizontal
+}
+
+// padAbilityShoulder reports the shoulder buttons that fire the ability.
+func (g *Game) padAbilityShoulder() bool {
+	if g.settings.PadLeft {
+		return padJust(ebiten.StandardGamepadButtonFrontTopLeft) || padJust(ebiten.StandardGamepadButtonFrontBottomLeft)
+	}
+	return padJust(ebiten.StandardGamepadButtonFrontTopRight) || padJust(ebiten.StandardGamepadButtonFrontBottomRight)
+}
+
+// padScrollPick is the bumper that cycles the selected scroll.
+func (g *Game) padScrollPick() bool {
+	if g.settings.PadLeft {
+		return padJust(ebiten.StandardGamepadButtonFrontTopRight)
+	}
+	return padJust(ebiten.StandardGamepadButtonFrontTopLeft)
 }

@@ -20,6 +20,9 @@ func (g *Game) latchInput() {
 		g.drawnSince = false
 	}
 	if anyPadInput() {
+		if !g.padActive || g.stateT < 0.05 {
+			notePadFamily()
+		}
 		g.padActive = true
 	} else if len(inpututil.AppendJustPressedKeys(nil)) > 0 || inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		g.padActive = false

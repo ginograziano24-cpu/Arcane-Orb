@@ -24,13 +24,13 @@ var skipFiles = map[string]bool{"balance.go": true, "capture_on.go": true, "capt
 	"debug_js.go": true, "sfx.go": true, "trailer_audio.go": true, "i18n.go": true, "crash_other.go": true,
 	"steam_windows.go": true, "steam_lb_windows.go": true, "steam_other.go": true, "steam_net_other.go": true, "presence.go": true,
 	"orb.go": true, "post.go": true, "skyfx.go": true, "sdf.go": true, "duel_net_native.go": true, "duel_net_js.go": true, "i18n_names.go": true, "models.go": true, "music.go": true,
-	"bench.go": true, "perf.go": true, "balance_run.go": true}
+	"bench.go": true, "perf.go": true, "boottrace.go": true, "soak.go": true, "padglyphs.go": true, "balance_run.go": true}
 
 // calls whose string arguments are never shown to the player
 var skipCalls = map[string]bool{"Errorf": true, "Printf": true, "Println": true, "Fprintf": true, "Fprintln": true, "panic": true, "Play": true,
 	"PlayVol": true, "PlayKeyed": true, "unlock": true, "coach": true, "anim": true, "navReg": true, "Getenv": true, "ReadFile": true, "duelLog": true,
 	"hudPortrait": true, "portrait": true, "cached": true, "glyphImage": true, "MustCompile": true, "Contains": true, "HasPrefix": true, "Split": true,
-	"Trim": true, "TrimSpace": true, "Join": true, "Replace": true, "ReplaceAll": true, "Index": true, "Setenv": true, "hashStr": true, "Mix": true}
+	"Trim": true, "TrimSpace": true, "Join": true, "Replace": true, "ReplaceAll": true, "Index": true, "Setenv": true, "hashStr": true, "Mix": true, "bootMark": true, "NewRun": true}
 
 var ident = regexp.MustCompile(`^[a-z0-9_.\-/#:%]+$`)
 var junk = regexp.MustCompile(`^[A-Z0-9]{20,}$|^Btn |^A D$|^%[-0-9.a-z]*$|^SteamAPI_|^====|^MessageBoxW$|^//kage|^json:|^[a-z]+[A-Z][A-Za-z0-9]*$|^__|^\{[a-z]+\}$`)

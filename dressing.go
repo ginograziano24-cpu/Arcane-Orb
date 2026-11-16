@@ -28,6 +28,8 @@ type envState struct {
 	lit   [6]float64
 	door  float64
 	ready bool
+	// dreamcore: where and how long ago the orb last struck a wall
+	hitX, hitZ, hitT float64
 }
 
 // progress is how far through the chamber this level is.
@@ -65,10 +67,12 @@ func (L *Level) updateEnv(dt float64) {
 	if !e.ready {
 		e.ready = true
 		e.bump = [3]float64{99, 99, 99}
+		e.hitT = 99
 	}
 	for i := range e.bump {
 		e.bump[i] += dt
 	}
+	e.hitT += dt
 	e.prog += (L.progress() - e.prog) * math.Min(1, dt*1.5)
 	e.mill += dt * (0.5 + 2.4*e.prog)
 	e.gearA += dt * (0.25 + 1.1*e.prog)
@@ -113,6 +117,9 @@ func flapBird(B *Batch, p V3, heading, t float64, col color.RGBA, s float64) {
 }
 
 func hillRange(B *Batch, seed int64, z0, z1, xspan float64, n int, col color.RGBA, hmin, hmax float64) {
+	if _, ok := terrainStyles[activeTerrain]; ok {
+		return // the world's own terrain rolls up into proper hills instead
+	}
 	r := seededRand(seed)
 	defer releaseRand(r)
 	for i := 0; i < n; i++ {
@@ -133,6 +140,17 @@ func hillRange(B *Batch, seed int64, z0, z1, xspan float64, n int, col color.RGB
 	}
 }
 
+// groundUnder is the lowest ground within radius r of (x, z), so a prop
+// set there never has an edge hanging in the air.
+func groundUnder(x, z, r float64) float64 {
+	y := terrainY(activeTerrain, x, z)
+	for k := 0; k < 8; k++ {
+		a := float64(k) * math.Pi / 4
+		y = math.Min(y, terrainY(activeTerrain, x+math.Cos(a)*r, z+math.Sin(a)*r))
+	}
+	return y
+}
+
 // ---------------------------------------------------------------- per world
 
 func (g *Game) drawDressing(B *Batch, L *Level, t, side float64) {
@@ -142,8 +160,10 @@ func (g *Game) drawDressing(B *Batch, L *Level, t, side float64) {
 	r := seededRand(L.propSeed + 7)
 	defer releaseRand(r)
 	switch bio.ID {
-	case WMeadow:
-		g.dressMeadow(B, L, e, t, side, r, low)
+	case WMeadow, WDream:
+		if !dreamWorld(bio.ID) {
+			g.dressMeadow(B, L, e, t, side, r, low)
+		}
 	case WRuins:
 		g.dressRuins(B, L, e, t, side, r, low)
 	case WClouds:
@@ -163,26 +183,40 @@ func (g *Game) dressMeadow(B *Batch, L *Level, e *envState, t, side float64, r *
 	// background: rolling hills and a red barn on the far ridge
 	hillRange(B, 41, 80, 170, 160, 9, color.RGBA{112, 150, 84, 255}, 8, 18)
 	bx := -side * 52
-	if !drawModel(B, "barn", V3{bx, -0.6, 76}, v3(1), rotXYZ(0, side*0.25, 0), color.RGBA{}, 0) {
+	by := groundUnder(bx, 76, 6) - 0.2 // on the slope, footing sunk in
+	if !drawModel(B, "barn", V3{bx, by, 76}, v3(1), rotXYZ(0, side*0.25, 0), color.RGBA{}, 0) {
 		B.Box(bx-5, -0.6, 72, bx+5, 5, 80, color.RGBA{170, 60, 48, 255}, sprWhite, 0)
 		B.OBox(V3{bx, 6.4, 76}, V3{5.4, 0, 0}, V3{0, 1.8, 0}, V3{0, 0, 4.2}, color.RGBA{96, 70, 60, 255}, 0)
 		B.Box(bx-1.4, -0.6, 71.9, bx+1.4, 3.2, 72, color.RGBA{240, 230, 210, 255}, sprWhite, 0)
 	}
-	for _, sx := range []float64{-1, 1} { // hedgerows
-		if hm := model("hedgerow"); hm != nil {
-			for k := 0; k < 5; k++ {
-				B.Draw(hm, V3{sx * (36 + float64(k)*12), -0.6, 59}, V3{2, 1, 1}, identity, color.RGBA{}, 0)
-			}
-			continue
+	// hedgerows on the far slopes: grown leafy tiles, merged into one mesh
+	// per chamber (they never move and sit in the cached background)
+	for _, sx := range []float64{-1, 1} {
+		for k := 0; k < 3; k++ {
+			hx := sx * (38 + float64(k)*14)
+			// one group per hedge, so each is small enough for the cache to skip
+			mergedStatic(B, L, "meadowHedge"+itoa(int(sx))+itoa(k), func(add func(s *floraSet, pos, scale V3, ry float64)) {
+				for tl := 0; tl < 3; tl++ {
+					tx := hx + (float64(tl)-1)*4
+					set := floraGet("hedgerow"+itoa((k+tl)%3), func() *floraSet { return growHedgerow(int64(71 + (k+tl)%3)) })
+					add(set, V3{tx, groundUnder(tx, 59, 2) - 0.15, 59}, V3{1, 1, 1}, math.Pi/2)
+				}
+			})
 		}
-		B.Box(sx*30, -0.6, 58, sx*90, 1.4, 60, color.RGBA{70, 112, 60, 255}, sprWhite, 0)
+	}
+	if !low {
+		// one flower bed at the head of each fence line, nothing else
+		for _, sx := range []float64{-1, 1} {
+			B.Draw(flowerBed(), V3{sx * (HalfW + 5.6), -0.55, 31}, v3(1), rotXYZ(0, sx*0.4, 0), color.RGBA{}, 0)
+		}
 	}
 	// sunflowers turning to the low sun, swaying
 	for i := 0; i < 7; i++ {
 		x := -side * (HalfW + 9 + float64(i%3)*1.6)
 		z := 2 + float64(i)*2.2
 		sway := math.Sin(t*1.3+float64(i)) * 0.08
-		B.Box(x-0.06, -0.6, z-0.06, x+0.06, 2.6, z+0.06, color.RGBA{90, 140, 60, 255}, sprWhite, 0)
+		stem := floraGet("sunStem"+itoa(i%3), func() *floraSet { return growSunflowerStem(int64(90 + i%3)) })
+		drawFlora(B, stem, V3{x, -0.6, z}, V3{1, 0.98, 1}, float64(i)*1.7, color.RGBA{}, t+float64(i), 0.02)
 		if drawModel(B, "sunflower_head", V3{x + sway, 2.75, z}, v3(1), rotXYZ(-0.3, side*0.6, sway), color.RGBA{}, 0.05) {
 			continue
 		}
@@ -191,11 +225,14 @@ func (g *Game) dressMeadow(B *Batch, L *Level, e *envState, t, side float64, r *
 				[]color.RGBA{{96, 60, 30, 255}, {110, 70, 36, 255}, {250, 200, 50, 255}, {240, 180, 40, 255}, {200, 150, 40, 255}}, true)
 		}), V3{x + sway, 2.7, z}, v3(1), rotXYZ(math.Pi/2-0.5, side*0.6, sway), color.RGBA{}, 0.05)
 	}
-	// pumpkin patch
-	for i := 0; i < 5; i++ {
-		x := side * (HalfW + 7 + r.Float64()*5)
-		z := 22 + r.Float64()*8
-		s := 0.6 + r.Float64()*0.5
+	// a tidy pumpkin patch on the garden side, beyond the sunflowers
+	for i := 0; i < 3; i++ {
+		x := -side * (HalfW + 8.5 + float64(i%2)*2.2)
+		z := 19 + float64(i)*2.4
+		s := 0.75 + 0.15*float64(i%2)
+		_ = r
+		vine := floraGet("pumpVine"+itoa(i%3), func() *floraSet { return growPumpkinVine(int64(120 + i%3)) })
+		drawFlora(B, vine, V3{x, -0.62, z}, v3(1), float64(i)*2.3, color.RGBA{}, t, 0)
 		if drawModel(B, "pumpkin", V3{x, -0.6, z}, v3(s), rotXYZ(0, x, 0), color.RGBA{}, 0) {
 			continue
 		}
@@ -205,8 +242,8 @@ func (g *Game) dressMeadow(B *Batch, L *Level, e *envState, t, side float64, r *
 		B.Box(x-0.05, -0.6+0.85*s, z-0.05, x+0.05, -0.6+1.1*s, z+0.05, color.RGBA{80, 110, 50, 255}, sprWhite, 0)
 	}
 	// scarecrows that spin when the orb rattles their side
-	for k, p := range [][2]float64{{-1, 13}, {1, 25}} {
-		x := p[0] * (HalfW + 6)
+	for k, p := range [][2]float64{{-side, 16.5}} {
+		x := p[0] * (HalfW + 12.5)
 		z := p[1]
 		bump := e.sideBump(x, 1.6)
 		spin := 0.0
@@ -316,7 +353,7 @@ func (g *Game) dressRuins(B *Batch, L *Level, e *envState, t, side float64, r *r
 				cols = append(cols, color.RGBA{214, 176, 118, 255}, color.RGBA{196, 160, 104, 255})
 			}
 			return Lathe(prof, 4, cols[:len(prof)-1], true)
-		}), V3{p[0], -0.6, p[1]}, V3{p[2], p[2], p[2]}, rotXYZ(0, math.Pi/4+float64(i)*0.2, 0), color.RGBA{}, 0)
+		}), V3{p[0], groundUnder(p[0], p[1], p[2]*0.9) - 1, p[1]}, V3{p[2], p[2], p[2]}, rotXYZ(0, math.Pi/4+float64(i)*0.2, 0), color.RGBA{}, 0)
 	}
 	// the temple gate opens on the final wave
 	gx := -side * 21
@@ -507,104 +544,76 @@ func (g *Game) dressClouds(B *Batch, L *Level, e *envState, t, side float64, r *
 	}
 }
 
-// ---------------------------------------------------------------- Neon Grove
+// ---------------------------------------------------------------- Glimmer Grove
 
 func (g *Game) dressNeon(B *Batch, L *Level, e *envState, t, side float64, r *rand.Rand, low bool) {
 	bio := L.Biome
-	// wireframe mountains on the horizon
-	for i := 0; i < 9; i++ {
-		x0 := -90 + float64(i)*20
-		h := 9 + 7*math.Abs(math.Sin(float64(i)*1.7))
-		pk := V3{x0 + 10, h, 74}
-		for _, base := range []V3{{x0, -0.6, 74}, {x0 + 20, -0.6, 74}} {
-			mid := pk.Add(base).Mul(0.5)
-			d := pk.Sub(base).Mul(0.5)
-			B.OBox(mid, d, V3{0.25, 0, 0}, V3{0, 0, 0.25}, bio.Floor, 0.9)
-		}
-	}
-	// equalizer bars along the horizon, pulsing with the play
-	for i := 0; i < 32; i++ {
-		x := -62 + float64(i)*4
+	glow := []color.RGBA{bio.Hues[1], bio.Hues[5], bio.Hues[2]}
+	// far ridges under the moon
+	hillRange(B, 23, 78, 150, 150, 8, color.RGBA{30, 38, 78, 255}, 9, 20)
+	// a ring of standing stones on the horizon: their runes wake as the
+	// chamber is cleared, and flicker with every bounce
+	for i := 0; i < 11; i++ {
+		x := -70 + float64(i)*14
 		if math.Abs(x) < 20 {
 			continue
 		}
-		h := 0.5 + 3*math.Abs(math.Sin(t*3+float64(i)*0.7))*(0.4+0.6*e.thump) + 1.6*e.prog
-		col := mixc(bio.Trim, bio.Floor, float64(i%4)/4)
-		B.Box(x-0.9, -0.6, 58, x+0.9, -0.6+h, 58.6, col, sprWhite, 0.9)
+		h := 0.85 + 0.3*math.Sin(float64(i)*2.3)
+		z := 60 + 5*math.Sin(float64(i)*1.3)
+		B.Draw(menhirFar(), V3{x, -0.6, z}, V3{1.5, 1.5 * h, 1.5}, rotXYZ(0, float64(i)*0.9, 0.04*math.Sin(float64(i))), color.RGBA{}, 0)
+		a := 0.10 + 0.45*e.prog + 0.3*e.thump*math.Abs(math.Sin(float64(i)*0.7+t*2))
+		B.Billboard(V3{x, 5.2 * h, z - 1.6}, 2.8, sprSoft, alpha(glow[i%3], a), true)
+		B.Billboard(V3{x, 2.6 * h, z - 1.6}, 1.6, sprSoft, alpha(glow[(i+1)%3], a*0.7), true)
 	}
-	// speaker stacks that thump with bounces and combos
-	for _, sx := range []float64{-1, 1} {
+	// giant glowcaps beside the arena swell with bounces and combos
+	for i, sx := range []float64{-1, 1} {
 		for k, z := range []float64{9, 23} {
 			x := sx * (HalfW + 6)
-			ry := 0.0
-			if sx < 0 {
-				ry = math.Pi
-			}
-			if drawModel(B, "speaker", V3{x, -0.6, z}, V3{1, 1 + 0.03*e.thump, 1}, rotXYZ(0, ry, 0), color.RGBA{}, float32(0.6*e.thump)) {
-				B.Billboard(V3{x - sx*1.6, 2.2, z}, 3+2*e.thump, sprSoft, alpha(bio.Trim, 0.25+0.4*e.thump), true)
-				_ = k
-				continue
-			}
-			B.Box(x-1.4, -0.6, z-1.2, x+1.4, 4.4, z+1.2, color.RGBA{24, 18, 40, 255}, sprWhite, 0)
-			for j := 0; j < 2; j++ {
-				cy := 0.8 + float64(j)*2.2
-				pulse := 1 + 0.18*e.thump*float64(1-j)
-				fx := x - sx*1.42
-				B.Draw(cached("cone", func() *Mesh {
-					return Lathe([][2]float64{{0, 0}, {0.3, 0.05}, {0.8, 0.2}, {0.95, 0.25}, {0.95, 0.3}}, 14,
-						[]color.RGBA{{40, 30, 60, 255}, {60, 46, 90, 255}, {80, 60, 120, 255}, {255, 90, 220, 255}}, true)
-				}), V3{fx, cy + 0.8, z}, v3(pulse*(1-0.3*float64(j))), rotXYZ(0, 0, -sx*math.Pi/2), color.RGBA{}, float32(0.2+0.6*e.thump))
-			}
-			B.Billboard(V3{x - sx*1.6, 2.2, z}, 3+2*e.thump, sprSoft, alpha(bio.Trim, 0.25+0.4*e.thump), true)
-			_ = k
+			col := glow[(i+k)%3]
+			glowcap(B, x, z, 2.6+0.5*float64(k), col, e.thump)
+			glowcap(B, x+sx*1.9, z+1.6, 1.3, glow[(i+k+1)%3], e.thump*0.6)
 		}
 	}
-	// holographic billboards with scrolling bars
+	// lantern posts where the path leaves the arena
 	for _, sx := range []float64{-1, 1} {
 		x := sx * (HalfW + 15)
 		z := 18.0
-		if !drawModel(B, "holo_frame", V3{x, -0.6, z}, v3(1), identity, color.RGBA{}, 0) {
-			B.Box(x-0.15, -0.6, z-0.15, x+0.15, 7, z+0.15, color.RGBA{60, 50, 90, 255}, sprWhite, 0)
+		B.Box(x-0.14, -0.6, z-0.14, x+0.14, 5.4, z+0.14, color.RGBA{52, 44, 60, 255}, sprWhite, 0)
+		B.Box(x-sx*1.3, 5.25, z-0.1, x+0.14*sx, 5.45, z+0.1, color.RGBA{52, 44, 60, 255}, sprWhite, 0)
+		lx := x - sx*1.2
+		sway := math.Sin(t*0.9+sx) * 0.08
+		lit := 0.75 + 0.25*math.Sin(t*5.3+sx*2)*math.Sin(t*1.7)
+		if !drawModel(B, "lantern", V3{lx + sway, 4.1, z}, v3(1.3), identity, color.RGBA{}, float32(0.8*lit)) {
+			B.Box(lx-0.3+sway, 4.1, z-0.3, lx+0.3+sway, 4.9, z+0.3, color.RGBA{255, 214, 140, 255}, sprWhite, 0.8)
 		}
-		B.Quad([4]V3{{x, 11, z - 4}, {x, 11, z + 4}, {x, 6.5, z + 4}, {x, 6.5, z - 4}}, sprWhite, alpha(color.RGBA{30, 200, 255, 255}, 0.18), [4]float32{1, 1, 1, 1}, true)
-		for k := 0; k < 5; k++ {
-			y := 6.8 + math.Mod(float64(k)*0.9+t*1.2, 4.2)
-			w := 1.5 + 2*math.Abs(math.Sin(float64(k)*2+t*0.5))
-			B.Quad([4]V3{{x - sx*0.05, y + 0.18, z - w}, {x - sx*0.05, y + 0.18, z + w}, {x - sx*0.05, y, z + w}, {x - sx*0.05, y, z - w}}, sprWhite,
-				alpha(mixc(bio.Trim, color.RGBA{60, 230, 255, 255}, float64(k%2)), 0.7), [4]float32{1, 1, 1, 1}, true)
-		}
+		B.Billboard(V3{lx + sway, 4.5, z}, 4.2, sprSoft, alpha(color.RGBA{255, 200, 120, 255}, 0.4*lit), true)
+		B.Decal(lx, z, -0.55, 6, 6, sprSoft, alpha(color.RGBA{255, 190, 110, 255}, 0.16*lit), true)
 	}
-	// neon palms
+	// night-blooming shrubs (young lumen trees here cost ~5% fps for little)
 	for i := 0; i < 4; i++ {
 		sx := float64(i%2*2 - 1)
 		x := sx * (HalfW + 10 + float64(i/2)*8)
 		z := 6 + float64(i)*8
-		if drawModel(B, "neon_palm", V3{x, -0.6, z}, v3(1), rotXYZ(0, float64(i)+math.Sin(t*0.8+float64(i))*0.05, 0), color.RGBA{}, 0) {
-			continue
-		}
-		B.Box(x-0.18, -0.6, z-0.18, x+0.18, 6, z+0.18, color.RGBA{40, 30, 70, 255}, sprWhite, 0.1)
-		for k := 0; k < 6; k++ {
-			a := float64(k)/6*2*math.Pi + math.Sin(t*0.8+float64(i))*0.08
-			dir := V3{math.Cos(a), -0.3, math.Sin(a)}.Norm()
-			B.OBox(V3{x, 6, z}.Add(dir.Mul(1.6)), dir.Mul(1.7), V3{0, 0.04, 0}, V3{-math.Sin(a), 0, math.Cos(a)}.Mul(0.18), bio.Hues[(k+i)%6], 0.9)
-		}
+		shrubPal(B, x, z, glow[i%3], int64(i+3), palNight)
 	}
-	// the final wave makes the horizon glitch
+	// the last wave wakes the aurora
 	if L.wave >= L.waves && (L.waves > 1 || e.prog > 0.5) || L.Boss != nil && e.prog > 0.5 {
-		if math.Mod(t*1.3, 2) < 0.25 {
-			for k := 0; k < 4; k++ {
-				y := 6 + float64(k)*5 + math.Sin(t*30+float64(k))*2
-				B.Quad([4]V3{{-200, y + 0.6, 160}, {200, y + 0.6, 160}, {200, y, 160}, {-200, y, 160}}, sprWhite, alpha(color.RGBA{60, 255, 230, 255}, 0.35), [4]float32{1, 1, 1, 1}, true)
-			}
+		for k := 0; k < 3; k++ {
+			y := 22 + float64(k)*9 + math.Sin(t*0.5+float64(k)*2)*2.5
+			a := 0.07 + 0.05*math.Sin(t*0.8+float64(k)*1.3)
+			B.Quad([4]V3{{-220, y + 16, 160}, {220, y + 16, 160}, {220, y, 160}, {-220, y, 160}}, sprSoft, alpha(glow[k], a), [4]float32{1, 1, 1, 1}, true)
 		}
 	}
 	if low {
 		return
 	}
-	for i := 0; i < 20; i++ { // data motes
-		ph := math.Mod(t*0.2+float64(i)*0.137, 1)
-		x := float64(i%2*2-1) * (HalfW + 3 + float64(i%5)*4)
-		B.Billboard(V3{x, ph * 10, 2 + float64(i)*1.6}, 0.25, sprSoft, alpha(bio.Hues[i%6], 1-ph), true)
+	for i := 0; i < 22; i++ { // fireflies
+		fi := float64(i)
+		x := float64(i%2*2-1)*(HalfW+3+float64(i%5)*4) + math.Sin(t*0.5+fi*1.9)*1.6
+		y := 1.2 + 1.4*math.Sin(t*0.37+fi*2.3) + float64(i%4)
+		z := 2 + fi*1.5 + math.Cos(t*0.43+fi)*1.4
+		blink := math.Max(0, math.Sin(t*1.3+fi*2.9))
+		B.Billboard(V3{x, y, z}, 0.3, sprSoft, alpha(color.RGBA{214, 255, 150, 255}, 0.25+0.75*blink), true)
 	}
 }
 
@@ -625,22 +634,29 @@ func (g *Game) dressCaverns(B *Batch, L *Level, e *envState, t, side float64, r 
 			rotXYZ(0.2*sx, float64(i), 0.1), color.RGBA{}, float32(0.25+0.75*f))
 		B.Billboard(V3{x, 0.8, z}, 1.8+2*f, sprSoft, alpha(col, 0.25+0.6*f), true)
 	}
-	// glow-worm curtains hanging from rock arches, swaying on bounces
+	// glow-worm grottoes: a rock arch standing on two stacked-stone pillars,
+	// stalactites under the span and strands of glowing beads that sway on
+	// bounces (the arch used to hang in the air on wire-thin curtains)
 	for _, sx := range []float64{-1, 1} {
 		ax := sx * (HalfW + 9)
-		if !drawModel(B, "cave_arch", V3{ax, 7, 16}, v3(1), identity, color.RGBA{}, 0) {
-			B.Draw(cached("arch", func() *Mesh {
-				return Icosphere(1, 0.25, 33, color.RGBA{64, 70, 100, 255}, color.RGBA{30, 34, 52, 255})
-			}), V3{ax, 7, 16}, V3{3, 1.6, 9}, identity, color.RGBA{}, 0)
-		}
-		sway := 0.1 + 0.6*e.sideBump(ax, 2)
-		for k := 0; k < 12; k++ {
-			z := 9 + float64(k)*1.2
-			ln := 2 + float64((k*7)%5)*0.6
-			dx := math.Sin(t*2+float64(k)) * sway * 0.4
-			B.Box(ax+dx-0.015, 6-ln, z-0.015, ax+dx+0.015, 6, z+0.015, color.RGBA{150, 220, 255, 255}, sprWhite, 0.6)
-			B.Billboard(V3{ax + dx, 6 - ln, z}, 0.5, sprSoft, alpha(color.RGBA{120, 230, 255, 255}, 0.7*(0.6+0.4*e.prog)), true)
-		}
+		caveGrotto(B, ax, 16, t, 0.1+0.6*e.sideBump(ax, 2), 0.6+0.4*e.prog, int64(sx+3))
+	}
+	// glowing ferns and moss tufts along the walls and around the pool
+	fern := cached("caveFern", func() *Mesh { return growFern(13, true) })
+	mossM := cached("caveMoss", func() *Mesh {
+		fb := newFloraB(14)
+		fb.tint = true
+		fb.emi = 0.35
+		fb.mossTuft(V3{}, 0.8, 0.6, color.RGBA{150, 160, 170, 255}, color.RGBA{230, 240, 255, 255}, 40)
+		return fb.m
+	})
+	for i := 0; i < 14; i++ {
+		sx := float64(i%2*2 - 1)
+		x := sx * (HalfW + 4.5 + math.Mod(float64(i)*3.7, 12))
+		z := 2 + math.Mod(float64(i)*7.3, 36)
+		col := lighten(bio.Hues[(i*3)%6], 0.2)
+		B.Draw(fern, V3{x, terrainY(activeTerrain, x, z), z}, v3(0.9+0.4*math.Mod(float64(i)*0.37, 1)), rotXYZ(0, float64(i)*1.9, 0), col, 0)
+		B.Draw(mossM, V3{x + sx*1.4, terrainY(activeTerrain, x, z) + 0.02, z + 1}, v3(1), rotXYZ(0, float64(i), 0), col, 0)
 	}
 	// a ring of crystals that brightens as the chamber is won
 	g0 := 0.2 + 0.8*e.prog
@@ -669,6 +685,21 @@ func (g *Game) dressCaverns(B *Batch, L *Level, e *envState, t, side float64, r 
 // ---------------------------------------------------------------- the Machine
 
 func (g *Game) dressMachine(B *Batch, L *Level, e *envState, t, side float64, r *rand.Rand, low bool) {
+	// weeds pushing up through the yard by the walls: the works are old
+	weeds := cached("machineWeeds", func() *Mesh {
+		fb := newFloraB(17)
+		for k := 0; k < 4; k++ {
+			fb.mossTuft(V3{fb.f(-1.5, 1.5), 0, fb.f(-1.5, 1.5)}, 0.35, 0.35, color.RGBA{70, 86, 40, 255}, color.RGBA{150, 150, 80, 255}, 16)
+		}
+		return fb.m
+	})
+	for k := 0; k < 10; k++ {
+		sx := float64(k%2*2 - 1)
+		x := sx * (HalfW + 2.6 + math.Mod(float64(k)*2.3, 6))
+		z := -2 + math.Mod(float64(k)*7.9, 40)
+		B.Draw(weeds, V3{x, -0.6, z}, v3(1), rotXYZ(0, float64(k)*2.1, 0), color.RGBA{}, 0)
+	}
+
 	// smokestacks on the skyline
 	for i, p := range [][2]float64{{-side * 45, 100}, {side * 25, 120}, {-side * 5, 140}, {side * 60, 95}} {
 		h := 26 + float64(i%2)*10
@@ -727,6 +758,37 @@ func (g *Game) dressMachine(B *Batch, L *Level, e *envState, t, side float64, r 
 			B.Billboard(V3{x, 4.2, z - 0.3}, 3, sprSoft, alpha(color.RGBA{255, 80, 50, 255}, 0.3+0.3*math.Sin(t*10)), true)
 		}
 	}
+	// molten-iron runnels in stone channels beneath the copper pipes, with
+	// slag crust drifting downstream and a heat haze glowing off them
+	for _, sx := range []float64{-1, 1} {
+		x := sx * (HalfW + 6.6)
+		z0, z1 := -4.0, 46.0
+		B.Box(x-1.25, -0.6, z0, x-0.8, -0.2, z1, color.RGBA{46, 42, 44, 255}, sprWhite, 0)
+		B.Box(x+0.8, -0.6, z0, x+1.25, -0.2, z1, color.RGBA{46, 42, 44, 255}, sprWhite, 0)
+		y := -0.42
+		// the molten iron is solid (opaque, self-lit) and cut into short
+		// lengths so it sorts correctly against the pipes and consoles; the
+		// glow list draws over everything, so it is kept to soft halos
+		for zz := z0; zz < z1; zz += 5 {
+			ze := math.Min(z1, zz+5)
+			B.Quad([4]V3{{x - 0.8, y, ze}, {x + 0.8, y, ze}, {x + 0.8, y, zz}, {x - 0.8, y, zz}}, sprWhite, color.RGBA{255, 96, 20, 255}, [4]float32{1.3, 1.3, 1.3, 1.3}, false)
+			B.Quad([4]V3{{x - 0.4, y + 0.01, ze}, {x + 0.4, y + 0.01, ze}, {x + 0.4, y + 0.01, zz}, {x - 0.4, y + 0.01, zz}}, sprWhite, color.RGBA{255, 200, 110, 255}, [4]float32{1.2, 1.2, 1.2, 1.2}, false)
+		}
+		for k := 0; k < 7; k++ {
+			ph := math.Mod(t*0.05+float64(k)/7+sx*0.13, 1)
+			z := z1 - ph*(z1-z0)
+			w := 0.35 + 0.2*math.Sin(float64(k)*3.1)
+			B.Decal(x+math.Sin(float64(k)*1.7)*0.3, z, y+0.02, w, w*2.2, sprSphere, color.RGBA{70, 30, 22, 255}, false)
+		}
+		if !low {
+			for k := 0; k < 5; k++ {
+				z := z0 + 4 + float64(k)*9.5
+				fl := 0.75 + 0.25*math.Sin(t*3.1+float64(k)*1.9+sx)
+				B.Billboard(V3{x, 0.6, z}, 4.2, sprSoft, alpha(color.RGBA{255, 110, 30, 255}, 0.32*fl), true)
+				B.Decal(x, z, -0.58, 7, 9, sprSoft, alpha(color.RGBA{255, 120, 40, 255}, 0.22*fl), true)
+			}
+		}
+	}
 	// the final wave sets the alarm lights sweeping
 	if L.wave >= L.waves && (L.waves > 1 || e.prog > 0.5) || L.Boss != nil && e.prog > 0.5 {
 		for _, sx := range []float64{-1, 1} {
@@ -753,5 +815,118 @@ func (g *Game) dressMachine(B *Batch, L *Level, e *envState, t, side float64, r 
 			d := ph / 0.3
 			B.Billboard(V3{x + math.Cos(a)*d*1.5, 2.5 + d*1.5 - d*d*3, z + math.Sin(a)*d*1.5}, 0.15, sprSoft, alpha(color.RGBA{255, 200, 90, 255}, 1-d), true)
 		}
+	}
+}
+
+// dryStoneWall is a 12-unit run of a low, two-course field wall: rough
+// stones in warm greys with a darker capstone row, baked into one mesh.
+func dryStoneWall() *Mesh {
+	return cached("drystone", func() *Mesh {
+		r := rand.New(rand.NewSource(41))
+		out := &Mesh{}
+		add := func(m *Mesh, p, s V3, ry float64) {
+			rot := rotXYZ(0, ry, 0)
+			for _, t := range m.Tris {
+				var q [3]V3
+				for i := 0; i < 3; i++ {
+					q[i] = rot.Mul(V3{t.P[i].X * s.X, t.P[i].Y * s.Y, t.P[i].Z * s.Z}).Add(p)
+				}
+				out.Tris = append(out.Tris, Tri{P: q, Col: t.Col})
+			}
+		}
+		stones := []*Mesh{
+			Icosphere(0, 0.22, 1, color.RGBA{176, 166, 146, 255}, color.RGBA{112, 104, 92, 255}),
+			Icosphere(0, 0.22, 2, color.RGBA{160, 150, 128, 255}, color.RGBA{100, 92, 80, 255}),
+			Icosphere(0, 0.22, 3, color.RGBA{186, 170, 140, 255}, color.RGBA{120, 106, 86, 255}),
+		}
+		for row := 0; row < 2; row++ {
+			for z := -6.0 + float64(row)*0.5; z < 6; {
+				w := 0.85 + r.Float64()*0.4
+				h := 0.32 + r.Float64()*0.12
+				y := 0.3 + float64(row)*0.55
+				add(stones[r.Intn(3)], V3{(r.Float64() - 0.5) * 0.12, y, z + w}, V3{0.45, h, w}, (r.Float64()-0.5)*0.3)
+				z += w * 1.85
+			}
+		}
+		// moss tufts on the cap: short splayed blades, not lumps
+		fb := newFloraB(9)
+		for i := 0; i < 3; i++ {
+			fb.mossTuft(V3{0, 1.14, -4 + float64(i)*4 + r.Float64()}, 0.3, 0.6, color.RGBA{74, 104, 40, 255}, color.RGBA{150, 176, 76, 255}, 26)
+		}
+		out.Tris = append(out.Tris, fb.m.Tris...)
+		return out
+	})
+}
+
+// flowerBed is a low mound of earth packed with blooms.
+func flowerBed() *Mesh {
+	return cached("flowerbed", func() *Mesh {
+		out := &Mesh{}
+		// a shallow mound of dark earth, mostly hidden by the planting
+		for _, t := range Icosphere(1, 0.1, 5, color.RGBA{84, 62, 42, 255}, color.RGBA{60, 44, 30, 255}).Tris {
+			var q [3]V3
+			for k := 0; k < 3; k++ {
+				q[k] = V3{t.P[k].X * 1.6, t.P[k].Y*0.28 - 0.05, t.P[k].Z * 1.1}
+			}
+			out.Tris = append(out.Tris, Tri{P: q, Col: t.Col})
+		}
+		out.Tris = append(out.Tris, growFlowerBed(77).Tris...)
+		return out
+	})
+}
+
+// caveGrotto is a free-standing rock arch over the cave floor at (x, z),
+// spanning along z: two pillars of stacked boulders, a lumpy span, hanging
+// stalactites and glow-worm strands.
+func caveGrotto(B *Batch, x, z, t, sway, glow float64, seed int64) {
+	if !B.objBegin(x, 4, z, 11) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
+	rock := color.RGBA{70, 76, 108, 255}
+	deep := color.RGBA{34, 38, 58, 255}
+	gy := terrainY(activeTerrain, x, z)
+	// the pillars: boulders stacked from the floor up to the span, each a
+	// little smaller and twisted against the one below
+	for _, pz := range []float64{z - 7.2, z + 7.2} {
+		y := gy - 0.3
+		for k := 0; k < 5; k++ {
+			s := 1.9 - 0.18*float64(k)
+			m := cached("grottoRock3"+itoa(k%4), func() *Mesh { return growRock(int64(300+k%4), false) })
+			B.Draw(m, V3{x + 0.25*math.Sin(float64(k)*1.7+pz), y + s*0.7, pz + 0.2*math.Cos(float64(k)*2.3)}, V3{s, s * 1.05, s}, rotXYZ(0, float64(k)*1.1+pz, 0), lighten(rock, 0.2), 0)
+			y += s * 1.25
+		}
+	}
+	// the span
+	if !drawModel(B, "cave_arch", V3{x, 7, z}, v3(1), identity, color.RGBA{}, 0) {
+		B.Draw(cached("arch", func() *Mesh {
+			return Icosphere(1, 0.25, 33, color.RGBA{64, 70, 100, 255}, color.RGBA{30, 34, 52, 255})
+		}), V3{x, 7, z}, V3{3, 1.6, 9}, identity, color.RGBA{}, 0)
+	}
+	// stalactites under the span
+	tip := cached("stalactite", func() *Mesh {
+		return Lathe([][2]float64{{0, -2.8}, {0.18, -2.0}, {0.4, -0.9}, {0.55, 0.15}, {0, 0.3}}, 7, []color.RGBA{deep, rock}, false)
+	})
+	for k := 0; k < 9; k++ {
+		fk := float64(k)
+		pz := z - 5.5 + fk*1.4
+		ln := 0.6 + math.Mod(fk*0.37+float64(seed)*0.11, 0.6)
+		B.Draw(tip, V3{x + 0.7*math.Sin(fk*2.1), 5.9, pz}, V3{ln, ln, ln}, rotXYZ(0, fk, 0), color.RGBA{}, 0)
+	}
+	// glow-worm strands: beads of light, brightest at the tip
+	for k := 0; k < 12; k++ {
+		fk := float64(k)
+		pz := z - 6.6 + fk*1.2
+		ln := 2 + math.Mod(fk*7, 5)*0.6
+		dx := math.Sin(t*2+fk) * sway * 0.4
+		n := 5 + k%3
+		for b := 0; b < n; b++ {
+			f := float64(b+1) / float64(n)
+			y := 6 - ln*f
+			sz := 0.07 + 0.09*f
+			B.Billboard(V3{x + dx*f, y, pz}, sz, sprSphere, color.RGBA{150, 230, 255, 255}, false)
+		}
+		B.Billboard(V3{x + dx, 6 - ln, pz}, 0.55, sprSoft, alpha(color.RGBA{120, 230, 255, 255}, 0.7*glow), true)
 	}
 }

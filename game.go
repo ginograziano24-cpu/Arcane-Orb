@@ -35,8 +35,9 @@ const (
 	StCodex
 	StStory
 	StChallenge
-	StCache // a rune cache's choice, mid-chamber
-	StDuel  // duel rooms, lobby and results
+	StCache     // a rune cache's choice, mid-chamber
+	StDuel      // duel rooms, lobby and results
+	StKeepsakes // the keepsake upgrade tree (keepsaketree.go)
 )
 
 type Input struct {
@@ -60,9 +61,49 @@ type shopItem struct {
 	Price  int
 	Sold   bool
 	Scroll string
+	Sale   bool // today's deal: 40% off (ROADMAP-50 #61)
+	Locked bool // kept through a reroll (banish.go)
 }
 
 type Game struct {
+	statCache        map[string]*statChangeCache // reward-card stat previews (statdelta.go)
+	jukebox          int                         // soundtrack tab: the track picked (soundtrack.go)
+	jukeboxOn        bool
+	forges           []*forgeAnim // fusion shows waiting to play (fusionfx.go)
+	letter           *letterAnim  // the letter being read (letters.go)
+	flawless         bool         // the last chamber was cleared without a drop (FLAWLESS stamp)
+	flawlessT        float64
+	mbench           *menuBench         // the 60-second benchmark from Settings, while it runs
+	mbenchDone       []mbResult         // its results, shown until dismissed
+	photo            *photoMode         // photo mode, from the pause screen
+	chronSel         int                // the Chronicle page being read (Codex)
+	archPanel        int                // origin screen overlay: 2 trials
+	keepFrom         State              // where the Keepsakes menu returns to
+	keepSel          string             // the keepsake selected in the tree
+	kt               ktFX               // the tree screen's effects (visfx13.go)
+	knotFlashT       float64            // the Guardian's Knot's gold wash (visfx14.go)
+	tabGlowX         map[string]float64 // sliding tab underlines (visfx17.go)
+	seedLen          int
+	seedPopT         float64
+	setPulseT        float64
+	codexShown       int
+	codexOpenT       float64
+	soldT            map[int]float64
+	banishing        bool        // the next reward card clicked is banished (banish.go)
+	banishFXs        []*banishFX // banished cards burning away (visfx9.go)
+	shopShineT       float64     // time since the shop was stocked (visfx10.go)
+	shopGoldShown    int
+	goldFlash        float64
+	charmFlash       float64    // the HUD keepsake flaring (visfx10.go)
+	uiSparks         []*uiSpark // screen sparks on the shop and reward screens (visfx11.go)
+	banishSlot       int
+	banishArriveT    float64
+	banishArriveOn   bool
+	coopSel          bool      // co-op chosen on the origin screen
+	p2in             coopInput // player two's controls this frame
+	hudBossPhase     int       // rage marks crossed on the boss bar (hud.go)
+	hudBossFlare     float64
+	pendingLetter    *letterAnim // arrives when the map is next on screen
 	opening          *openingFilm
 	sideJobs         []func(*Batch) // drawWorld: the static parts built on their own goroutines
 	sideBatches      []*Batch
@@ -84,7 +125,6 @@ type Game struct {
 	sky              *ebiten.Image
 	skyAct           int
 	menuL            *Level
-	menu             *menuScene
 	post             *Post
 	titleCache       map[string]*ebiten.Image
 	lastDraw         time.Time
@@ -127,6 +167,8 @@ type Game struct {
 	rerollCost   int
 	event        *Event
 	eventMsg     string
+	eventGoodT   float64 // time since an event's outcome showed (visfx16.go)
+	eventBad     bool
 	banner       string
 	bannerDesc   string
 	bannerT      float64
@@ -183,31 +225,37 @@ type Game struct {
 	shopFree    int
 
 	// achievements
-	achQueue     []string // popups waiting to show (when Steam's overlay is absent)
-	achT         float64
-	achTick      int
-	achScroll    float64
-	scrollSel    int // pad: selected scroll slot
-	hero         heroPortrait
-	quips        quipState // the hero speech bubble (quips.go)
-	bgMuted      bool      // sound is silenced while the window is in the background
-	challengeSel string    // challenge picked on the Challenges screen
-	deferOverlay bool      // drawWorld leaves its 2D layer for a later pass
-	dynScale     float64
-	frameAvg     float64
-	dynT         float64
-	setTab       int
-	mapShowBuild bool
-	histScroll   float64
-	savedRun     *savedRun
-	savedChecked bool
-	menuQuit     string
+	achQueue       []string // popups waiting to show (when Steam's overlay is absent)
+	achT           float64
+	achTick        int
+	achScroll      float64
+	scrollSel      int // pad: selected scroll slot
+	hero           heroPortrait
+	quips          quipState     // the hero speech bubble (quips.go)
+	bgMuted        bool          // sound is silenced while the window is in the background
+	challengeSel   string        // challenge picked on the Challenges screen
+	weeklySel      bool          // the weekly mutator run was picked on the Challenges screen
+	pendingChamber *savedChamber // the chamber progress being written (chambersave.go)
+	pendingWeekly  []string      // its mutators, while startRunWith builds the run
+	deferOverlay   bool          // drawWorld leaves its 2D layer for a later pass
+	dynScale       float64
+	frameAvg       float64
+	dynT           float64
+	aaAvg          float64 // dynamic supersampling: smoothed frame time and step timer
+	aaT            float64
+	setTab         int
+	mapShowBuild   bool
+	histScroll     float64
+	savedRun       *savedRun
+	savedChecked   bool
+	menuQuit       string
 }
 
 func NewGame() *Game {
 	g := &Game{rng: rand.New(rand.NewSource(time.Now().UnixNano())), last: time.Now(), skyAct: -1}
 	g.save = loadSave()
 	g.settings = &g.save.Settings
+	bootMark("save loaded")
 	// DirectX 12 measured 10-40x slower than DirectX 11 for this renderer
 	// (bench, RTX 5090), so the old option is ignored; EBITENGINE_DIRECTX
 	// can still force it for testing
@@ -216,13 +264,17 @@ func NewGame() *Game {
 		g.settings.TextScale = 1.15 // a little larger on the Deck's 7" screen
 	}
 	g.snd = NewSounds()
+	bootMark("sound set up")
 	g.ui = newUI(g.snd)
+	bootMark("UI and fonts")
 	if g.settings.Lang == "" {
 		g.settings.Lang = detectLanguage()
 	}
 	g.setLang(g.settings.Lang)
+	bootMark("language")
 	g.batch = newBatch(&g.cam)
 	g.post = newPost()
+	bootMark("renderer")
 	g.applySettings()
 	g.titleCache = map[string]*ebiten.Image{}
 	// achievements earned before Steam was present catch up now
@@ -244,6 +296,7 @@ func (g *Game) applySettings() {
 	g.snd.SFX = s.SFX * s.Master
 	g.snd.Music = s.Music * s.Master
 	ebiten.SetFullscreen(s.Fullscreen)
+	syncWindowIcon(s.Fullscreen)
 	applyWindowMode(s)
 	ebiten.SetVsyncEnabled(s.VSync)
 }
@@ -265,6 +318,9 @@ func (g *Game) demoLevel() *Level {
 
 func (g *Game) setState(s State) {
 	g.loreOpen = false
+	g.archPanel = 0
+	g.banishing = false
+	g.photo = nil // photo mode ends with the pause it came from
 	if s == StSettings && g.state != StSettings {
 		g.prevState = g.state
 	}
@@ -274,13 +330,20 @@ func (g *Game) setState(s State) {
 	}
 	g.state = s
 	g.stateT = 0
+	if s != StCodex {
+		g.jukeboxOn = false
+	}
 	if s == StMenu {
+		g.letter, g.pendingLetter, g.forges = nil, nil, nil
 		g.hudLevel, g.hudLocation = nil, ""
-		g.challengeSel = ""
+		g.challengeSel, g.weeklySel = "", false
 		g.savedRun, g.savedChecked = nil, false
 	}
 	if s == StMap {
 		g.saveRun("map", -1)
+	}
+	if s == StMap || s == StReward {
+		g.prewarmNext() // the next chambers' worlds, while the player chooses
 	}
 	if g.kbdShown && s != StSeed {
 		steamKeyboardClose()
@@ -341,11 +404,20 @@ func (g *Game) Update() error {
 		return ebiten.Termination
 	}
 	g.paceFrame()
+	if !bootDone && len(bootSteps) > 0 && bootSteps[len(bootSteps)-1].name == bootSetUp {
+		bootMark("window opened")
+	}
 	g.updateBackgroundMute()
 	perfBegin(secUpdate)
 	defer perfEnd(secUpdate)
 	perfToggle()
 	if benchUpdate(g) {
+		return nil
+	}
+	if soakUpdate(g) {
+		return nil
+	}
+	if g.tickMenuBench() {
 		return nil
 	}
 	if captureUpdate(g) {
@@ -382,6 +454,7 @@ func (g *Game) Update() error {
 		writeSave(&g.save)
 	}
 	g.ui.Click = inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)
+	g.updateCoop() // before anything reads player one's pads
 	g.latchInput()
 	g.mouseHeld = ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft)
 	if g.opening != nil {
@@ -392,12 +465,20 @@ func (g *Game) Update() error {
 	if g.updateCoach(dt) {
 		return nil // a first-time tip is up; everything waits
 	}
+	if g.updateForge(dt) {
+		return nil // a fusion is being forged; everything waits
+	}
+	if g.updateLetter(dt) {
+		return nil // a letter is open
+	}
 	g.updateDuel(dt)
 
 	// music
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StSettings, StChallenge, StDuel:
-		if g.run == nil || g.state != StSettings || g.prevState == StMenu {
+	case StMenu, StArch, StSeed, StSanctum, StKeepsakes, StHelp, StCodex, StSettings, StChallenge, StDuel:
+		if g.state == StCodex && g.jukeboxOn {
+			g.snd.SetTrack(g.jukebox) // listening in the soundtrack tab
+		} else if g.run == nil || g.state != StSettings || g.prevState == StMenu {
 			g.snd.SetTrack(3)
 		}
 		g.snd.SetIntensity(0.25, dt)
@@ -421,8 +502,18 @@ func (g *Game) Update() error {
 		}
 	}
 
+	// the world's ambience bed under the music, while a chamber is in play
+	if g.level != nil && g.run != nil && g.level.Biome != nil {
+		g.snd.SetAmbience(g.level.Biome.ID, g.state == StLevel || g.state == StCache, dt)
+	} else if g.snd != nil {
+		g.snd.SetAmbience(g.snd.World, false, dt)
+	}
+
+	if g.state == StSummary && g.duel == nil && g.stateT > 0.8 && !g.victory && g.updateRestartHold(dt) {
+		return nil // hold R on the defeat screen: straight into a new run
+	}
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StChallenge:
+	case StMenu, StArch, StSeed, StSanctum, StKeepsakes, StHelp, StCodex, StChallenge:
 		if g.state == StSeed {
 			g.updateSeedInput()
 		}
@@ -430,10 +521,16 @@ func (g *Game) Update() error {
 		if backPressed() {
 			if g.loreOpen {
 				g.loreOpen = false
+			} else if g.state == StKeepsakes {
+				writeSave(&g.save)
+				g.setState(g.keepFrom)
+			} else if g.state == StArch && g.archPanel != 0 {
+				g.archPanel = 0 // Esc closes the keepsake or trials panel
+				writeSave(&g.save)
 			} else if g.state == StMenu {
 				// point at Quit rather than closing the game outright
 				g.ui.nav.mode, g.ui.nav.focus = true, g.menuQuit
-			} else if g.state == StArch && g.challengeSel != "" {
+			} else if g.state == StArch && (g.challengeSel != "" || g.weeklySel) {
 				g.setState(StChallenge)
 			} else {
 				g.setState(StMenu)
@@ -470,6 +567,7 @@ func (g *Game) Update() error {
 		if g.duel == nil && g.updateRestartHold(dt) {
 			return nil
 		}
+		g.tickChamberSave()
 		if g.gameSpeed() < 1 {
 			g.run.Assisted = true
 		}
@@ -495,6 +593,10 @@ func (g *Game) Update() error {
 	case StMap:
 		debugMapKeys(g)
 	case StPause:
+		if g.photo != nil {
+			g.updatePhoto(dt)
+			break
+		}
 		if g.pausePressed() || padJust(ebiten.StandardGamepadButtonRightRight) {
 			g.setState(StLevel)
 		}
@@ -568,12 +670,14 @@ func (g *Game) readInput() Input {
 	in.Fire = g.ui.Click || g.actJust("launch")
 	in.Ability = inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) || g.actJust("ability")
 	// gamepad: left stick or d-pad steers (analog), A launches, X / RB / RT fire the ability
-	ax := padAxis(ebiten.StandardGamepadAxisLeftStickHorizontal)
-	if padDown(ebiten.StandardGamepadButtonLeftLeft) {
-		ax = -1
-	}
-	if padDown(ebiten.StandardGamepadButtonLeftRight) {
-		ax = 1
+	ax := padAxis(g.padSteerAxis())
+	if !g.settings.PadLeft { // left-handed, the d-pad holds the buttons instead
+		if padDown(ebiten.StandardGamepadButtonLeftLeft) {
+			ax = -1
+		}
+		if padDown(ebiten.StandardGamepadButtonLeftRight) {
+			ax = 1
+		}
 	}
 	if math.Abs(ax) > 0.15 {
 		g.useKeys = true
@@ -582,7 +686,7 @@ func (g *Game) readInput() Input {
 		in.KeyDir = math.Copysign((math.Abs(ax)-0.15)/0.85, ax)
 		in.Fast = math.Abs(ax) > 0.92
 	}
-	if padJust(ebiten.StandardGamepadButtonFrontTopRight) || padJust(ebiten.StandardGamepadButtonFrontBottomRight) {
+	if g.padAbilityShoulder() {
 		in.Ability = true
 	}
 	return in
@@ -620,6 +724,10 @@ func dailyCode() string { return "DAILY-" + time.Now().Format("2006-01-02") }
 // ---------------------------------------------------------------- run flow
 
 func (g *Game) startRun(arch *Archetype) {
+	if g.weeklySel {
+		g.startWeekly(arch)
+		return
+	}
 	if g.challengeSel != "" {
 		g.beginChallenge(arch, g.challengeSel)
 		return
@@ -649,6 +757,8 @@ func (g *Game) startRunWith(arch *Archetype, ch string) {
 			c.Setup(g)
 		}
 	}
+	g.setupWeekly()
+	g.setupPersonal()
 	g.run.Endless = g.endlessMode
 	g.run.EndlessStart = g.endlessMode
 	g.save.Runs++
@@ -656,7 +766,7 @@ func (g *Game) startRunWith(arch *Archetype, ch string) {
 	switch {
 	case len(g.rewards) > 0 && g.run.Challenge != "":
 		g.setState(StReward) // a challenge that opens with a choice
-	case g.endlessMode || g.daily:
+	case g.endlessMode || g.daily || len(g.run.Weekly) > 0:
 		g.setState(StActIntro)
 	default:
 		g.startStory(0)
@@ -680,6 +790,7 @@ func (g *Game) enterNode(i int) {
 		if o := omenByID[n.Omen]; o != nil {
 			g.level.applyOmen(o)
 		}
+		g.level.applyLoopTwists()
 		g.setState(StLevel)
 	case NShop:
 		g.openShop(rng)
@@ -698,6 +809,9 @@ func (g *Game) enterNode(i int) {
 func (g *Game) afterLevel() {
 	r := g.run
 	L := g.level
+	g.flawless = L.lostOrbs == 0 && !r.Duel
+	g.flawlessT = 0
+	r.noteChamberDamage()
 	rng := rand.New(rand.NewSource(r.NodeSeed(r.Cur) + 99))
 	// scrolls: elites and Guardians always leave one, other chambers sometimes
 	if L.Node == NElite || L.Node == NBoss || rng.Float64() < 0.2 {
@@ -718,7 +832,13 @@ func (g *Game) afterLevel() {
 		if L.hasOmen("fortified") {
 			minR = Uncommon
 		}
+		if L.hasOmen("vault") {
+			g.rewards = append(g.rewards, rewardSet{Title: "Secret vault — choose a relic", Mods: r.Offer(r.choices(), true, Rare, rng), Skip: 45})
+		}
 		g.rewards = append(g.rewards, rewardSet{Title: "Choose an upgrade", Mods: r.Offer(r.choices(), false, minR, rng), Skip: 15})
+	}
+	if g.maybeSecretDoor(rng) {
+		g.announceVault()
 	}
 	g.saveRun("reward", -1)
 	g.setState(StReward)
@@ -726,6 +846,7 @@ func (g *Game) afterLevel() {
 
 func (g *Game) finishRewards() {
 	r := g.run
+	g.flawless = false
 	if r.Cur >= 0 && r.Map.Nodes[r.Cur].Type == NBoss {
 		if !r.NextAct(&g.save) {
 			if r.storyOn() {
@@ -756,6 +877,7 @@ func (g *Game) beginWorld() {
 	if c := challengeByID[r.Challenge]; c != nil && c.Setup != nil && !(r.carries() && r.Act > 1) {
 		c.Setup(g) // a carried build already holds the first act's kit
 	}
+	g.queueLetter() // a letter from Fumbleton or Mirabel waits on the map
 }
 
 func (g *Game) take(m *Mod) {
@@ -797,6 +919,13 @@ func (g *Game) openShop(rng *rand.Rand) {
 	for _, m := range r.Offer(2, true, Common, rng) {
 		g.shop = append(g.shop, shopItem{Mod: m, Kind: "mod", Price: r.price(modPrice(m, rng))})
 	}
+	// sometimes one item is on sale, so a shop is worth a look even when
+	// gold is tight
+	if rng.Float64() < 0.45 {
+		i := rng.Intn(len(g.shop))
+		g.shop[i].Price = max(1, g.shop[i].Price*6/10)
+		g.shop[i].Sale = true
+	}
 	g.shop = append(g.shop, shopItem{Kind: "heal", Price: r.price(45)}) // regain a lost life
 	for i := 0; i < 2; i++ {
 		id := randomScroll(rng)
@@ -804,6 +933,11 @@ func (g *Game) openShop(rng *rand.Rand) {
 	}
 	g.rerollCost = r.price(20)
 	g.shopFree = r.Stats.ShopRerolls
+	g.shopShineT = 0
+	g.soldT = nil
+	if g.state != StShop {
+		g.shopGoldShown = -1 // a new shop: no flash for the gold you walked in with
+	}
 	g.setState(StShop)
 }
 
@@ -818,7 +952,10 @@ func (g *Game) endRun(win bool) {
 	if win {
 		g.save.Wins++
 	}
-	sh = int(float64(sh)*ascShardMult(r.Asc)) - r.shardsPaid
+	sh = int(float64(sh)*ascShardMult(r.Asc)*r.trialShardMult()) - r.shardsPaid
+	if win {
+		g.save.TrialBest = max(g.save.TrialBest, trialPoints(r.Trials))
+	}
 	r.shardsPaid += sh
 	g.shardsWon = sh
 	g.save.Shards += sh
@@ -862,6 +999,7 @@ func (g *Game) endRun(win bool) {
 	}
 	g.onRunEnd(r, win)
 	g.onChallengeEnd(r, win)
+	g.onWeeklyEnd(r, win)
 	g.recordHistory(r, win)
 	clearRun()
 	writeSave(&g.save)
@@ -880,13 +1018,21 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if trace.IsEnabled() {
 		defer trace.StartRegion(context.Background(), "game draw").End()
 	}
+	if g.wantAutoQuality() {
+		g.autoQuality(screen)
+	}
 	if g.state == StMenu && g.stateT > 0.5 && bench == nil {
 		g.warmShaders()
+		g.warmEmblems()
 	}
 	g.drawFiltered(screen, g.drawFrame)
+	shotCapture(g, screen)
 	perfEnd(secDraw)
 	g.drawPerf(screen)
 	perfFrameEnd()
+	if !bootDone {
+		bootFrame(g, g.state == StMenu)
+	}
 	textFrameEnd()
 }
 
@@ -916,7 +1062,7 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 		act = g.run.Act
 	}
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StChallenge, StDuel:
+	case StMenu, StArch, StSeed, StSanctum, StKeepsakes, StHelp, StCodex, StChallenge, StDuel:
 		g.frontT += ddt
 		switch g.state {
 		case StMenu:
@@ -938,15 +1084,21 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 		perfEnd(secWorld)
 		g.deferOverlay = false
 		perfBegin(secPost)
-		g.post.Apply(screen, worldGrades[g.level.Biome.ID], !g.settings.NoBloom)
+		g.post.Apply(screen, g.worldGrade(g.level), !g.settings.NoBloom)
 		perfEnd(secPost)
 		k := sw / float64(rw)
+		g.sceneryVeil(screen, g.level, k)
 		if g.run != nil && g.run.is("lightsout") && g.level.introT <= 0 {
 			g.drawDarkness(screen, g.level, k)
 		}
+		g.photoShoot(screen)
 		g.drawWorldOverlay(screen, g.level, k)
-		if !hideHUD || g.level.introT > 0 {
+		if (!hideHUD || g.level.introT > 0) && g.photo == nil {
 			perfBegin(secHUD)
+			if g.state == StLevel {
+				g.lastLifeEdge(screen, g.level)
+				g.knotFlash(screen)
+			}
 			g.drawHUD(screen, g.level)
 			perfEnd(secHUD)
 		}
@@ -981,6 +1133,8 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 		g.drawSeed(screen)
 	case StSanctum:
 		g.drawSanctum(screen)
+	case StKeepsakes:
+		g.drawKeepsakeTree(screen)
 	case StHelp:
 		g.drawHelp(screen)
 	case StCodex:
@@ -990,7 +1144,11 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 	case StMap:
 		g.drawMap(screen)
 	case StPause:
-		g.drawPause(screen)
+		if g.photo != nil {
+			g.drawPhoto(screen)
+		} else {
+			g.drawPause(screen)
+		}
 	case StReward:
 		g.drawReward(screen)
 	case StShop:
@@ -1053,16 +1211,40 @@ func (g *Game) drawFrame(screen *ebiten.Image) {
 		u := g.ui
 		ts := 19 * g.textScale()
 		lines := u.wrap(g.tooltip, fReg, ts, 380)
+		// keywords in the tooltip are explained under it, the same way a
+		// hovered card explains its own (ROADMAP-50 #37)
+		terms := tooltipTerms(g.tooltip, 3)
+		gs := 16 * g.textScale()
+		var glines [][]string
 		h := float64(len(lines))*ts*1.37 + 20
+		for _, t := range terms {
+			gl := u.wrap(t.Text, fReg, gs, 380)
+			glines = append(glines, gl)
+			h += 10 + gs*1.4 + float64(len(gl))*gs*1.35
+		}
 		x := math.Min(u.MX+24, 1900-410)
 		y := math.Min(u.MY+16, 1070-h)
 		u.panel(screen, x, y, 410, h, 0.95)
 		for i, l := range lines {
 			u.text(screen, l, fReg, ts, x+16, y+10+float64(i)*ts*1.37, color.RGBA{235, 235, 250, 255}, alignLeft)
 		}
+		ly := y + 10 + float64(len(lines))*ts*1.37
+		for i, t := range terms {
+			u.glowLine(screen, x+16, x+394, ly+4, 1, ca(t.Col, 0.4), 0.5)
+			ly += 10
+			u.text(screen, t.Name, fBold, gs, x+16, ly, lighten(t.Col, 0.2), alignLeft)
+			ly += gs * 1.4
+			for _, l := range glines[i] {
+				u.text(screen, l, fReg, gs, x+16, ly, cDim, alignLeft)
+				ly += gs * 1.35
+			}
+		}
 		g.tooltip = ""
 	}
 	g.drawGloss(screen)
+	g.drawForge(screen)
+	g.drawLetter(screen)
+	g.drawMenuBench(screen)
 	g.drawRestartHold(screen)
 	g.drawCoach(screen)
 	g.drawAchievementPopup(screen)
@@ -1193,11 +1375,14 @@ func (g *Game) drawMenu(s *ebiten.Image) {
 	}
 	g.menuQuit = "menu" + itoa(len(items)-1)
 	for i, it := range items {
+		if strings.HasPrefix(it.label, "Sanctum") {
+			g.menuKeepBadge(s, y) // keepsakes live in the Sanctum now
+		}
 		if g.arcaneItem(s, "menu"+itoa(i), it.label, 120, y, it.on) {
 			it.do()
 		}
 		y += step
-		if i == off-1 || i == 5+off || i == 8+off {
+		if i == off-1 || i == 5+off || i == 7+off {
 			y += 12 // breathing room between groups
 		}
 	}
@@ -1257,7 +1442,9 @@ func (g *Game) archPreview(s *ebiten.Image, a *Archetype, x, y, w float64) {
 
 func (g *Game) drawSeed(s *ebiten.Image) {
 	u := g.ui
+	g.seedStars(s)
 	u.heading(s, "PLAY A SEED", 80, 200, cGold, 1)
+	g.seedTyping(s)
 	u.text(s, "Every seed creates its own run: the same maps, levels, shops and rewards.", fReg, 24, 960, 330, cDim, alignCenter)
 	u.text(s, "Type a code from a friend (or any word), then press Enter.", fReg, 24, 960, 366, cDim, alignCenter)
 	u.panel(s, 660, 440, 600, 100, 0.9)
@@ -1290,7 +1477,14 @@ func (g *Game) drawRunSummary(s *ebiten.Image) {
 	r := g.run
 	u.panel(s, 30, 30, 360, 330, 0.85)
 	g.updateHero(nil, u.DT)
+	if r.Coop {
+		g.coopMark(s, 98, 186, 130)
+	}
 	g.drawHero(s, nil, 40, 40, 116, 150)
+	g.familiarOrbit(s, 98, 120)
+	g.keepsakeBadge(s, 356, 64, 30)
+	g.trialEmbersAt(s, 260, 250)
+	g.mapBanishPips(s)
 	u.text(s, r.Arch.Name, fRune, 28, 170, 44, cGold, alignLeft)
 	g.drawLives(s, nil, 184+18*float64(max(r.maxLives(), r.Lives)-2), 100)
 	u.iconLabel(s, icHeart, fmt.Sprintf("%d / %d lives", r.Lives, r.maxLives()), fBold, 24, 172, 124, color.RGBA{255, 130, 140, 255}, alignLeft)
@@ -1332,46 +1526,19 @@ func (g *Game) drawRunBuild(s *ebiten.Image, top float64) {
 		}
 		y += 70
 	}
+	statsH := 268.0 // the "Your stats" box at the bottom (B2)
+	listEnd := 1050 - statsH - 16
 	if len(r.Order) == 0 && len(r.Fused) == 0 {
 		u.paragraph(s, "Every upgrade, relic and fusion you find gets a page here. It's a bit empty for now.", fReg, 18, 1710, y+20, 300, ca(cDim, 0.7), alignCenter)
 	}
-	for _, id := range r.Fused {
-		f := fusionByID[id]
-		u.drawEmblem(s, fusionEmblem(f), 1562, y+13, 30, 1)
-		u.text(s, f.Name, fBold, 19, 1582, y, f.Col, alignLeft)
-		if u.hover(1540, y-4, 340, 28) {
-			g.tooltip = "FUSION — " + f.Name + ": " + f.Desc
-		}
-		y += 30
-	}
-	for _, id := range r.Order {
-		m := modByID[id]
-		if m == nil || r.Mods[id] == 0 {
-			continue
-		}
-		label := m.Name
-		if r.Mods[id] > 1 {
-			label += fmt.Sprintf(" ×%d", r.Mods[id])
-		}
-		u.drawEmblem(s, modEmblem(m), 1560, y+12, 26, 1)
-		u.text(s, label, fBold, 19, 1576, y, rarityColors[m.Rarity], alignLeft)
-		if u.hover(1540, y-4, 340, 28) {
-			var tags []string
-			for _, t := range m.Tags {
-				tags = append(tags, tagLabel(t))
-			}
-			g.tooltip = trJoin(m.Name, " (", rarityNames[m.Rarity], ") — ", m.Desc, "  [", strings.Join(tags, ", "), "]")
-		}
-		y += 28
-		if y > 1020 {
-			break
-		}
-	}
+	g.drawBuildGroups(s, r, y, listEnd)
+	g.drawStatsBox(s, 1546, 1050-statsH-4, 328, statsH)
 }
 
 func (g *Game) drawMap(s *ebiten.Image) {
 	u := g.ui
 	r := g.run
+	g.drawSeason(s)
 	g.drawRunSummary(s)
 	title := biomes[r.AI()].Name
 	if l := r.Loop(); l > 0 {
@@ -1383,6 +1550,11 @@ func (g *Game) drawMap(s *ebiten.Image) {
 		x := 960 + (float64(n.Lane)-1.5)*230
 		if n.Type == NBoss {
 			x = 960
+		}
+		if n.Lane < 0 || n.Lane > 3 {
+			// a secret vault, tucked just outside the lanes and clear of
+			// the side panels
+			x = 960 + math.Copysign(495, float64(n.Lane)-1.5)
 		}
 		y := 960 - float64(n.Row)*112
 		return x, y
@@ -1430,7 +1602,11 @@ func (g *Game) drawMap(s *ebiten.Image) {
 		if n.Type == NBoss {
 			rad = 52
 		}
+		g.drawVaultGlow(s, n, x, y, rad)
 		g.drawChamberSeal(s, n, x, y, rad, reach[i])
+		if reach[i] {
+			g.sealOrbit(s, x, y, rad*1.25, i)
+		}
 		c := nodeColors[n.Type]
 		if !reach[i] && !n.Visited {
 			c = darken(c, 0.5)
@@ -1542,6 +1718,8 @@ func (g *Game) drawPause(s *ebiten.Image) {
 	u.heading(s, "PAUSED", 80, 200, cGold, 1)
 	L := g.level
 	u.text(s, fmt.Sprintf("%s  ·  %s  ·  level seed %d", L.Data.Name, L.Data.Formation, L.Data.Seed%100000000), fReg, 22, 960, 310, cDim, alignCenter)
+	g.pauseCharms(s)
+	g.pauseFamiliars(s)
 	if u.button(s, "resume", "Resume", 760, 380, 400, 64, cGreen, true) {
 		g.setState(StLevel)
 	}
@@ -1555,13 +1733,17 @@ func (g *Game) drawPause(s *ebiten.Image) {
 	if u.button(s, "pabandon", "Abandon run", 760, 650, 400, 64, cRed, true) {
 		g.endRun(false)
 	}
+	if u.button(s, "pphoto", "Photo mode", 760, 730, 400, 56, cAcc, g.duel == nil) {
+		g.startPhoto()
+	}
 	g.runPanel(s)
 	// where the damage has come from so far
 	u.panel(s, 30, 380, 360, 330, 0.85)
 	u.text(s, "Damage so far", fRune, 26, 50, 394, cGold, alignLeft)
 	g.drawDmgBars(s, g.run, 50, 446, 320, 7, 1)
+	g.drawPauseRules(s, 30, 724, 360)
 	if !g.padActive {
-		u.text(s, "Hold "+keyLabel(g.bind("restart").Keys[0])+" in a chamber to restart the run", fReg, 17, 960, 760, cDim, alignCenter)
+		u.text(s, "Hold "+keyLabel(g.bind("restart").Keys[0])+" in a chamber to restart the run", fReg, 17, 960, 806, cDim, alignCenter)
 	}
 }
 
@@ -1611,6 +1793,16 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 	strokePath(s, body, 3*S, mixc(rc, cWhite, 0.25*k), false)
 	strokePath(s, boxPath(sx+7*S, sy+7*S, sw-14*S, sh-14*S, math.Max(0, r-7)*S, ch), S, ca(th.Edge2, 1), false)
 	u.ornaments(s, th, x, y, w, h, 1)
+	if k > 0.05 {
+		// a sheen sweeps across a hovered card every couple of seconds,
+		// brighter on rarer cards
+		ph := math.Mod(u.time*0.45, 1)
+		if ph < 0.42 {
+			e := ph / 0.42
+			bx := sx + sw*(-0.08+1.16*e)
+			drawSprite(s, sprSoft, bx-46*S, sy+6*S, 92*S, sh-12*S, ca(lighten(rc, 0.7), (0.12+0.03*float64(m.Rarity))*k*math.Sin(e*math.Pi)), true)
+		}
+	}
 	kind := "UPGRADE"
 	if m.Relic {
 		kind = "RELIC"
@@ -1663,11 +1855,15 @@ func (g *Game) drawCard(s *ebiten.Image, m *Mod, x, y, w, h float64, price int, 
 	u.drawEmblem(s, modEmblem(m), x+w/2, y+ey0, 104*er, 1)
 	// the name shrinks to stay on one line; the description shrinks to
 	// fit above the fusion hint and tags
+	name := m.Name
+	if owned := g.run.Mods[m.ID]; owned > 0 && m.Max != 1 && !m.Curse {
+		name = tr(m.Name) + " " + roman(owned+1) // taking it levels it up
+	}
 	ns := 32.0
-	for ns > 20 && u.measure(m.Name, fSerif, ns) > w-36 {
+	for ns > 20 && u.measure(name, fSerif, ns) > w-36 {
 		ns -= 1
 	}
-	u.text(s, m.Name, fSerif, ns, x+w/2, y+nameTop+(32-ns)*0.5, cWhite, alignCenter)
+	u.text(s, name, fSerif, ns, x+w/2, y+nameTop+(32-ns)*0.5, cWhite, alignCenter)
 	nameY := y + nameTop + 32*1.35
 	u.glowLine(s, x+w*0.2, x+w*0.8, nameY+8, 1.5, rc, 0.7)
 	limit := y + h - 62
@@ -1738,12 +1934,17 @@ func (g *Game) drawReward(s *ebiten.Image) {
 		g.drawScene(s, "treasure", 0.4)
 	}
 	u.heading(s, strings.TrimSpace(rs.Title), 56, 90, cGold, 1)
+	g.cloverFall(s)
 	g.statLine(s, 960, 172)
+	g.drawFlawless(s)
 	if g.pick.on {
 		if g.drawPick(s) {
 			g.pick.on = false
 			g.rewards = g.rewards[1:]
 			g.stateT = 0
+			if len(g.rewards) > 0 {
+				g.snd.Play("deal") // the next hand is dealt
+			}
 		}
 		return
 	}
@@ -1754,15 +1955,63 @@ func (g *Game) drawReward(s *ebiten.Image) {
 	}
 	x0 := 960 - (float64(n)*w+float64(n-1)*40)/2
 	for i, m := range rs.Mods {
-		if g.drawCard(s, m, x0+float64(i)*(w+40), 250, w, h, 0, true) && g.stateT > 0.3 {
+		cx := x0 + float64(i)*(w+40)
+		// the hand is dealt: each card rises into place a beat after the
+		// one before, growing from 90% with a little settle
+		if e := dealIn(g.stateT, i); e < 1 {
+			// it rises face down, then turns over: the back shows its
+			// rarity's colour first, and rarer cards turn a little later
+			fl := clamp01((e - 0.42) / 0.58)
+			sx := math.Abs(math.Cos(fl * math.Pi))
+			sc := 0.9 + 0.1*ease(e) + 0.03*math.Sin(e*math.Pi)
+			g.fadedFlip(s, smootherstep(e*1.6), sx, cx+w/2, func(dst *ebiten.Image) {
+				u.withScale(sc, cx+w/2, 250+h/2, 90*(1-ease(e)), func() {
+					if fl < 0.5 {
+						g.drawCardBack(dst, m, cx, 250, w, h)
+					} else {
+						g.drawCard(dst, m, cx, 250, w, h, 0, true)
+					}
+				})
+			})
+			if fl >= 0.5 && fl < 0.62 && m.Rarity >= Epic {
+				// an Epic or better card flashes as it turns
+				k := (fl - 0.5) / 0.12
+				drawSprite(s, sprSoft, u.X(cx-w*0.3), u.Y(250-h*0.1), w*1.6*u.S, h*1.2*u.S, ca(rarityColors[m.Rarity], 0.6*(1-k)), true)
+			}
+			continue
+		}
+		g.drawStatChanges(s, m, cx+w/2, 250+h+12)
+		g.rarityPillar(s, m, cx, 250, w, h)
+		g.epicHalo(s, m, cx, 250, w, h)
+		g.banishArrival(s, i, cx, 250, w, h)
+		picked := g.drawCard(s, m, cx, 250, w, h, 0, true) && g.stateT > 0.3
+		if g.banishing {
+			g.drawBanishMark(s, cx, 250, w, h)
+			g.banishHover(s, cx, 250, w, h)
+		}
+		if picked && g.banishing {
+			g.addBanishFX(cx, 250, w, h, rarityColors[m.Rarity])
+			g.banishSlot, g.banishArriveT, g.banishArriveOn = i, 0, true
+			g.banishCard(i)
+			return
+		}
+		if picked {
+			gains := g.cardStatChanges(m) // before the card changes the build
 			g.take(m)
 			g.snd.Pick(m.Rarity)
-			g.startPick(rs.Mods, i, x0, 250, w, h, 40)
+			g.startPick(rs.Mods, i, x0, 250, w, h, 40, gains)
+			g.hintAfterPick(m)
 			return
 		}
 	}
+	g.banishArriveT += g.ui.DT
+	g.drawBanishFX(s)
+	g.drawBanishButton(s)
 	label := fmt.Sprintf("Skip  (+%d gold)", rs.Skip)
-	if u.button(s, "skip", label, 760, 900, 400, 60, cAcc, true) && g.stateT > 0.3 {
+	g.drawUISparks(s)
+	if u.button(s, "skip", label, 760, 900, 400, 60, cAcc, !g.banishing) && g.stateT > 0.3 {
+		g.banishing = false
+		g.uiBurst(960, 930, 16, cGold, true)
 		g.run.Gold += rs.Skip
 		g.rewards = g.rewards[1:]
 		g.stateT = 0
@@ -1835,6 +2084,9 @@ func (g *Game) drawShop(s *ebiten.Image) {
 	g.drawShopStall(s)
 	g.runPanel(s)
 	u.heading(s, "THE WANDERING SHOP", 56, 40, cGold, 1)
+	g.tokenShimmer(s)
+	g.shopShineT += u.DT
+	g.shopGoldFlash(s, r.Gold)
 	u.iconLabel(s, icCoin, fmt.Sprintf("%d gold", r.Gold), fBold, 30, 960, 118, cGold, alignCenter)
 	w, h := 330.0, 430.0
 	xs := []float64{430, 795, 1160}
@@ -1851,11 +2103,22 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		}
 		if it.Sold {
 			u.panel(s, x, y, w, h, 0.4)
-			u.text(s, "SOLD", fRune, 40, x+w/2, y+h/2-24, cDim, alignCenter)
+			if t, ok := g.soldT[i]; !ok || t > 0.5 {
+				u.text(s, "SOLD", fRune, 40, x+w/2, y+h/2-24, cDim, alignCenter)
+			}
+			g.soldStamp(s, i, x, y, w, h)
 			continue
 		}
 		afford := r.Gold >= it.Price
 		clicked := g.drawCard(s, it.Mod, x, y, w, h, it.Price, afford)
+		g.shopShine(s, x, y, w, h)
+		if it.Sale {
+			g.drawSaleTag(s, x+w-24, y-4)
+		}
+		if it.Locked {
+			g.lockBadge(s, x+24, y+4)
+		}
+		g.drawLockButton(s, i, x, y+h+6, w)
 		if clicked && !afford {
 			g.snd.Play("deny")
 		}
@@ -1864,6 +2127,10 @@ func (g *Game) drawShop(s *ebiten.Image) {
 			g.take(it.Mod)
 			g.addBuyFX(it.Mod, x, y, w, h)
 			g.shop[i].Sold = true
+			if g.soldT == nil {
+				g.soldT = map[int]float64{}
+			}
+			g.soldT[i] = 0
 			g.snd.Play("buy")
 			g.snd.Pick(it.Mod.Rarity)
 		}
@@ -1880,11 +2147,13 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		} else if r.Lives >= r.maxLives() {
 			label = "Lives full"
 		}
+		g.healNudge(s, 1160, 794, 330, 52, !it.Sold && r.Gold >= it.Price && r.Lives < r.maxLives())
 		if u.button(s, "heal", label, 1160, 794, 330, 52, cGreen, !it.Sold && r.Gold >= it.Price && r.Lives < r.maxLives()) {
 			r.Gold -= it.Price
 			r.Lives++
 			g.shop[i].Sold = true
 			g.snd.PlayKeyed("heal")
+			g.uiBurst(1160+165, 794+26, 14, cGreen, true)
 		}
 	}
 	cost := g.rerollCost
@@ -1908,6 +2177,7 @@ func (g *Game) drawShop(s *ebiten.Image) {
 		if u.button(s, "scroll"+itoa(i), lbl, 1160, sy, 330, 52, sd.Col, !it.Sold && !full && r.Gold >= it.Price) {
 			r.Gold -= it.Price
 			g.addScroll(it.Scroll)
+			g.uiBurst(1160+165, sy+26, 14, sd.Col, false)
 			g.shop[i].Sold = true
 			g.snd.Play("buy")
 		}
@@ -1930,11 +2200,15 @@ func (g *Game) drawShop(s *ebiten.Image) {
 			r.Gold -= cost
 			g.rerollCost += r.price(10)
 		}
+		g.uiBurst(1160+165, 854+26, 12, cGold, false)
 		rc, sf := g.rerollCost, g.shopFree
+		kept := g.lockedStock()
 		g.openShop(rand.New(rand.NewSource(g.rng.Int63())))
 		g.rerollCost, g.shopFree = rc, sf
+		g.restoreLocked(kept)
 		g.snd.Play("buy")
 	}
+	g.drawUISparks(s)
 	if u.button(s, "leave", "Leave shop", 1160, 924, 330, 60, cAcc, true) {
 		g.setState(StMap)
 	}
@@ -1949,6 +2223,7 @@ func (g *Game) drawEvent(s *ebiten.Image) {
 	u.heading(s, ev.Title, 52, 192, cGold, 1)
 	y := u.paragraph(s, ev.Text, fReg, 26*g.textScale(), 960, 300, 860, cWhite, alignCenter)
 	if g.eventMsg != "" {
+		g.eventOutcome(s, y+40)
 		u.paragraph(s, g.eventMsg, fBold, 26, 960, y+40, 860, cAcc, alignCenter)
 		if u.button(s, "evdone", "Continue", 760, 820, 400, 64, cGreen, true) {
 			g.setState(StMap)
@@ -1963,6 +2238,7 @@ func (g *Game) drawEvent(s *ebiten.Image) {
 		}
 		col := u.theme().Accent
 		bob := math.Sin(g.stateT*1.6) * 6
+		g.eventHover(s, u.hover(560, math.Max(y+50, 590), 800, 84*float64(len(ev.Choices))))
 		g.drawSigil(s, 960, 462, 92, g.stateT*0.25, col, 0.55)
 		drawSprite(s, sprSoft, u.X(960-110), u.Y(462-110), 220*u.S, 220*u.S, ca(col, 0.3), true)
 		u.drawEmblem(s, glyphImage(gl, col), 960, 462+bob, 116, 1)
@@ -1973,10 +2249,13 @@ func (g *Game) drawEvent(s *ebiten.Image) {
 		if u.button(s, "ev"+itoa(i), c.Label, 560, cy, 800, 64, cAcc, ok) && g.stateT > 0.3 {
 			lives, gold, nm, curses := g.run.Lives, g.run.Gold, len(g.run.Order), len(g.run.curses())
 			g.eventMsg = c.Do(g)
+			g.eventGoodT = 0
 			if g.run.Lives < lives || len(g.run.curses()) > curses || (g.run.Gold < gold && len(g.run.Order) == nm) {
 				g.snd.PlayKeyed("bad")
+				g.eventBad = true
 			} else {
 				g.snd.PlayKeyed("good")
+				g.eventBad = false
 			}
 		}
 		cy += 84
@@ -2026,6 +2305,8 @@ func (g *Game) drawRest(s *ebiten.Image) {
 	} else {
 		g.drawCampfire(s, 960, 840)
 	}
+	g.fireflies(s)
+	g.restHoverFire(s)
 	g.runPanel(s)
 	u.heading(s, "A QUIET CAMPFIRE", 60, 200, cGold, 1)
 	u.text(s, "Rest your hands, or train your craft.", fReg, 26, 960, 300, cDim, alignCenter)
@@ -2086,6 +2367,9 @@ func (g *Game) drawActIntro(s *ebiten.Image) {
 	g.drawSigil(s, 960, 450, 300*(0.9+0.1*sa), t*0.12, acc, 0.5*sa)
 	drawSprite(s, sprSoft, u.X(960-500), u.Y(450-300), 1000*S, 600*S, ca(acc, 0.12*sa), true)
 
+	g.actIntroEmbers(s)
+	g.actIntroFamiliars(s)
+	g.actIntroCharm(s)
 	sub := strings.ToUpper(b.Subtitle)
 	if l := r.Loop(); l > 0 {
 		sub = fmt.Sprintf("ENDLESS  ·  LOOP %d", l)
@@ -2102,6 +2386,15 @@ func (g *Game) drawActIntro(s *ebiten.Image) {
 	if l := r.Loop(); l > 0 {
 		u.text(s, fmt.Sprintf("Bricks ×%.2f health   ·   orbs +%d%% speed   ·   lives cost %d gold", math.Pow(1.25, float64(l)), 6*l, 5*l),
 			fReg, 22, 960, 600, ca(rgba(255, 140, 120, 255), a3), alignCenter)
+		if tw := r.newestTwist(); tw != nil {
+			// this loop's twist, named, on top of the old ones
+			tc := rgba(255, 200, 150, 255)
+			tw2 := u.measure(tw.Name, fBold, 24)
+			u.drawEmblem(s, glyphImage(tw.Glyph, tc), 960-tw2/2-26, 656, 30, a3)
+			u.text(s, "New twist", fBold, 15, 960, 622, ca(cDim, a3), alignCenter)
+			u.text(s, tw.Name, fBold, 24, 960, 642, ca(tc, a3), alignCenter)
+			u.text(s, tw.Desc, fReg, 20, 960, 676, ca(rgba(230, 210, 200, 255), a3), alignCenter)
+		}
 	} else if r.Act > 1 && r.carries() {
 		u.text(s, "Your build carries on, and the bricks rise to meet it.", fReg, 22, 960, 600, ca(rgba(200, 190, 230, 255), a3), alignCenter)
 	} else if r.Act > 1 {

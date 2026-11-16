@@ -79,6 +79,14 @@ type Stats struct {
 	// origin mastery
 	Aspect                                                                     string
 	SigHalo, SigBloodPrice, SigLens, SigCoolant, SigDice, SigEmber, SigConduit bool
+	// familiars (familiars.go): how many of each, and how fast they work
+	Wisps, Embers, Moths int
+	Owl, FamBanner       bool
+	FamHaste, FamPower   float64
+	OwlRest              float64 // seconds off the owl's rest
+	// keepsakes and trials (keepsakes.go, trials.go)
+	ExtraBanishes int
+	BossHPMult    float64 // extra Guardian health (trials); 0 = none
 }
 
 type Mod struct {

@@ -237,18 +237,33 @@ func (g *Game) drawDuelLobby(s *ebiten.Image) {
 		kit = append(kit, fmt.Sprintf("Round %d: +%s", i+1, strings.Join(names, ", ")))
 	}
 	u.text(s, strings.Join(kit, "    "), fReg, 18, 960, 740, rgba(220, 210, 240, 255), alignCenter)
+	// the stage (ROADMAP-50 #49): the host picks one world for every
+	// round, or a new world each round as before
+	u.text(s, "STAGE", fBold, 16, 760, 812, cDim, alignRight)
+	u.frame(s, 850, 800, 420, 44, 0.85)
+	u.text(s, duelStageName(d.stage), fBold, 20, 1060, 810, cGold, alignCenter)
+	if d.host {
+		if u.button(s, "dstgL", "‹", 790, 800, 54, 44, cAcc, true) {
+			d.stage = (d.stage + NumWorlds) % (NumWorlds + 1)
+			d.setupAt = time.Time{}
+		}
+		if u.button(s, "dstgR", "›", 1276, 800, 54, 44, cAcc, true) {
+			d.stage = (d.stage + 1) % (NumWorlds + 1)
+			d.setupAt = time.Time{}
+		}
+	}
 	// controls
 	if d.host {
 		label := "Waiting for " + d.oppName + " to ready up"
 		if d.oppReady {
 			label = "Start the duel"
 		}
-		if u.button(s, "dstart", label, 660, 850, 600, 70, cGreen, d.oppReady) {
+		if u.button(s, "dstart", label, 660, 866, 600, 70, cGreen, d.oppReady) {
 			d.wins = [2]int{}
 			d.times = [duelRounds][2]float64{}
 			d.note = ""
 			seed := randSeed()
-			d.send(duelMsg{T: "start", Rd: 1, S: seed, A: archetypes[d.archIdx].ID}, true)
+			d.send(duelMsg{T: "start", Rd: 1, S: seed, A: archetypes[d.archIdx].ID, Sg: d.stage}, true)
 			g.duelBeginRound(1, seed)
 			return
 		}
@@ -257,7 +272,7 @@ func (g *Game) drawDuelLobby(s *ebiten.Image) {
 		if d.ready {
 			label = "Ready  (click to cancel)"
 		}
-		if u.button(s, "dready", label, 660, 850, 600, 70, cGreen, true) {
+		if u.button(s, "dready", label, 660, 866, 600, 70, cGreen, true) {
 			d.ready = !d.ready
 			d.send(duelMsg{T: "ready", R: d.ready}, true)
 		}

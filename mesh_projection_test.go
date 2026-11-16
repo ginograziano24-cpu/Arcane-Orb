@@ -5,21 +5,47 @@ import (
 	"encoding/binary"
 	"fmt"
 	"image/color"
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 )
 
+// The test guards the renderer, not the art, so it keeps projecting the bank
+// it was recorded with. Models added later (Tripo art pass) are skipped, and
+// models replaced since then are projected from their original copies in
+// testdata/projection-bank. New and replaced models are covered by
+// TestAllModelGeometryAndTopologyRemainIdentical.
+var projectionNewModels = map[string]bool{
+	"menhir.orbm": true, "guardian_1.orbm": true, "guardian_2.orbm": true, "guardian_3.orbm": true,
+	"crystal_formation.orbm": true,
+}
+
+var projectionReplacedModels = map[string]bool{
+	"boiler.orbm": true, "stone_head.orbm": true, "sky_castle.orbm": true,
+}
+
 func projectedModelBank(t testing.TB) (*Batch, []*Mesh) {
 	t.Helper()
-	_, bank := modelTestBank(t)
-	meshes := make([]*Mesh, len(bank))
+	names, bank := modelTestBank(t)
+	meshes := make([]*Mesh, 0, len(bank))
 	for i, data := range bank {
+		if projectionNewModels[names[i]] {
+			continue
+		}
+		if projectionReplacedModels[names[i]] {
+			orig, err := os.ReadFile(filepath.Join("testdata", "projection-bank", names[i]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = orig
+		}
 		m, err := parseModel(data)
 		if err != nil {
 			t.Fatal(err)
 		}
 		m.topology()
-		meshes[i] = m
+		meshes = append(meshes, m)
 	}
 	cam := &Camera{Eye: V3{0, 10, -20}, Target: V3{0, 1, 8}, FOV: 1.05, Roll: .018}
 	cam.Setup(1280, 800)
@@ -49,7 +75,9 @@ func TestProjectedModelBankOutput(t *testing.T) {
 	if err := binary.Write(digest, binary.LittleEndian, b.quads); err != nil {
 		t.Fatal(err)
 	}
-	const expected = "c0dedb1a68bc1abe9d742801fd65373b3d88a50846c93a1798232f95d40f7ad4"
+	// re-recorded when near-plane clipping replaced the old clamp: the bank
+	// placement behind the camera (z -40) no longer smears across the view
+	const expected = "8fec0cf310212f0a8716be9802c4e91328f8d9329b46d9ba7aac3c122419ee0d"
 	if hash := fmt.Sprintf("%x", digest.Sum(nil)); hash != expected {
 		t.Fatalf("projected positions, shading or ordering changed: %s (%d quads)", hash, len(b.quads))
 	}

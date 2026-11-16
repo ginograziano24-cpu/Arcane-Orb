@@ -89,6 +89,21 @@ var achievements = []achievement{
 	{ID: "ACH_CHALLENGE_ALL", Name: "Master of Trials", Desc: "Finish every challenge run.", Glyph: "dragonheart"},
 	{ID: "ACH_RAMPAGE", Name: "Rampage", Desc: "Fill the Berserker's Rage to the brim.", Glyph: "fist", Hidden: true},
 	{ID: "ACH_SUPERCHARGE", Name: "Living Lightning", Desc: "Supercharge the orb as the Stormcaller.", Glyph: "bolt", Hidden: true},
+	// session-9 systems (keepsakes, trials, co-op, banish, familiars)
+	{ID: "ACH_KEEP_MAX", Name: "Heirloom", Desc: "Raise any keepsake to its highest rank.", Glyph: "gem"},
+	{ID: "ACH_KEEP_ALL", Name: "The Full Reliquary", Desc: "Buy every rank of every keepsake.", Glyph: "crown",
+		Prog: func(g *Game) (int, int) {
+			have, all := 0, 0
+			for _, k := range keepsakes {
+				have += min(g.save.KeepRanks[k.ID], k.Ranks)
+				all += k.Ranks
+			}
+			return have, all
+		}},
+	{ID: "ACH_TRIAL_WIN", Name: "Trial by Fire", Desc: "Finish the story at Trial 5 or higher.", Glyph: "flame"},
+	{ID: "ACH_COOP_WIN", Name: "Two Wardens", Desc: "Finish the story in couch co-op.", Glyph: "orb"},
+	{ID: "ACH_NO_BANISH", Name: "Took What Came", Desc: "Win at Trial 3 or higher without banishing a card.", Glyph: "ring"},
+	{ID: "ACH_FAMILIARS", Name: "Menagerie", Desc: "Carry three kinds of familiar at once.", Glyph: "moon"},
 }
 
 var achByID = func() map[string]*achievement {
@@ -101,7 +116,7 @@ var achByID = func() map[string]*achievement {
 
 // liveRun is the player's run in progress (not the attract-mode demo).
 func (g *Game) liveRun() *Run {
-	if g.run == nil || g.run.SeedCode == "MENU" {
+	if g.run == nil || g.run.SeedCode == "MENU" || g.run.SeedCode == "BENCH" {
 		return nil
 	}
 	return g.run
@@ -128,6 +143,9 @@ func (g *Game) unlock(id string) {
 	}
 	if g.save.Ach[id] || achByID[id] == nil {
 		return
+	}
+	if g.run != nil && g.run.SeedCode == "BENCH" {
+		return // benchmarks (the menu's, the soak, the tour) earn nothing
 	}
 	g.save.Ach[id] = true
 	writeSave(&g.save)
@@ -173,6 +191,15 @@ func (g *Game) checkAchievements() {
 		if r.Endless && r.Loop() >= 10 {
 			g.unlock("ACH_ENDLESS_10")
 		}
+		if r.Stats.familiarKinds() >= 3 {
+			g.unlock("ACH_FAMILIARS")
+		}
+	}
+	for _, k := range keepsakes {
+		if g.save.KeepRanks[k.ID] >= k.Ranks {
+			g.unlock("ACH_KEEP_MAX")
+			break
+		}
 	}
 	for _, m := range metaUpgrades {
 		if g.save.Upg[m.ID] >= m.Max {
@@ -197,6 +224,16 @@ func (g *Game) onRunEnd(r *Run, win bool) {
 	}
 	if r.Asc >= 10 {
 		g.unlock("ACH_WIN_ASC10")
+	}
+	tp := trialPoints(r.Trials)
+	if tp >= 5 {
+		g.unlock("ACH_TRIAL_WIN")
+	}
+	if r.Coop {
+		g.unlock("ACH_COOP_WIN")
+	}
+	if tp >= 3 && r.BanishUsed == 0 {
+		g.unlock("ACH_NO_BANISH")
 	}
 }
 

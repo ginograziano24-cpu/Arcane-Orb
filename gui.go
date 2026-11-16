@@ -38,22 +38,23 @@ type Theme struct {
 func rgba(r, g, b, a uint8) color.RGBA { return color.RGBA{r, g, b, a} }
 
 // themeArcane frames the front end (title, origins, codex...).
-const themeArcane = 6
+const themeArcane = NumWorlds
 
-var themes = [7]Theme{
+var themes = [NumWorlds + 1]Theme{
 	WNeon:       {styleHolo, rgba(26, 12, 52, 228), rgba(8, 4, 24, 240), rgba(255, 84, 214, 255), rgba(96, 232, 255, 140), rgba(96, 232, 255, 255)},
 	WMeadow:     {styleBrass, rgba(58, 41, 28, 234), rgba(31, 21, 14, 244), rgba(224, 180, 98, 255), rgba(255, 232, 180, 80), rgba(164, 226, 112, 255)},
 	WCaverns:    {styleCrystal, rgba(18, 28, 56, 228), rgba(7, 11, 30, 240), rgba(132, 216, 255, 255), rgba(204, 164, 255, 120), rgba(172, 132, 255, 255)},
 	WRuins:      {styleStone, rgba(60, 51, 41, 236), rgba(33, 27, 21, 244), rgba(234, 188, 94, 255), rgba(178, 158, 126, 110), rgba(92, 208, 194, 255)},
 	WClouds:     {styleCloud, rgba(46, 60, 100, 222), rgba(22, 30, 62, 236), rgba(250, 244, 228, 255), rgba(242, 206, 120, 170), rgba(255, 214, 128, 255)},
 	WMachine:    {styleMetal, rgba(46, 48, 54, 240), rgba(21, 22, 26, 246), rgba(158, 164, 176, 255), rgba(255, 172, 48, 140), rgba(255, 158, 44, 255)},
+	WDream:      {styleCrystal, rgba(40, 14, 64, 228), rgba(14, 5, 30, 242), rgba(255, 206, 96, 255), rgba(255, 110, 220, 130), rgba(255, 120, 230, 255)},
 	themeArcane: {styleStone, rgba(22, 13, 38, 232), rgba(8, 5, 17, 244), rgba(196, 160, 92, 255), rgba(168, 120, 255, 110), rgba(184, 140, 255, 255)},
 }
 
 // themeWorld picks which world's framing the current screen uses.
 func (g *Game) themeWorld() int {
 	switch g.state {
-	case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StMap:
+	case StMenu, StArch, StSeed, StSanctum, StKeepsakes, StHelp, StCodex, StMap:
 		return themeArcane
 	case StLevel, StPause:
 		if g.level != nil {
@@ -608,6 +609,13 @@ func (u *UI) button(dst *ebiten.Image, id, label string, x, y, w, h float64, acc
 		tc = rgba(130, 126, 142, 255)
 	}
 	size := math.Min(26, h*0.42)
+	if w < 170 {
+		// narrow buttons (frame caps, small choices): shrink a long or
+		// translated label to fit instead of spilling past the edges
+		if m := u.measure(label, fBold, size); m > w-14 {
+			size = math.Max(12, size*(w-14)/m)
+		}
+	}
 	u.text(dst, label, fBold, size, x+w/2, y+h/2-size*0.64, tc, alignCenter)
 	if clk {
 		if u.snd != nil {
@@ -742,6 +750,7 @@ func (g *Game) drawToasts(dst *ebiten.Image, dt float64) {
 		}
 		x := right - w + (1-k)*(w+60)
 		u.frame(dst, x, y, w, h, k)
+		g.toastSweep(dst, x, y, w, h, t.T, k, t.Col)
 		fillPath(dst, boxPath(u.X(x+12), u.Y(y+16), 5*u.S, (h-32)*u.S, 2.5*u.S, false), ca(t.Col, k), ca(darken(t.Col, 0.6), k), vgrad(u.Y(y+16), u.Y(y+h-16)), false)
 		if t.Img != nil {
 			u.drawEmblem(dst, t.Img, x+50, y+h/2, 54, k)

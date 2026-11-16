@@ -289,6 +289,7 @@ func (L *Level) jackpot() bool {
 	L.text(V3{L.PaddleX, 2.2, PaddleZ + 2.5}, "JACKPOT!", color.RGBA{255, 214, 90, 255}, true)
 	L.Rings = append(L.Rings, &Ring{X: L.PaddleX, Z: PaddleZ + 1, MaxR: 4, Life: 0.45, Max: 0.45, Col: color.RGBA{255, 214, 90, 255}})
 	L.g.snd.Play("jackpot")
+	L.g.react(reactUpgrade) // the portrait cheers the payout
 	return true
 }
 

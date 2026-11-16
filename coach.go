@@ -21,7 +21,7 @@ type glossTerm struct {
 }
 
 var glossary = []glossTerm{
-	{"Burn", []string{"burn", "ignite", "fire"}, "Burning bricks take damage every 0.7 s for a few seconds.", rgba(255, 140, 60, 255)},
+	{"Burn", []string{"burn", "ignit", "flame", "spread fire", "fire,", "fire orb", "the fire"}, "Burning bricks take damage every 0.7 s for a few seconds.", rgba(255, 140, 60, 255)},
 	{"Frozen", []string{"freez", "frozen", "frost"}, "Frozen bricks take +50% damage from every hit while the ice lasts.", rgba(150, 220, 255, 255)},
 	{"Crit", []string{"crit"}, "A critical hit deals double damage (more with crit items) and can damage armoured bricks.", rgba(255, 100, 100, 255)},
 	{"Void", []string{"void"}, "Void hits ignore armour and shields.", rgba(190, 120, 255, 255)},
@@ -49,6 +49,29 @@ func glossFor(text string) []*glossTerm {
 				break
 			}
 		}
+	}
+	return out
+}
+
+// tooltipTerms finds up to n glossary terms in a tooltip. Tooltips are
+// often already translated, so a term also matches by its translated name.
+func tooltipTerms(text string, n int) []*glossTerm {
+	out := glossFor(text)
+	if curLang != "en" && curLang != "" {
+		lt := strings.ToLower(text)
+		have := map[*glossTerm]bool{}
+		for _, t := range out {
+			have[t] = true
+		}
+		for i := range glossary {
+			t := &glossary[i]
+			if name := strings.ToLower(tr(t.Name)); !have[t] && name != "" && strings.Contains(lt, name) {
+				out = append(out, t)
+			}
+		}
+	}
+	if len(out) > n {
+		out = out[:n]
 	}
 	return out
 }

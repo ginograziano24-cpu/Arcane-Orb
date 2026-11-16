@@ -45,7 +45,7 @@ const (
 	storyFade      = 0.9
 )
 
-func (r *Run) storyOn() bool { return !r.Daily && !r.Endless }
+func (r *Run) storyOn() bool { return !r.Daily && !r.Endless && len(r.Weekly) == 0 }
 
 func (g *Game) startStory(i int) {
 	g.storyIdx = i

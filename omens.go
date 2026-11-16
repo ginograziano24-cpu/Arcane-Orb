@@ -19,6 +19,7 @@ type omen struct {
 	ID, Name, Desc, Glyph string
 	Col                   color.RGBA
 	Challenge             bool
+	Secret                bool // never placed at random (the vault, secret.go)
 	Setup                 func(L *Level)
 	Done                  func(L *Level) bool // challenge met (checked on clear)
 	Status                func(L *Level) string
@@ -66,6 +67,23 @@ var omens = []omen{
 			g.run.Gold += 40
 			return "+40 gold"
 		}},
+	// added for ROADMAP-50 #28
+	{ID: "starlit", Name: "Starlit", Desc: "Lucky stars overhead: +15% critical chance in this chamber.", Glyph: "star", Col: rgba(255, 240, 170, 255)},
+	{ID: "critters", Name: "Critter Catcher", Desc: "Challenge: pop 3 critters to win 45 gold.", Glyph: "feather", Col: rgba(170, 255, 190, 255), Challenge: true,
+		Done:   func(L *Level) bool { return L.critters >= 3 },
+		Status: func(L *Level) string { return fmt.Sprintf("%d / 3 caught", min(L.critters, 3)) },
+		Reward: func(g *Game, rng *rand.Rand) string { g.run.Gold += 45; return "+45 gold" }},
+	{ID: "edges", Name: "Edge Artist", Desc: "Challenge: strike the orb with your paddle's edges 12 times to win a scroll.", Glyph: "paddle", Col: rgba(150, 210, 255, 255), Challenge: true,
+		Done:   func(L *Level) bool { return L.edgeHits >= 12 },
+		Status: func(L *Level) string { return fmt.Sprintf("%d / 12 edge hits", min(L.edgeHits, 12)) },
+		Reward: func(g *Game, rng *rand.Rand) string {
+			id := randomScroll(rng)
+			if g.addScroll(id) {
+				return scrollByID[id].Name
+			}
+			g.run.Gold += 30
+			return "+30 gold (scrolls full)"
+		}},
 }
 
 var omenByID = func() map[string]*omen {
@@ -82,8 +100,17 @@ func placeOmens(m *ActMap, rng *rand.Rand, act int) {
 		if (n.Type == NCombat && n.Row > 0) || n.Type == NElite {
 			p := 0.3 + 0.05*float64(act-1)
 			if rng.Float64() < p {
-				n.Omen = omens[rng.Intn(len(omens))].ID
+				n.Omen = randomOmen(rng)
 			}
+		}
+	}
+}
+
+// randomOmen picks an omen a map may carry (not the secret vault's).
+func randomOmen(rng *rand.Rand) string {
+	for {
+		if o := &omens[rng.Intn(len(omens))]; !o.Secret {
+			return o.ID
 		}
 	}
 }

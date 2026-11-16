@@ -18,11 +18,15 @@ import (
 // world's side jobs took, presort included.
 var sideJobHook func(job int, d time.Duration)
 
+// skyPanX is how far the sky painting is panned this frame (pixels), so
+// things painted into the sky can follow it.
+var skyPanX float64
+
 func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	gridShift = L.shift
 	sw, sh := float64(screen.Bounds().Dx()), float64(screen.Bounds().Dy())
 	// camera with shake and gentle sway that follows the paddle
-	sh2 := L.Shake
+	sh2 := L.Shake * g.shakeScale()
 	if !g.settings.Shake {
 		sh2 = 0
 	}
@@ -33,6 +37,13 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		// a steeper view so the drawing reads clearly
 		cam.Eye = V3{L.PaddleX * 0.1, 21, -6.5}
 		cam.Target = V3{L.PaddleX * 0.04, 0, 17.5}
+	}
+	if dreamWorld(L.Biome.ID) && !g.settings.TopDown {
+		// dreamcore: a lower, longer look down the road so the galaxy, the
+		// sun and the castle fill the top of the screen, as in the style's
+		// low wide-angle shots
+		cam.Eye = V3{L.PaddleX * 0.12, 12, -12.5}
+		cam.Target = V3{L.PaddleX * 0.05, 4, 20}
 	}
 	if L.introT > 0 {
 		// boss intro: start low beside the Guardian and pull back to the
@@ -57,6 +68,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	if camHook != nil {
 		camHook(cam, L)
 	}
+	g.photoCamera(cam)
 	// trauma-style shake: strength grows with the square of the trauma so
 	// small knocks stay subtle and big ones land; smooth noise rather than
 	// per-frame jitter, with a little roll that sells it without blurring play
@@ -87,35 +99,74 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	if classic && g.sky != nil {
 		g.drawClassicBackdrop(screen, L)
 	} else if g.sky != nil {
-		_, hy, _ := cam.Project(V3{cam.Eye.X, 0, cam.Eye.Z + 4000})
+		// the horizon straight ahead of the camera, whichever way it faces
+		// (photo mode turns it right round), so the painting never lines
+		// up with a point behind the eye
+		hf := V3{cam.fwd.X, 0, cam.fwd.Z}
+		if hf.Len() < 1e-3 {
+			hf = V3{0, 0, 1}
+		}
+		hf = hf.Norm()
+		_, hy, _ := cam.Project(cam.Eye.Add(hf.Mul(4000)))
 		bw, bh := float64(g.sky.Bounds().Dx()), float64(g.sky.Bounds().Dy())
 		sc := sw / bw
+		// turning the camera pans the painting: one screen width per
+		// horizontal field of view, tiled with mirrored copies so it wraps
+		// without a seam
+		hfov := 2 * math.Atan(math.Tan(cam.FOV/2)*sw/sh)
+		skyPanX = -math.Atan2(hf.X, hf.Z) / hfov * sw
 		fillRect(screen, 0, 0, sw, sh, prem(L.Biome.SkyTop, 1))
-		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
-		op.GeoM.Scale(sc, sc)
-		op.GeoM.Translate(0, hy-bh*skyHorizon*sc)
-		if cam.Roll != 0 {
-			// tilt the sky with the world so the horizon stays joined
-			lx, ly, _ := cam.Project(V3{cam.Eye.X - 2000, 0, cam.Eye.Z + 4000})
-			rx, ry, _ := cam.Project(V3{cam.Eye.X + 2000, 0, cam.Eye.Z + 4000})
-			op.GeoM.Translate(-sw/2, -hy)
-			op.GeoM.Scale(1.06, 1.06)
-			op.GeoM.Rotate(math.Atan2(ry-ly, rx-lx))
-			op.GeoM.Translate(sw/2, hy)
+		tile := func(k int) *ebiten.DrawImageOptions {
+			op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
+			if k&1 != 0 {
+				op.GeoM.Scale(-1, 1)
+				op.GeoM.Translate(bw, 0)
+			}
+			op.GeoM.Scale(sc, sc)
+			op.GeoM.Translate(skyPanX+float64(k)*sw, hy-bh*skyHorizon*sc)
+			if cam.Roll != 0 {
+				// tilt the sky with the world so the horizon stays joined
+				lx, ly, _ := cam.Project(cam.Eye.Add(hf.Mul(4000)).Add(cam.right.Mul(-2000)))
+				rx, ry, _ := cam.Project(cam.Eye.Add(hf.Mul(4000)).Add(cam.right.Mul(2000)))
+				op.GeoM.Translate(-sw/2, -hy)
+				op.GeoM.Scale(1.06, 1.06)
+				op.GeoM.Rotate(math.Atan2(ry-ly, rx-lx))
+				op.GeoM.Translate(sw/2, hy)
+			}
+			return op
 		}
-		screen.DrawImage(g.sky, op)
-		if !g.lowFX() {
+		// below the painting: its own foot colour, not flat sky colour
+		if foot := hy + bh*(1-skyHorizon)*sc; foot < sh {
+			fillRect(screen, 0, foot-2, sw, sh-foot+2, prem(skyFoot(g.sky), 1))
+		}
+		k0 := int(math.Floor(-skyPanX/sw)) - 1
+		for k := k0; k <= k0+3; k++ {
+			if x := skyPanX + float64(k)*sw; x < sw+sw*0.1 && x+sw > -sw*0.1 {
+				screen.DrawImage(g.sky, tile(k))
+			}
+		}
+		if dreamWorld(L.Biome.ID) {
+			g.drawDreamSky(screen, L, hy, L.T)
+		} else if !g.lowFX() {
 			g.drawSkyFX(screen, L.Biome.ID, hy, L.T)
 		}
 	}
 	B := g.batch
 	B.Reset()
+	B.back = &worldBack
+	worldBack.begin(g, L, cam)
+	bakeTick()
 	bio := L.Biome
 	B.fogColor = [3]float32{float32(bio.Fog.R) / 255, float32(bio.Fog.G) / 255, float32(bio.Fog.B) / 255}
 	B.fogNear, B.fogFar = bio.FogNear, bio.FogFar
 	B.SetLight(bio.LightDir, bio.LightCol, bio.AmbCol)
 	if !classic {
 		g.collectLights(B, L)
+	}
+	floraDetail = []float64{0.35, 0.6, 1, 1}[min(3, max(0, g.settings.Quality))]
+	if !classic {
+		bakeImpostors(2, bio.ID, B.light, B.lightCol, B.ambCol) // far plants' picture cards, a couple a frame
+		bakeLeafCard()
 	}
 
 	// the scenery and the arena (floor, walls, posts) don't depend on play,
@@ -130,6 +181,12 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	}
 	floorTexture(L)
 	brickSheet()
+	if dreamWorld(bio.ID) {
+		dreamTextures() // registered here, in a fixed order, before the side jobs ask for them
+		if !dreamNoSun && !classic && g.sky != nil {
+			g.drawSunking(B, L, dreamSunAt[0], dreamSunAt[1], dreamSunAt[2], L.T)
+		}
+	}
 	B.prepMeta() // texture sizes, read by the side batches' presort
 	// the jobs, in the order their quads always had: scenery, its dressing,
 	// the arena floor, the walls in pieces, the posts
@@ -201,7 +258,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 			defer func() { crash[i] = recover() }()
 			t0 := time.Now()
 			job(sides[i])
-			sides[i].presort()
+			if !(B.back != nil && B.back.on) { // the background cache plans its own lists
+				sides[i].presort()
+			}
 			if sideJobHook != nil {
 				sideJobHook(i, time.Since(t0))
 			}
@@ -280,6 +339,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		B.Decal(rk.TX, PaddleZ, 0.03, 2, 2, sprRing, alpha(color.RGBA{255, 60, 60, 255}, 0.4), true)
 	}
 	g.drawDangerLine(B, L)
+	L.dropMarkers(B)
 	// drops
 	for _, d := range L.Drops {
 		def := powerDefs[d.P]
@@ -314,6 +374,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		B.Billboard(V3{bl.X, 0.55, bl.Z}, 1.2, sprSoft, alpha(color.RGBA{255, 60, 60, 255}, 0.6), true)
 	}
 	g.drawPaddle(B, L)
+	g.drawPartner(B, L)
 	g.drawCritters(B, L)
 	// balls
 	halo := 1.0
@@ -321,7 +382,8 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		halo = 0.62
 	}
 	fire := L.Timers[PFire] > 0
-	for _, b := range L.Balls {
+	L.drawMarks(B)
+	for bi, b := range L.Balls {
 		glow := g.orbGlow(L, b)
 		core := color.RGBA{240, 235, 255, 255}
 		if fire {
@@ -332,6 +394,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		if b.Storm > 0 {
 			core = color.RGBA{225, 240, 255, 255}
 		}
+		core = g.skinCore(core)
 		a := 1.0
 		if b.Phantom > 0 {
 			a = 0.5
@@ -340,10 +403,17 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		B.DecalBelow(b.X+0.2, b.Z-0.2, 0.02, b.R*3, b.R*2.4, sprShadow, color.RGBA{0, 0, 0, 200})
 		// a pool of the orb's light on the floor
 		B.Decal(b.X, b.Z, 0.025, b.R*11, b.R*11, sprSoft, alpha(glow, 0.17*a*halo), true)
+		// in multiball the first orb keeps its full trail and the extra
+		// orbs leave fainter, thinner ones, so the eye can follow one orb
+		// through the swarm (roadmap #9)
+		ta, ts := 0.32, 1.65
+		if bi > 0 {
+			ta, ts = 0.14, 1.3
+		}
 		for _, p := range b.trail.samples[:b.trail.count] {
 			f := 1 - (b.trail.elapsed-p.at)/orbTrailLife
 			if f > 0 {
-				B.Billboard(V3{p.x, b.R, p.z}, b.R*1.65*f, sprSoft, alpha(glow, 0.32*f*a), true)
+				B.Billboard(V3{p.x, b.R, p.z}, b.R*ts*f, sprSoft, alpha(glow, ta*f*a), true)
 			}
 		}
 		// the orb is the hero object: a wide halo, a solid core and a hot
@@ -357,6 +427,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 			B.Billboard(V3{cx, b.R * 0.9, cz}, b.R*(2.2+3.5*(1-b.Hit)), sprSoft, alpha(color.RGBA{255, 250, 235, 255}, 0.8*hk), true)
 		}
 		B.Billboard(V3{b.X, b.R * 1.05, b.Z}, b.R*1.6, sprSoft, alpha(color.RGBA{255, 255, 255, 255}, 0.48*a), true)
+		g.drawOrbSkin(B, b, a)
 		if b.Charged {
 			B.Billboard(V3{b.X, b.R, b.Z}, b.R*3.4, sprRing, alpha(color.RGBA{255, 90, 90, 255}, 0.8), true)
 		}
@@ -390,6 +461,10 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	perfMark(2, len(B.quads)+len(B.glow)) // the main part, before scenery and arena join
 	join()
 	B.Flush(screen)
+	B.back = nil // other screens reuse this batch without the cache
+	if dreamWorld(bio.ID) && !classic {
+		dreamFilter(screen)
+	}
 
 	if !g.deferOverlay {
 		g.drawWorldOverlay(screen, L, 1)
@@ -398,6 +473,9 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 
 // drawBarrierLights draws the barrier line and the Guardian's Aegis.
 func (g *Game) drawBarrierLights(B *Batch, L *Level) {
+	L.guardianTrialAura(B)
+	L.featherGleam(B)
+	L.wardBarrier(B)
 	// barrier
 	if L.Barrier > 0 {
 		a := 0.45 + 0.2*math.Sin(L.T*6)
@@ -572,6 +650,10 @@ func (g *Game) drawArenaWalls(B *Batch, L *Level, from, to int) {
 		}
 		steps := int(math.Ceil(ln / 2.2))
 		wm := wallModel(bio.ID)
+		dream := dreamWorld(bio.ID)
+		if bio.ID == WNeon {
+			wm = nil // Glimmer Grove: plain dressed stone with a moss-light cap, not the old neon rail
+		}
 		for k := 0; k < steps; k++ {
 			idx++
 			if idx-1 < from || idx-1 >= to {
@@ -580,6 +662,10 @@ func (g *Game) drawArenaWalls(B *Batch, L *Level, from, to int) {
 			t0, t1 := float64(k)/float64(steps)*ln, float64(k+1)/float64(steps)*ln
 			p0 := [2]float64{a.X + ux*t0, a.Z + uz*t0}
 			p1 := [2]float64{a.X + ux*t1, a.Z + uz*t1}
+			if dream {
+				dreamHedge(B, dreamTextures(), p0, p1, nx, nz, wallH, &L.env)
+				continue
+			}
 			if wm != nil {
 				// the modelled wall section, turned to face the arena
 				mx, mz := (p0[0]+p1[0])/2, (p0[1]+p1[1])/2
@@ -592,7 +678,11 @@ func (g *Game) drawArenaWalls(B *Batch, L *Level, from, to int) {
 				continue
 			}
 			fp := [4][2]float64{p0, p1, {p1[0] - nx*1.4, p1[1] - nz*1.4}, {p0[0] - nx*1.4, p0[1] - nz*1.4}}
-			if math.Abs(ux) < 0.01 || math.Abs(uz) < 0.01 {
+			if bio.ID == WNeon {
+				B.Prism(fp, 0, wallH*0.86, 1, bio.Wall, 0)
+				cap := [4][2]float64{{p0[0] + nx*0.12, p0[1] + nz*0.12}, {p1[0] + nx*0.12, p1[1] + nz*0.12}, {p1[0] - nx*1.52, p1[1] - nz*1.52}, {p0[0] - nx*1.52, p0[1] - nz*1.52}}
+				B.Prism(cap, wallH*0.86, wallH, 1, lighten(bio.Wall, 0.14), 0)
+			} else if math.Abs(ux) < 0.01 || math.Abs(uz) < 0.01 {
 				// axis-aligned segments get the textured material
 				x0, x1 := math.Min(fp[0][0], fp[2][0]), math.Max(fp[0][0], fp[2][0])
 				z0, z1 := math.Min(fp[0][1], fp[2][1]), math.Max(fp[0][1], fp[2][1])
@@ -754,6 +844,7 @@ func (g *Game) drawWorldOverlay(screen *ebiten.Image, L *Level, k float64) {
 		}
 	}
 	L.drawLastBrickMarkers(screen, proj)
+	L.drawAimGuide(screen, proj)
 	// lightning arcs (2D, over everything)
 	for _, a := range L.Arcs {
 		al := a.Life / 0.3
@@ -862,6 +953,10 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		col = mixc(col, color.RGBA{255, 120, 30, 255}, 0.35+0.15*math.Sin(t*20))
 		emis = 0.2
 	}
+	if k, oc := L.orbLight(b.X(), b.Z()); k > 0 {
+		col = mixc(col, oc, 0.22*k) // the orb's light on nearby bricks
+		emis += float32(0.12 * k)
+	}
 	switch b.Kind {
 	case levelgen.Elite:
 		emis = 0.15 + 0.1*float32(math.Sin(t*3))
@@ -877,7 +972,10 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	if b.Kind == levelgen.Regen && b.HP < b.MaxHP && b.SinceHit > 3 {
 		emis += 0.15
 	}
-	if b.Layer == 0 {
+	// Low quality skips the soft shadow under every brick (a blended,
+	// depth-sorted quad each, with overdraw on a full board); orbs, drops and
+	// the paddle keep theirs, which matter for reading the play (#101)
+	if b.Layer == 0 && !g.lowFX() {
 		B.DecalBelow(x+0.25*CellW, z-0.08*CellW, 0.015, CellW*1.2, CellD*1.5, sprShadow, color.RGBA{0, 0, 0, 130})
 	}
 	bio := L.Biome
@@ -903,6 +1001,26 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 	bm := brickModel(mat)
 	if b.Kind == levelgen.Steel {
 		bm = brickModel(WMachine)
+	}
+	if dreamWorld(bio.ID) && !g.settings.Classic && b.Kind != levelgen.Steel {
+		// dreamcore: glossy embossed candy tiles in the brick's colour
+		if gem := dreamTextures().gem; gem != nil {
+			// true colour and only a hint of glow: the dream filter's bloom
+			// already lifts them, and brighter tiles washed out to pastel
+			c := darken(col, 0.9)
+			if b.Flash > 0 {
+				c = mixc(c, color.RGBA{255, 255, 255, 255}, b.Flash*0.6)
+			}
+			e := emis + 0.04
+			if special {
+				e += 0.08 + 0.08*float32(math.Sin(t*2.6+float64(b.C)*0.5+float64(b.R)*0.3))
+			}
+			_ = gem
+			// a plain glossy candy tile: bevelled, no symbol
+			B.Draw(bevelBox(0.16), V3{x, y0 + h/2, z}, V3{hw, h / 2, hd}, identity, c, e)
+			bm = nil
+			goto drawn
+		}
 	}
 	if bt := brickSheet(); bt != nil && !g.settings.Classic {
 		top, side, own := brickRects(bio.ID, b.Kind)
@@ -948,10 +1066,16 @@ func (g *Game) drawBrick(B *Batch, L *Level, b *Brick, t float64) {
 		B.BoxTex(x-hw, y0, z-hd, x+hw, y0+h, z+hd, col, matTop[mat], matSide[mat], e)
 	}
 drawn:
+	if !b.BossPart {
+		g.brickRim(B, x-hw, y0+h, z-hd, x+hw, z+hd, col)
+	}
 	if bio.Neon && b.Layer == 0 {
 		B.Decal(x, z, 0.02, CellW*1.1, CellD*1.3, sprSoft, alpha(col, 0.25), true)
 	}
 	h = y0 + h
+	if b.Kind != levelgen.Steel {
+		drawCracks(B, b, x, z, hw, hd, h, frac)
+	}
 	// special bricks announce themselves with their material and a soft
 	// pulse of their own light, not with symbols
 	if gc, ok := specialGlow[b.Kind]; ok && b.Up == nil && !b.BossPart {
@@ -1012,20 +1136,28 @@ func (g *Game) drawPaddle(B *Batch, L *Level) {
 		body = color.RGBA{120, 60, 60, 255}
 	}
 	lift := 0.08 * L.paddleBounce
+	sqx, sqy := L.paddleScale()
+	w *= sqx
+	x0, x1 = L.PaddleX-w/2, L.PaddleX+w/2
 	B.DecalBelow(L.PaddleX+0.3, PaddleZ-0.25, 0.02, w+1.6, 1.8, sprShadow, color.RGBA{0, 0, 0, 200})
+	L.drawPaddleCharge(B, w)
+	if !L.drawingP2 {
+		L.drawFamiliars(B)
+	}
 	cap := L.Biome.PaddleCap
 	if livery {
 		cap = lc
 	}
 	if pb, pc := model("paddle_body"), model("paddle_cap"); pb != nil && pc != nil {
-		B.Draw(pb, V3{L.PaddleX, lift, PaddleZ}, V3{math.Max(0.1, w-1.0), 1, PaddleD / 0.7}, identity, body, 0.05)
-		B.Draw(pc, V3{x0 + 0.3, lift, PaddleZ}, v3(1), identity, cap, 0.05)
-		B.Draw(pc, V3{x1 - 0.3, lift, PaddleZ}, v3(1), identity, cap, 0.05)
+		B.Draw(pb, V3{L.PaddleX, lift, PaddleZ}, V3{math.Max(0.1, w-1.0), sqy, PaddleD / 0.7}, identity, body, 0.05)
+		B.Draw(pc, V3{x0 + 0.3, lift, PaddleZ}, V3{1, sqy, 1}, identity, cap, 0.05)
+		B.Draw(pc, V3{x1 - 0.3, lift, PaddleZ}, V3{1, sqy, 1}, identity, cap, 0.05)
 	} else {
-		B.Box(x0+0.5, lift, z0, x1-0.5, PaddleH+lift, z1, body, sprWhite, 0.05)
-		B.Box(x0, lift, z0-0.05, x0+0.6, PaddleH+0.12+lift, z1+0.05, cap, sprWhite, 0.05)
-		B.Box(x1-0.6, lift, z0-0.05, x1, PaddleH+0.12+lift, z1+0.05, cap, sprWhite, 0.05)
+		B.Box(x0+0.5, lift, z0, x1-0.5, PaddleH*sqy+lift, z1, body, sprWhite, 0.05)
+		B.Box(x0, lift, z0-0.05, x0+0.6, (PaddleH+0.12)*sqy+lift, z1+0.05, cap, sprWhite, 0.05)
+		B.Box(x1-0.6, lift, z0-0.05, x1, (PaddleH+0.12)*sqy+lift, z1+0.05, cap, sprWhite, 0.05)
 	}
+	L.drawCrackle(B)
 	if pt := bakedTexture("paddles"); pt != nil && !g.settings.Classic && w > 1.4 {
 		// the origin's engraved design across the paddle's top, its inlay
 		// glowing in the world's trim colour (pulsing on each bounce)

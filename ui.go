@@ -35,6 +35,7 @@ type UI struct {
 	cjkFonts    [2]*opentype.Font // bold, regular
 	nameFont    *opentype.Font    // for language names in their own scripts
 	wrapCache   map[wrapKey][]string
+	measCache   map[measKey]float64 // text widths for labels measured every frame
 }
 
 type fontID int
@@ -175,6 +176,7 @@ func (u *UI) setScripts(code string) {
 	}
 	u.faces = map[faceKey]text.Face{}
 	u.wrapCache = map[wrapKey][]string{}
+	u.measCache = nil
 }
 
 func (u *UI) drawText(dst *ebiten.Image, s string, f fontID, size, sx, sy float64, c color.RGBA, al align) {
@@ -227,8 +229,22 @@ func (u *UI) measure(s string, f fontID, size float64) float64 {
 	if !u.rawText {
 		s = tr(s)
 	}
+	key := measKey{s, f, size, u.S}
+	if w, ok := u.measCache[key]; ok {
+		return w
+	}
 	w, _ := text.Measure(s, u.face(f, size), 0)
+	if u.measCache == nil || len(u.measCache) > 4000 {
+		u.measCache = map[measKey]float64{}
+	}
+	u.measCache[key] = w / u.S
 	return w / u.S
+}
+
+type measKey struct {
+	s       string
+	f       fontID
+	size, S float64
 }
 
 // wrap breaks text (translated first) into lines no wider than width.

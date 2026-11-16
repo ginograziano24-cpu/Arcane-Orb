@@ -20,10 +20,13 @@ func (g *Game) applyQuality(q int) {
 	switch q {
 	case 0:
 		st.RenderRes, st.NoBloom, st.Particles, st.NoAA = 0.67, true, 0, true
+		st.FxLevel = fxLow // the Low preset also drops the decorative touches
 	case 1:
 		st.RenderRes, st.NoBloom, st.Particles, st.NoAA = 0.85, false, 1, false
+		st.FxLevel = fxHigh
 	case 2:
 		st.RenderRes, st.NoBloom, st.Particles, st.NoAA = 1, false, 1, false
+		st.FxLevel = fxHigh
 	}
 }
 
@@ -43,8 +46,10 @@ func (g *Game) renderScale(ddt float64) float64 {
 	}
 	if !st.DynRes {
 		g.dynScale = 1
+		aaScale = 2
 		return base
 	}
+	g.dynamicAA(ddt)
 	// smoothed frame time; adjust in small steps so it never pumps
 	if ddt > 0 && ddt < 0.25 {
 		g.frameAvg += (ddt - g.frameAvg) * 0.08
@@ -68,7 +73,14 @@ var settingTabs = []string{"Audio", "Display", "Effects", "Controls", "Access"}
 func (g *Game) drawSettings(s *ebiten.Image) {
 	u := g.ui
 	st := g.settings
+	if g.mbenchDone != nil {
+		// the benchmark results card is on top: Settings takes no clicks
+		clk, conf := u.Click, u.nav.confirm
+		u.Click, u.nav.confirm = false, false
+		defer func() { u.Click, u.nav.confirm = clk, conf }()
+	}
 	u.panel(s, 460, 80, 1000, 900, 0.92)
+	g.settingsPulse(s)
 	u.heading(s, "SETTINGS", 64, 100, cGold, 1)
 	if g.navLatch.pageL {
 		g.setTab = (g.setTab + len(settingTabs) - 1) % len(settingTabs)
@@ -87,16 +99,21 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 			g.rebinding = ""
 		}
 		if g.setTab == i {
-			u.glowLine(s, tx+20, tx+160, 254, 3, cGold, 1)
+			g.tabSlide(s, "settings", tx+20, 254, 140)
 		}
 	}
 	y := 300.0
+	rowGap := 62.0
+	if g.setTab == 2 {
+		rowGap = 50 // the Effects tab's ten switches and two dials still clear Back
+	}
 	toggle := func(id, label string, v bool) bool {
 		u.text(s, label, fBold, 22, 520, y+12, cWhite, alignLeft)
 		if u.switchCtl(s, id, 1260, y+4, v) {
 			v = !v
+			g.setPulseT = 0
 		}
-		y += 62
+		y += rowGap
 		return v
 	}
 	note := func(t string) {
@@ -164,9 +181,14 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		nwm := choice("win", "Display mode (F11)", []string{"Fullscreen", "Borderless", "Windowed"}, wm, 150)
 		vs := toggle("vs", "VSync", st.VSync)
 		if desktopFramePacing {
-			st.FrameCap = frameCaps[choice("cap", "Frame limit (VSync off)", frameCapLabels, frameCapIndex(st.FrameCap), 102)]
+			st.FrameCap = frameCaps[choice("cap", "Frame limit (VSync off)", frameCapLabels, frameCapIndex(st.FrameCap), 66)]
 		}
 		st.ShowFPS = toggle("fps", "Show FPS", st.ShowFPS)
+		// the 60-second benchmark sits beside Show FPS; it needs the main
+		// menu behind Settings, not a run in progress
+		if u.button(s, "mbench", "Run benchmark (60 s)", 1000, y-62, 230, 48, cAcc, g.prevState == StMenu && g.run == nil) {
+			g.startMenuBench()
+		}
 		st.CenterHUD = !toggle("edgehud", "Ultrawide: spread the HUD to the screen edges", !st.CenterHUD)
 		if nwm != wm || vs != st.VSync {
 			st.Fullscreen, st.Borderless, st.VSync = nwm == 0, nwm == 1, vs
@@ -187,6 +209,19 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		st.NoAA = !toggle("aa", "Anti-aliasing (smooth 3D edges)", !st.NoAA)
 		st.Classic = toggle("classic", "Classic backdrop (painted picture, no 3D scenery)", st.Classic)
 		st.FastAnim = toggle("fastanim", "Fast animations (no slow motion or hit-stop, quicker screens)", st.FastAnim)
+		st.AimGuide = toggle("aimguide", "Aim guide (shows where the orb will leave your paddle)", st.AimGuide)
+		st.DmgNums = toggle("dmgnums", "Damage numbers, coloured by what dealt them", st.DmgNums)
+		// brick emphasis: bright brick edges and the scenery stepping back
+		u.text(s, "Brick emphasis (bright edges, scenery steps back)", fBold, 22, 520, y+12, cWhite, alignLeft)
+		if u.button(s, "brickemph", emphNames[min(st.BrickEmph, 2)], 1220, y, 180, 44, cAcc, true) {
+			st.BrickEmph = (st.BrickEmph + 1) % 3
+		}
+		y += rowGap
+		u.text(s, "Effects intensity (decorative touches; gameplay cues always stay)", fBold, 22, 520, y+12, cWhite, alignLeft)
+		if u.button(s, "fxlevel", fxLevelNames[min(max(st.FxLevel, 0), 2)], 1220, y, 180, 44, cAcc, true) {
+			st.FxLevel = (st.FxLevel + 1) % 3
+		}
+		y += rowGap
 		if was != [4]bool{st.NoBloom, st.Particles == 1, st.Classic, st.NoAA} && st.Quality != 3 {
 			st.Quality = 3
 		}
@@ -223,11 +258,13 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		y += 70
 		st.ColorBlind = choice("cb", "Colour filter", colorBlindNames, st.ColorBlind, 170)
 		st.NoTips = !toggle("tips", "First-time tips", !st.NoTips)
-		st.FreshActs = !toggle("carry", "Keep your build between acts (new runs)", !st.FreshActs)
-		if u.button(s, "tipsreset", "Show all tips again", 520, y, 300, 48, cAcc, len(g.save.Hints) > 0) {
+		// beside the tips switch, so the tab keeps room above Back
+		if u.button(s, "tipsreset", "Show all tips again", 940, y-62, 290, 48, cAcc, len(g.save.Hints) > 0) {
 			g.save.Hints = nil
 		}
-		y += 76
+		st.FreshActs = !toggle("carry", "Keep your build between acts (new runs)", !st.FreshActs)
+		st.VisualStyle = choice("style", "Visual style", styleNames, st.VisualStyle, 170)
+		st.NoDayNight = !toggle("daynight", "Day to night across each act", !st.NoDayNight)
 		note("A slower game speed makes every chamber easier to read and react to. Endless runs played below 100% are kept off the global leaderboard.")
 	}
 	if u.button(s, "setback", "Back", 760, 900, 400, 60, cGreen, true) {
@@ -264,4 +301,34 @@ func (g *Game) updateBackgroundMute() {
 		g.snd.Music = st.Music * st.Master
 	}
 	g.snd.updateVolumes()
+}
+
+// dynamicAA trades supersampling for frame rate before resolution: while
+// frames miss the display's refresh (capped at 144 Hz) the world's 2x
+// supersample steps down to 1.5x, 1.25x and plain 1x, and steps back up
+// when there is clear headroom. Resolution only drops (below) once that is
+// spent and frames still run under 50 fps.
+func (g *Game) dynamicAA(ddt float64) {
+	hz := float64(ebiten.DisplayRefreshRate())
+	if hz < 30 {
+		hz = 60
+	}
+	tgt := 1 / math.Min(144, hz)
+	if ddt > 0 && ddt < 0.25 {
+		g.aaAvg += (ddt - g.aaAvg) * 0.06
+	}
+	g.aaT += ddt
+	steps := []float64{1, 1.25, 1.5, 2}
+	i := 0
+	for i < len(steps)-1 && steps[i] < aaScale-1e-6 {
+		i++
+	}
+	switch {
+	case g.aaAvg > tgt*1.1 && g.aaT > 0.6 && i > 0:
+		aaScale = steps[i-1]
+		g.aaT = 0
+	case g.aaAvg < tgt*0.62 && g.aaT > 2.5 && i < len(steps)-1:
+		aaScale = steps[i+1]
+		g.aaT = 0
+	}
 }

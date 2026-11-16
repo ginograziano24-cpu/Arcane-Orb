@@ -124,6 +124,7 @@ var skyTints = [NumWorlds][2][3]float32{
 	WRuins:   {{1.0, 0.8, 0.55}, {1.0, 0.7, 0.45}},
 	WClouds:  {{1.0, 0.95, 0.8}, {1.0, 1.0, 1.0}},
 	WMachine: {{1.0, 0.55, 0.2}, {0.35, 0.33, 0.32}},
+	WDream:   {{1.0, 0.6, 1.0}, {0.7, 0.8, 1.0}},
 }
 
 // drawSkyFX layers the world's sky effect over the backdrop.
@@ -164,4 +165,27 @@ func (g *Game) warmShaders() {
 	}
 	shaderWarm = ebiten.NewImage(8, 8)
 	g.drawSkyFX(shaderWarm, 0, 4, 0)
+}
+
+// emblemWarm is how far warmEmblems has got through the item and fusion
+// emblems.
+var emblemWarm int
+
+// warmEmblems bakes the item and fusion emblems a few per frame while the
+// player is on the main menu, so the first reward screen, shop or fusion
+// never stops to draw them. Ebitengine packs these small images into its
+// shared texture atlas, so once baked they draw in one batch (roadmap #98).
+func (g *Game) warmEmblems() {
+	const perFrame = 4
+	for n := 0; n < perFrame; n++ {
+		switch i := emblemWarm; {
+		case i < len(modList):
+			modEmblem(modList[i])
+		case i < len(modList)+len(fusions):
+			fusionEmblem(&fusions[i-len(modList)])
+		default:
+			return
+		}
+		emblemWarm++
+	}
 }

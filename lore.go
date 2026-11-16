@@ -132,8 +132,8 @@ func (g *Game) drawLore(s *ebiten.Image) {
 		flip(1)
 	}
 	if g.padActive {
-		u.keycap(s, "LB", rx+86, ry+rh+44, 0.9)
-		u.keycap(s, "RB", rx+rw-130, ry+rh+44, 0.9)
+		u.keycap(s, padLabel(ebiten.StandardGamepadButtonFrontTopLeft), rx+86, ry+rh+44, 0.9)
+		u.keycap(s, padLabel(ebiten.StandardGamepadButtonFrontTopRight), rx+rw-130, ry+rh+44, 0.9)
 	}
 	if u.button(s, "loreback", "Back", 60, 990, 200, 56, cAcc, true) {
 		g.loreOpen = false

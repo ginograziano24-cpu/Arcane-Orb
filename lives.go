@@ -84,12 +84,24 @@ func (L *Level) loseLife(why string) {
 		return
 	}
 	r.Lives--
+	if r.Lives <= 0 && r.keepsakeSave() {
+		L.text(V3{0, 3, 12}, "THE KNOT HOLDS", color.RGBA{255, 230, 150, 255}, true)
+		g.snd.PlayKeyed("lastlife")
+		L.knotFlourish()
+		g.snd.PlayVol("knot", 0.6)
+		g.charmFlash = 1
+		g.knotFlashT = 1
+	}
 	r.rc().LivesLost++
 	r.log("life", "Lost a life ("+why+")", "heart")
 	L.explodePaddle()
 	g.react(reactLifeLost)
 	if r.Lives == 1 && r.maxLives() > 1 {
 		g.quip(quipLastLife)
+		g.snd.PlayKeyed("lastlife") // a quiet heartbeat: one life left
+	}
+	if r.Lives > 0 {
+		g.snd.Duck(0.45, 1.2) // the music dips under the paddle breaking
 	}
 	if r.Lives <= 0 {
 		r.Lives = 0
@@ -192,6 +204,9 @@ func (g *Game) drawLives(dst *ebiten.Image, L *Level, x, y float64) {
 			rad *= 1 + 0.45*L.lifeFlash
 		}
 		fillPath(dst, circlePath(u.X(cx), u.Y(y+2), (rad+3)*S), ca(cBlack, 0.45), ca(cBlack, 0.45), grad{}, false)
+		if full && r.Lives == 1 && r.maxLives() > 1 && (L == nil || !L.Cleared) {
+			g.lastHeartRing(dst, cx, y)
+		}
 		if full {
 			pulse := 0.8 + 0.2*math.Sin(u.time*3+float64(i))
 			drawSprite(dst, sprSoft, u.X(cx-rad*2.2), u.Y(y-rad*2.2), rad*4.4*S, rad*4.4*S, ca(rgba(255, 120, 170, 255), 0.4*pulse), true)

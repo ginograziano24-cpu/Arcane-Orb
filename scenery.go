@@ -18,12 +18,19 @@ type part = struct {
 	R   Mat3
 }
 
+// sceneT is the scenery clock for the frame being drawn.
+var sceneT float64
+
 func (g *Game) drawScenery(B *Batch, L *Level) {
 	bio := L.Biome
 	t := L.T + g.stateT
+	g.drawGuardianFigure(B, L, t)
+	g.drawGrass(B, L, t)
 	r := seededRand(L.propSeed)
 	defer releaseRand(r)
 	side := float64(r.Intn(2)*2 - 1) // which side the hero leans to
+	activeTerrain = bio.ID
+	sceneT = t
 	ground := func(col color.RGBA) {
 		if gt := groundTexture(bio.ID); gt != nil && !g.settings.Classic {
 			drawBakedGround(B, gt, B.lit(color.RGBA{255, 255, 255, 255}, V3{0, 1, 0}), -0.6)
@@ -31,7 +38,7 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 		}
 		// tessellated so distance fog is evaluated accurately across it
 		xs := []float64{-300, -200, -140, -100, -75, -55, -40, -30, -22, -16, 0, 16, 22, 30, 40, 55, 75, 100, 140, 200, 300}
-		zs := []float64{-20, -5, 5, 15, 25, 35, 50, 70, 100, 140, 200, 280, 400}
+		zs := []float64{-300, -150, -60, -20, -5, 5, 15, 25, 35, 50, 70, 100, 140, 200, 280, 400}
 		for i := 0; i+1 < len(xs); i++ {
 			for j := 0; j+1 < len(zs); j++ {
 				B.Quad([4]V3{{xs[i], -0.6, zs[j+1]}, {xs[i+1], -0.6, zs[j+1]}, {xs[i+1], -0.6, zs[j]}, {xs[i], -0.6, zs[j]}}, sprWhite, col, [4]float32{1, 1, 1, 1}, false)
@@ -42,21 +49,28 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 	switch bio.ID {
 	case WNeon:
 		ground(bio.Outer)
-		scroll := math.Mod(L.T*1.5, 6)
-		for x := -96.0; x <= 96; x += 6 {
-			if math.Abs(x) < HalfW+2 {
-				continue
-			}
-			B.Quad([4]V3{{x - 0.06, -0.55, 400}, {x + 0.06, -0.55, 400}, {x + 0.06, -0.55, -20}, {x - 0.06, -0.55, -20}}, sprWhite, alpha(bio.Floor, 0.55), [4]float32{1, 1, 1, 1}, true)
+		// glowing moss pooled between the roots
+		for i := 0; i < 26; i++ {
+			sx := float64(i%2*2 - 1)
+			x := sx * (HalfW + 4 + r.Float64()*46)
+			z := -6 + r.Float64()*62
+			col := bio.Hues[[]int{1, 5, 2}[i%3]]
+			a := 0.10 + 0.05*math.Sin(t*0.6+float64(i)*1.7)
+			B.Decal(x, z, -0.55, 5+r.Float64()*6, 3+r.Float64()*4, sprSoft, alpha(col, a), true)
 		}
-		for z := -18.0 + scroll; z < 300; z += 6 {
-			B.Quad([4]V3{{-300, -0.55, z + 0.08}, {300, -0.55, z + 0.08}, {300, -0.55, z - 0.08}, {-300, -0.55, z - 0.08}}, sprWhite, alpha(bio.FloorAlt, 0.4), [4]float32{1, 1, 1, 1}, true)
+		if L.Boss == nil {
+			lumenTree(B, side*13, 46, 1.6, bio, t)
+		} else {
+			lumenTree(B, side*34, 50, 1.6, bio, t) // out from behind the Guardian
 		}
-		lumenTree(B, side*13, 46, 1.6, bio, t)
 		lumenTree(B, -side*30, 32, 0.85, bio, t+2)
+		// the rest of the grove, standing back in the dark
+		for i, p := range [][3]float64{{-40, 56, 1.3}, {-58, 44, 1.1}, {46, 62, 1.4}, {62, 40, 1.0}, {-24, 70, 1.2}, {28, 74, 1.1}} {
+			lumenTree(B, side*p[0], p[1], p[2], bio, t+float64(i)*1.3)
+		}
 		for i, p := range [][3]float64{{-side * 25, 7, 42}, {side * 28, 9, 30}} {
 			y := p[1] + math.Sin(t*0.7+float64(i))*0.6
-			floatingRock(B, p[0], y, p[2], 2.6, color.RGBA{58, 40, 92, 255}, color.RGBA{24, 14, 44, 255}, int64(i))
+			floatingRock(B, p[0], y, p[2], 2.6, color.RGBA{50, 58, 92, 255}, color.RGBA{20, 22, 44, 255}, int64(i))
 			for k := 0; k < 3; k++ {
 				col := bio.Hues[(k+i*2)%6]
 				cx := p[0] + float64(k-1)*1.1
@@ -64,28 +78,40 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 				B.Billboard(V3{cx, y + 1.4, p[2]}, 2.6, sprSoft, alpha(col, 0.3), true)
 			}
 		}
-		// energy conduits feeding the arena from pylons
+		// a trail of glow-worms leads to a standing stone at each far corner
 		for _, sx := range []float64{-1, 1} {
 			for k := 0.0; k < 30; k += 2 {
-				pulse := 0.4 + 0.6*math.Max(0, math.Sin(k*0.4-t*4))
-				B.Decal(sx*(HalfW+3+k), FarZ-2, -0.5, 1.6, 0.25, sprWhite, alpha(bio.Floor, 0.6*pulse), true)
+				pulse := 0.35 + 0.65*math.Max(0, math.Sin(k*0.4-t*1.6))
+				B.Decal(sx*(HalfW+3+k), FarZ-2+math.Sin(k*0.9)*0.5, -0.5, 0.7, 0.7, sprSoft, alpha(bio.Trim, 0.55*pulse), true)
 			}
 			px := sx * (HalfW + 33)
-			if drawModel(B, "pylon", V3{px, -0.6, FarZ - 2}, v3(1), identity, color.RGBA{}, 0) {
-				B.Billboard(V3{px, 6.4, FarZ - 2}, 3.2, sprSoft, alpha(bio.Trim, 0.5+0.3*math.Sin(t*3)), true)
-				continue
-			}
-			B.Draw(cached("pylon", func() *Mesh {
-				return Lathe([][2]float64{{1.2, 0}, {1, 0.5}, {0.5, 1}, {0.35, 6}, {0.7, 6.3}, {0.7, 6.6}, {0.2, 7.4}}, 8,
-					[]color.RGBA{{40, 28, 70, 255}, {50, 34, 86, 255}, {60, 40, 100, 255}, {60, 40, 100, 255}, {255, 90, 220, 255}, {90, 240, 255, 255}}, true)
-			}), V3{px, -0.6, FarZ - 2}, v3(1), identity, color.RGBA{}, 0)
-			B.Billboard(V3{px, 6.4, FarZ - 2}, 3.2, sprSoft, alpha(bio.Trim, 0.5+0.3*math.Sin(t*3)), true)
+			B.Draw(menhirMesh(), V3{px, -0.6, FarZ - 2}, V3{1.2, 1.15, 1.2}, rotXYZ(0, sx*0.6, 0), color.RGBA{}, 0)
+			B.Billboard(V3{px, 3.6, FarZ - 2.9}, 2.4, sprSoft, alpha(bio.Trim, 0.35+0.2*math.Sin(t*1.4)), true)
 		}
-	case WMeadow:
+	case WMeadow, WDream:
+		if dreamWorld(bio.ID) {
+			if gt := groundTexture(bio.ID); gt != nil && !g.settings.Classic {
+				dreamGround(B, gt, B.lit(color.RGBA{255, 255, 255, 255}, V3{0, 1, 0}), -0.6)
+			} else {
+				ground(bio.Outer)
+			}
+			g.drawDreamMeadow(B, L, t, side)
+			break
+		}
 		ground(bio.Outer)
-		windmill(B, side*32, 50, L.env.mill/0.8, bio)
+		// the windmill stands up on the hills that ring the meadow, on a
+		// stone footing sunk into the slope
+		windmill(B, side*(HalfW+46), 60, L.env.mill/0.8, bio)
 		for i, p := range [][3]float64{{-side * 24, 30, 1.2}, {-side * 27, 22, 0.9}, {side * 22, 16, 1}} {
 			oakTree(B, p[0], p[1], p[2], int64(i))
+		}
+		// a copse on the far slopes, oaks and a few pines, for depth
+		for i, p := range [][3]float64{{-44, 60, 1.3}, {-49, 65, 1.1}, {-40, 67, 1.2}, {46, 58, 1.2}, {52, 63, 1.3}} {
+			x, z := side*p[0], p[1]
+			oakTree(B, x, z, p[2], int64(i+11))
+		}
+		for i, p := range [][3]float64{{-54, 70}, {-47, 73}, {57, 67}} {
+			pineTree(B, side*p[0], p[1], 1.1+0.15*float64(i%2), int64(i))
 		}
 		// split-rail fence with capped posts
 		for _, sx := range []float64{-1, 1} {
@@ -103,10 +129,10 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 				B.Box(x-0.05, 0.75, z, x+0.05, 0.9, z+3, color.RGBA{170, 125, 80, 255}, sprWhite, 0)
 			}
 		}
-		// round hay bales resting on their sides
-		for i := 0; i < 2; i++ {
-			x := float64(i*2-1) * (HalfW + 8 + r.Float64()*4)
-			z := 10 + r.Float64()*16
+		// one round hay bale out on the pasture side
+		for i := 0; i < 1; i++ {
+			x := side * (HalfW + 10)
+			z := 26.0
 			if drawModel(B, "hay_bale", V3{x, -0.6, z}, v3(1), rotXYZ(0, r.Float64(), 0), color.RGBA{}, 0) {
 				continue
 			}
@@ -116,10 +142,9 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 			}), V3{x, 0.45, z}, v3(1), rotXYZ(0, r.Float64(), math.Pi/2), color.RGBA{}, 0)
 		}
 		// flowering shrubs
-		for i := 0; i < 4; i++ {
-			x := float64(i%2*2-1) * (HalfW + 3 + r.Float64()*7)
-			z := 2 + r.Float64()*28
-			shrub(B, x, z, []color.RGBA{{255, 130, 150, 255}, {255, 226, 120, 255}, {200, 150, 255, 255}, {255, 255, 255, 255}}[i], int64(i))
+		// two at the feet of the near trees, not scattered over the grass
+		for i, p := range [][2]float64{{side * 19.6, 17.8}, {-side * 21.4, 28.6}} {
+			shrub(B, p[0], p[1], []color.RGBA{{255, 130, 150, 255}, {255, 226, 120, 255}}[i], int64(i))
 		}
 	case WCaverns:
 		ground(bio.Outer)
@@ -143,12 +168,9 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 		for i := 0; i < 6; i++ {
 			x := float64(i%2*2-1) * (HalfW + 5 + r.Float64()*14)
 			z := 6 + r.Float64()*40
-			if drawModel(B, "stalagmite", V3{x, -0.6, z}, V3{1.1, 4 + r.Float64()*4, 1.1}, rotXYZ(0, float64(i), 0), color.RGBA{}, 0) {
-				continue
-			}
-			B.Draw(cached("stalag"+itoa(i%3), func() *Mesh {
-				return Icosphere(1, 0.18, int64(i), color.RGBA{70, 76, 104, 255}, color.RGBA{36, 40, 60, 255})
-			}), V3{x, -0.6, z}, V3{1.1, 4 + r.Float64()*4, 1.1}, rotXYZ(0, float64(i), 0), color.RGBA{}, 0)
+			sm := cached("stalag3"+itoa(i%3), func() *Mesh { return growStalagmite(int64(i%3) + 7) })
+			h := 4 + r.Float64()*4
+			B.Draw(sm, V3{x, -0.7, z}, V3{1.2, h, 1.2}, rotXYZ(0, float64(i), 0), color.RGBA{96, 104, 140, 255}, 0)
 		}
 		for i := 0; i < 3; i++ {
 			x := float64(i%2*2-1) * (HalfW + 3.5 + r.Float64()*4)
@@ -172,6 +194,16 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 		}
 		for i := 0; i < 2; i++ {
 			palm(B, -side*(HalfW+16+float64(i)*6), 20+float64(i)*12, t, int64(i))
+		}
+		// an oasis grove where the channel pools: date palms and dry scrub
+		for i, p := range [][2]float64{{26, 34}, {31, 40}, {37, 31}, {35, 45}} {
+			palm(B, side*p[0], p[1], t, int64(i+2))
+		}
+		for i := 0; i < 8; i++ {
+			sx := float64(i%2*2 - 1)
+			x := sx * (HalfW + 11 + math.Mod(float64(i)*5.3, 14))
+			z := 4 + math.Mod(float64(i)*9.1, 40)
+			shrubPal(B, x, z, color.RGBA{}, int64(i+20), palDry)
 		}
 		ax := -side * 26
 		if !drawModel(B, "altar", V3{ax, -0.6, 31.5}, v3(1), identity, color.RGBA{}, 0) {
@@ -223,7 +255,12 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 			z := 8 + r.Float64()*30
 			y := -2 + math.Sin(t*0.5+float64(i))*0.5
 			floatingRock(B, x, y, z, 2.6, color.RGBA{130, 200, 110, 255}, color.RGBA{140, 122, 114, 255}, int64(i+7))
-			oakTree(B, x, z, 0.6, int64(i+5)).y(B, y)
+			oakTreeAt(B, x, y+0.05, z, 0.6, int64(i+5)) // rooted on the rock's top
+			B.Draw(cached("isleRoots"+itoa(i%2), func() *Mesh { return growHangingRoots(int64(i%2) + 50) }), V3{x, y - 1.2, z}, V3{2.6, 2.4, 2.6}, rotXYZ(0, float64(i)*1.7, 0), color.RGBA{}, 0)
+			bush := floraGet("isleBush"+itoa(i%3), func() *floraSet {
+				return growBush(int64(i%3)+60, []color.RGBA{{255, 170, 200, 255}, {255, 230, 140, 255}, {200, 170, 255, 255}}[i%3], palOak, false)
+			})
+			drawFlora(B, bush, V3{x + 1.1, y + 0.15, z - 0.6}, v3(0.55), float64(i), color.RGBA{}, t, 0.02)
 		}
 	case WMachine:
 		ground(bio.Outer)
@@ -298,6 +335,11 @@ func cloudCluster(v int) *Mesh {
 // controlCabinet is a machine-room console: plinth, riveted body, cap,
 // a glowing readout facing the arena, gauges, hazard band and a beacon.
 func controlCabinet(B *Batch, x, z, t, sx float64) {
+	if !B.objBegin(x, 1.5, z, 2.5) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
 	steel := color.RGBA{88, 92, 102, 255}
 	if drawModel(B, "cabinet", V3{x, 0, z}, v3(1), rotXYZ(0, sx*math.Pi/2, 0), color.RGBA{}, 0) {
 		blink := math.Max(0, math.Sin(t*4+z))
@@ -328,55 +370,75 @@ func controlCabinet(B *Batch, x, z, t, sx float64) {
 
 // ---------------------------------------------------------------- set pieces
 
-func lumenTree(B *Batch, x, z, s float64, bio *Biome, t float64) {
-	if drawModel(B, "lumen_tree", V3{x, -0.6, z}, v3(s), identity, color.RGBA{}, 0) {
-		for i := 0; i < 5; i++ {
-			a := float64(i) * 1.3
-			col := bio.Hues[i%6]
-			p := V3{x + math.Cos(a)*2.2*s, (6.2 + float64(i%3)*1.1) * s, z + math.Sin(a)*1.5*s}
-			B.Billboard(p, 5.5*s, sprSoft, alpha(col, 0.3+0.12*math.Sin(t*1.5+a)), true)
-			hx, hz := p.X+math.Cos(a+1)*1.2*s, p.Z+math.Sin(a+1)*0.8*s
-			hy := p.Y - (2.2+math.Sin(t+a)*0.15)*s
-			B.Box(hx-0.02, hy, hz-0.02, hx+0.02, p.Y-0.8*s, hz+0.02, color.RGBA{160, 140, 220, 255}, sprWhite, 0.3)
-			B.Billboard(V3{hx, hy, hz}, 0.5*s, sprSphere, lighten(col, 0.5), false)
-			B.Billboard(V3{hx, hy, hz}, 1.6*s, sprSoft, alpha(col, 0.7), true)
-		}
+// menhirMesh is a weathered standing stone (Glimmer Grove): the Tripo-made
+// model when it is in the build, else a simple lathe.
+func menhirMesh() *Mesh {
+	if m := model("menhir"); m != nil {
+		return m
+	}
+	return menhirFar()
+}
+
+// menhirFar is the light standing stone for the far horizon ring, where
+// the detailed model would cost ~12% fps for detail nobody can see.
+func menhirFar() *Mesh {
+	return cached("menhirLathe", func() *Mesh {
+		return Lathe([][2]float64{{1.0, 0}, {0.92, 1.2}, {0.98, 2.6}, {0.8, 4.4}, {0.5, 5.6}, {0.18, 6.2}, {0, 6.3}}, 5,
+			[]color.RGBA{{52, 58, 86, 255}, {64, 70, 102, 255}, {58, 66, 98, 255}, {72, 80, 116, 255}, {84, 94, 132, 255}, {96, 108, 150, 255}}, false)
+	})
+}
+
+// glowcap is one giant luminous mushroom (Glimmer Grove); pulse 0..1 swells
+// and brightens the cap.
+func glowcap(B *Batch, x, z, s float64, col color.RGBA, pulse float64) {
+	if !B.objBegin(x, s, z, 1.5*s+0.5) {
+		B.objEnd()
 		return
 	}
-	B.Draw(cached("lumenTrunk", func() *Mesh {
-		return Lathe([][2]float64{{0.9, 0}, {0.55, 1}, {0.45, 3}, {0.5, 4.6}, {0.75, 5.6}, {0, 6}}, 7,
-			[]color.RGBA{{40, 24, 66, 255}, {52, 30, 84, 255}, {60, 36, 96, 255}, {70, 42, 110, 255}}, false)
-	}), V3{x, -0.6, z}, v3(s), identity, color.RGBA{}, 0)
-	for i := 0; i < 5; i++ {
-		a := float64(i) * 1.3
-		col := bio.Hues[i%6]
-		p := V3{x + math.Cos(a)*2.2*s, (6.2 + float64(i%3)*1.1) * s, z + math.Sin(a)*1.5*s}
-		m := cached("lumenLeaf"+itoa(i), func() *Mesh {
-			return Icosphere(1, 0.22, int64(i+40), color.RGBA{120, 70, 200, 255}, color.RGBA{50, 24, 96, 255})
+	defer B.objEnd()
+	ms, mc := model("mush_stem"), model("mush_cap")
+	if ms == nil || mc == nil {
+		ms = cached("mstem", func() *Mesh {
+			return Lathe([][2]float64{{0.22, 0}, {0.16, 0.6}, {0.14, 1.2}, {0.18, 1.4}}, 6, []color.RGBA{{210, 220, 236, 255}}, false)
 		})
-		B.Draw(m, p, V3{2.1 * s, 1.5 * s, 2.1 * s}, rotXYZ(0, a, 0), color.RGBA{}, 0.15)
-		B.Billboard(p, 5.5*s, sprSoft, alpha(col, 0.35+0.12*math.Sin(t*1.5+a)), true)
-		// hanging light
-		hx, hz := p.X+math.Cos(a+1)*1.2*s, p.Z+math.Sin(a+1)*0.8*s
-		hy := p.Y - (2.2+math.Sin(t+a)*0.15)*s
-		B.Box(hx-0.02, hy, hz-0.02, hx+0.02, p.Y-0.8*s, hz+0.02, color.RGBA{160, 140, 220, 255}, sprWhite, 0.3)
-		B.Billboard(V3{hx, hy, hz}, 0.5*s, sprSphere, lighten(col, 0.5), false)
-		B.Billboard(V3{hx, hy, hz}, 1.6*s, sprSoft, alpha(col, 0.7), true)
+		mc = cached("mcapw", func() *Mesh {
+			return Lathe([][2]float64{{0.2, -0.05}, {0.9, -0.05}, {0.85, 0.2}, {0.6, 0.45}, {0, 0.55}}, 9,
+				[]color.RGBA{{255, 255, 255, 255}, {230, 230, 230, 255}, {230, 230, 230, 255}, {245, 245, 245, 255}}, false)
+		})
+	}
+	B.Draw(ms, V3{x, -0.6, z}, v3(s), identity, color.RGBA{}, 0.1)
+	B.Draw(mc, V3{x, -0.6 + 1.4*s, z}, V3{s * (1 + 0.05*pulse), s * (1 + 0.08*pulse), s * (1 + 0.05*pulse)}, identity, col, float32(0.25+0.5*pulse))
+	B.Billboard(V3{x, -0.6 + 1.3*s, z}, (2.6+1.4*pulse)*s, sprSoft, alpha(col, 0.3+0.4*pulse), true)
+}
+
+func lumenTree(B *Batch, x, z, s float64, bio *Biome, t float64) {
+	if !B.objBegin(x, 3*s, z, 3*s+0.5) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
+	seed := int64(math.Abs(x*7 + z*3))
+	set := treeVariantLOD("lumen", seed, floraLOD(B, V3{x, 0, z}), growLumen)
+	col := bio.Hues[int(seed)%6]
+	drawFlora(B, set, V3{x, -0.6, z}, v3(s), float64(seed), lighten(col, 0.35), t, 0.01)
+	// the canopy's glow, breathing
+	for i := 0; i < 5; i++ {
+		a := float64(i)*1.26 + float64(seed)
+		c := bio.Hues[(i+int(seed))%6]
+		p := V3{x + math.Cos(a)*2.4*s, 5.6 * s, z + math.Sin(a)*2.4*s}
+		B.Billboard(p, 5.5*s, sprSoft, alpha(c, 0.22+0.1*math.Sin(t*1.5+a)), true)
 	}
 }
 
 func floatingRock(B *Batch, x, y, z, s float64, top, under color.RGBA, seed int64) {
-	name := "float_rock_neon"
-	if top.G > 150 {
-		name = "float_rock_green"
-	}
-	if drawModel(B, name, V3{x, y, z}, v3(s), rotXYZ(0, float64(seed), 0), color.RGBA{}, 0) {
+	if !B.objBegin(x, y, z, 2*s+0.5) {
+		B.objEnd()
 		return
 	}
-	B.Draw(cached("frock"+itoa(int(seed)), func() *Mesh {
-		return Lathe([][2]float64{{0, -1.6}, {0.45, -1.1}, {0.8, -0.55}, {1, -0.12}, {1, 0}, {0, 0.05}}, 7,
-			[]color.RGBA{darken(under, 0.8), under, lighten(under, 0.08), lighten(under, 0.12), top}, false)
-	}), V3{x, y, z}, V3{s, s, s * 0.8}, rotXYZ(0, float64(seed), 0), color.RGBA{}, 0)
+	defer B.objEnd()
+	// a grown island: tufted grass top over a craggy, tapering underside
+	m := cached("isle"+colKey(top)+itoa(int(seed%3)), func() *Mesh { return growIsland(seed%3+400, top, under) })
+	B.Draw(m, V3{x, y, z}, V3{s, s, s * 0.8}, rotXYZ(0, float64(seed), 0), color.RGBA{}, 0)
 }
 
 type treeRef struct{ x, z, s float64 }
@@ -384,64 +446,79 @@ type treeRef struct{ x, z, s float64 }
 func (t treeRef) y(B *Batch, y float64) {} // placement helper (trees sit on the ground plane)
 
 func oakTree(B *Batch, x, z, s float64, seed int64) treeRef {
-	if drawModel(B, []string{"oak_a", "oak_b"}[seed&1], V3{x, -0.6, z}, v3(s), rotXYZ(0, float64(seed)*1.3, 0), color.RGBA{}, 0) {
-		return treeRef{x, z, s}
-	}
-	B.Draw(cached("oakTrunk", func() *Mesh {
-		return Lathe([][2]float64{{0.55, 0}, {0.36, 0.6}, {0.3, 2.6}, {0.2, 3.4}}, 6, []color.RGBA{{110, 76, 50, 255}, {124, 86, 56, 255}}, false)
-	}), V3{x, -0.6, z}, v3(s), identity, color.RGBA{}, 0)
-	for k := 0; k < 3; k++ {
-		m := cached("oakLeaf"+itoa(k), func() *Mesh {
-			return Icosphere(1, 0.16, int64(k+10), color.RGBA{132, 190, 92, 255}, color.RGBA{66, 112, 58, 255})
-		})
-		a := float64(seed) + float64(k)*2.1
-		p := V3{x + math.Cos(a)*0.9*s, (3.6 + float64(k%2)*0.8) * s, z + math.Sin(a)*0.7*s}
-		B.Draw(m, p, V3{1.9 * s, 1.6 * s, 1.9 * s}, rotXYZ(0, a, 0), color.RGBA{}, 0)
-	}
+	oakTreeAt(B, x, terrainY(activeTerrain, x, z)+0.05, z, s, seed)
 	return treeRef{x, z, s}
 }
 
-func shrub(B *Batch, x, z float64, bloom color.RGBA, seed int64) {
-	if sm, bm := model("shrub"), model("blooms"); sm != nil && bm != nil {
-		r := rotXYZ(0, float64(seed), 0)
-		B.Draw(sm, V3{x, -0.6, z}, v3(1), r, color.RGBA{}, 0)
-		B.Draw(bm, V3{x, -0.6, z}, v3(1), r, bloom, 0.1)
+// oakTreeAt is oakTree with its roots at height y (on a rock, a ledge).
+func oakTreeAt(B *Batch, x, y, z, s float64, seed int64) {
+	if !B.objBegin(x, y+3*s, z, 3*s+0.5) {
+		B.objEnd()
 		return
 	}
-	B.Draw(cached("shrub", func() *Mesh {
-		return Icosphere(1, 0.2, 77, color.RGBA{110, 168, 80, 255}, color.RGBA{60, 100, 52, 255})
-	}), V3{x, 0, z}, V3{1.3, 0.9, 1.3}, rotXYZ(0, float64(seed), 0), color.RGBA{}, 0)
-	for k := 0; k < 6; k++ {
-		a := float64(k)*1.05 + float64(seed)
-		p := V3{x + math.Cos(a)*0.9, 0.55 + float64(k%3)*0.25, z + math.Sin(a)*0.9}
-		B.Draw(cached("bloom"+colKey(bloom), func() *Mesh {
-			return Icosphere(0, 0.1, 5, bloom, darken(bloom, 0.8))
-		}), p, v3(0.22), identity, color.RGBA{}, 0.1)
+	defer B.objEnd()
+	leafyTree(B, x, y, z, s*0.82, seed, color.RGBA{255, 255, 255, 255}, color.RGBA{255, 255, 255, 255}, sceneT)
+}
+
+func shrub(B *Batch, x, z float64, bloom color.RGBA, seed int64) {
+	shrubPal(B, x, z, bloom, seed, palOak)
+}
+
+// shrubPal is shrub with its own leaf palette (night groves, dream banks).
+func shrubPal(B *Batch, x, z float64, bloom color.RGBA, seed int64, pal leafPal) {
+	if !B.objBegin(x, 0.8, z, 1.5) {
+		B.objEnd()
+		return
 	}
+	defer B.objEnd()
+	// a grown shrub: woody stems forking into leaf sprays, with blossoms
+	far := floraFar(B, V3{x, 0, z})
+	key := "bush" + colKey(bloom) + colKey(pal.dark) + itoa(int(seed%3))
+	if far {
+		key += "L"
+	}
+	set := floraGet(key, func() *floraSet { return growBush(seed%3+5, bloom, pal, far) })
+	drawFlora(B, set, V3{x, terrainY(activeTerrain, x, z) + 0.6, z}, v3(1.15), float64(seed)*2.1, color.RGBA{}, sceneT, 0.02)
 }
 
 func windmill(B *Batch, x, z, t float64, bio *Biome) {
-	B.Draw(cached("millHill", func() *Mesh {
-		return Icosphere(2, 0.05, 3, color.RGBA{128, 176, 90, 255}, color.RGBA{86, 128, 66, 255})
-	}), V3{x, -2.2, z}, V3{7, 4.4, 6}, identity, color.RGBA{}, 0)
+	if !B.objBegin(x, 6, z, 7) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
+	// sit on the lowest point under the footing so no edge floats, on a
+	// stone footing sunk into the slope
+	gy := math.Inf(1)
+	for _, o := range [][2]float64{{0, 0}, {3.4, 0}, {-3.4, 0}, {0, 3.4}, {0, -3.4}, {2.4, 2.4}, {-2.4, -2.4}, {2.4, -2.4}, {-2.4, 2.4}} {
+		gy = math.Min(gy, terrainY(WMeadow, x+o[0], z+o[1]))
+	}
+	B.Draw(cached("millFooting", func() *Mesh {
+		return Lathe([][2]float64{{3.5, -4}, {3.2, 0.2}, {2.9, 0.7}, {2.5, 1.0}, {0, 1.05}}, 10,
+			[]color.RGBA{{118, 112, 104, 255}, {138, 130, 120, 255}, {150, 142, 130, 255}, {120, 114, 106, 255}}, true)
+	}), V3{x, gy, z}, v3(1), identity, color.RGBA{}, 0)
+	oy := gy + 1.0 // the tower's base
 	if tw, sl := model("windmill_tower"), model("windmill_sails"); tw != nil && sl != nil {
-		B.Draw(tw, V3{x, 1.6, z}, v3(1), identity, color.RGBA{}, 0)
-		B.Draw(sl, V3{x, 1.6 + 12.6, z - 2.2}, v3(1), rotXYZ(0, 0, t*0.8), color.RGBA{}, 0)
+		B.Draw(tw, V3{x, oy, z}, v3(1), identity, color.RGBA{}, 0)
+		// the sails turn in a plane well clear of the tower's face
+		B.Draw(sl, V3{x, oy + 12.6, z - 2.6}, v3(1), rotXYZ(0, 0, t*0.8), color.RGBA{}, 0)
 		return
 	}
 	B.Draw(cached("millTower", func() *Mesh {
 		return Lathe([][2]float64{{2.3, 0}, {2.2, 1.2}, {1.95, 1.3}, {1.6, 9.6}, {1.75, 9.8}, {1.75, 10.2}, {1.5, 10.3}}, 8,
 			[]color.RGBA{{150, 140, 128, 255}, {170, 160, 146, 255}, {238, 226, 206, 255}, {120, 90, 70, 255}, {120, 90, 70, 255}, {120, 90, 70, 255}}, true)
-	}), V3{x, 1.6, z}, v3(1), identity, color.RGBA{}, 0)
+	}), V3{x, oy, z}, v3(1), identity, color.RGBA{}, 0)
 	B.Draw(cached("millCap", func() *Mesh {
 		return Lathe([][2]float64{{1.7, 0}, {1.6, 0.8}, {1.2, 1.6}, {0.5, 2.2}, {0, 2.4}}, 8,
 			[]color.RGBA{{178, 76, 60, 255}, {196, 88, 66, 255}, {206, 98, 72, 255}, {214, 108, 80, 255}}, false)
-	}), V3{x, 11.9, z}, v3(1), identity, color.RGBA{}, 0)
-	// door and windows
-	B.Box(x-0.5, 1.6, z-2.05, x+0.5, 3.4, z-1.9, color.RGBA{90, 62, 44, 255}, sprWhite, 0)
-	B.Box(x-0.35, 6.5, z-1.8, x+0.35, 7.3, z-1.65, color.RGBA{70, 80, 110, 255}, sprWhite, 0.15)
-	hub := V3{x, 12.6, z - 1.9}
-	B.Billboard(hub, 0.9, sprSphere, color.RGBA{90, 70, 60, 255}, false)
+	}), V3{x, oy + 10.3, z}, v3(1), identity, color.RGBA{}, 0)
+	// door and windows, set into the tower's face rather than floating
+	B.Box(x-0.5, oy, z-2.25, x+0.5, oy+1.8, z-2.0, color.RGBA{90, 62, 44, 255}, sprWhite, 0)
+	B.Box(x-0.35, oy+4.9, z-1.95, x+0.35, oy+5.7, z-1.72, color.RGBA{70, 80, 110, 255}, sprWhite, 0.15)
+	hub := V3{x, oy + 11, z - 2.5}
+	B.Draw(cached("millHub", func() *Mesh {
+		return Lathe([][2]float64{{0.45, 0}, {0.45, 0.6}, {0.2, 0.9}, {0, 0.95}}, 8, []color.RGBA{{96, 74, 60, 255}}, true)
+	}), hub, v3(1), rotXYZ(-math.Pi/2, 0, 0), color.RGBA{}, 0)
 	for k := 0; k < 4; k++ {
 		a := t*0.8 + float64(k)*math.Pi/2
 		dir := V3{math.Cos(a), math.Sin(a), 0}
@@ -457,15 +534,33 @@ func windmill(B *Batch, x, z, t float64, bio *Biome) {
 }
 
 func boulder(B *Batch, x, z, s float64, col color.RGBA, seed int64) {
-	if drawModel(B, []string{"boulder_a", "boulder_b"}[seed&1], V3{x, -0.6, z}, V3{s, s, s}, rotXYZ(0, float64(seed), 0), col, 0) {
+	if !B.objBegin(x, 0.8*s, z, 1.5*s+0.3) {
+		B.objEnd()
 		return
 	}
-	B.Draw(cached("boulder"+itoa(int(seed%4)), func() *Mesh {
-		return Icosphere(1, 0.22, seed%4+20, lighten(col, 0.1), darken(col, 0.7))
-	}), V3{x, -0.4, z}, V3{s, s * 0.7, s}, rotXYZ(0, float64(seed), 0), color.RGBA{}, 0)
+	defer B.objEnd()
+	// a weathered, faceted boulder (flora.go); moss only on the green worlds
+	moss := activeTerrain == WMeadow || activeTerrain == WRuins
+	key := "rock" + itoa(int(seed%5))
+	if moss {
+		key += "m"
+	}
+	m := cached(key, func() *Mesh { return growRock(seed%5+200, moss) })
+	B.Draw(m, V3{x, terrainY(activeTerrain, x, z) + 0.1*s, z}, V3{s, s, s}, rotXYZ(0, float64(seed)*1.7, 0), col, 0)
 }
 
 func crystalCluster(B *Batch, x, z, s float64, bio *Biome, t float64) {
+	if !B.objBegin(x, 2.5*s, z, 3*s+0.5) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
+	if m := model("crystal_formation"); m != nil {
+		// the Tripo-made formation: one model, its glow pulses with the cave
+		B.Draw(m, V3{x, -0.6, z}, v3(s), rotXYZ(0, x*0.37, 0), color.RGBA{}, float32(0.1+0.08*math.Sin(t*1.6)))
+		B.Billboard(V3{x, 4.5 * s, z}, 12*s, sprSoft, alpha(bio.Trim, 0.14+0.05*math.Sin(t*1.6)), true)
+		return
+	}
 	if !drawModel(B, "cluster_base", V3{x, -0.6, z}, V3{3.4 * s, 3 * s, 2.8 * s}, identity, color.RGBA{}, 0) {
 		B.Draw(cached("clusterBase", func() *Mesh {
 			return Icosphere(1, 0.2, 31, color.RGBA{70, 74, 104, 255}, color.RGBA{30, 32, 50, 255})
@@ -486,6 +581,11 @@ func crystalCluster(B *Batch, x, z, s float64, bio *Biome, t float64) {
 }
 
 func mushrooms(B *Batch, x, z float64, col color.RGBA, seed int64, t float64) {
+	if !B.objBegin(x, 1.5, z, 2.5) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
 	stem := cached("mstem", func() *Mesh {
 		return Lathe([][2]float64{{0.22, 0}, {0.16, 0.6}, {0.14, 1.2}, {0.18, 1.4}}, 6, []color.RGBA{{210, 220, 236, 255}}, false)
 	})
@@ -515,6 +615,11 @@ func mushrooms(B *Batch, x, z float64, col color.RGBA, seed int64, t float64) {
 }
 
 func column(B *Batch, x, z float64, bio *Biome, broken bool, seed int64) {
+	if !B.objBegin(x, 3, z, 1.6) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
 	stone := lighten(bio.Wall, 0.05)
 	hgt := 8.0
 	if broken {
@@ -549,36 +654,29 @@ func column(B *Batch, x, z float64, bio *Biome, broken bool, seed int64) {
 }
 
 func palm(B *Batch, x, z, t float64, seed int64) {
-	lean := 0.25 + float64(seed)*0.1
-	if tr, fr := model("palm_trunk"), model("palm_fronds"); tr != nil && fr != nil {
-		r := rotXYZ(lean, float64(seed), 0)
-		B.Draw(tr, V3{x, -0.6, z}, v3(1), r, color.RGBA{}, 0)
-		top := V3{x, -0.6, z}.Add(r.Mul(V3{0, 7.8, 0}))
-		B.Draw(fr, top, v3(1), rotXYZ(math.Sin(t*0.6)*0.04, float64(seed), math.Cos(t*0.5)*0.04), color.RGBA{}, 0)
+	if !B.objBegin(x, 4, z, 3) {
+		B.objEnd()
 		return
 	}
-	B.Draw(cached("palmTrunk", func() *Mesh {
-		prof := [][2]float64{}
-		for k := 0; k <= 9; k++ {
-			r := 0.42 - float64(k)*0.022
-			prof = append(prof, [2]float64{r * 1.12, float64(k) * 0.8}, [2]float64{r, float64(k)*0.8 + 0.6})
-		}
-		return Lathe(prof, 6, []color.RGBA{{150, 116, 80, 255}, {130, 98, 66, 255}}, true)
-	}), V3{x, -0.6, z}, v3(1), rotXYZ(lean, float64(seed), 0), color.RGBA{}, 0)
-	top := V3{x, -0.6, z}.Add(rotXYZ(lean, float64(seed), 0).Mul(V3{0, 7.8, 0}))
-	for k := 0; k < 7; k++ {
-		a := float64(k)/7*2*math.Pi + math.Sin(t*0.6)*0.05
-		dir := V3{math.Cos(a), -0.35, math.Sin(a)}.Norm()
-		perp := V3{-math.Sin(a), 0, math.Cos(a)}
-		B.OBox(top.Add(dir.Mul(1.8)), dir.Mul(1.9), V3{0, 0.04, 0}, perp.Mul(0.45), color.RGBA{86, 150, 70, 255}, 0)
-		B.OBox(top.Add(dir.Mul(3.5)).Add(V3{0, -0.5, 0}), V3{dir.X, -0.8, dir.Z}.Norm().Mul(0.7), V3{0, 0.04, 0}, perp.Mul(0.3), color.RGBA{72, 130, 60, 255}, 0)
-	}
+	defer B.objEnd()
+	set := treeVariantLOD("palm", seed, floraLOD(B, V3{x, 0, z}), growPalm)
+	drawFlora(B, set, V3{x, -0.6, z}, v3(1), float64(seed)*1.9+0.6, color.RGBA{}, t, 0.015)
 }
 
 func stoneHead(B *Batch, x, z float64, bio *Biome) {
+	if !B.objBegin(x, 3.5, z, 4.5) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
 	stone := lighten(bio.Wall, 0.05)
 	dark := darken(bio.Wall, 0.5)
-	if drawModel(B, "stone_head", V3{x, -0.6, z}, v3(1), identity, color.RGBA{}, 0) {
+	if m := model("stone_head"); m != nil {
+		// half-buried in a drift of sand, so it reads as a fallen statue
+		B.Draw(m, V3{x, -3.4, z}, v3(1), rotXYZ(0.04, 0, -0.05), color.RGBA{}, 0)
+		B.Draw(cached("sandDrift", func() *Mesh {
+			return Icosphere(2, 0.06, 41, color.RGBA{232, 198, 140, 255}, color.RGBA{210, 172, 118, 255})
+		}), V3{x, -1.4, z}, V3{9, 2.2, 7}, identity, color.RGBA{}, 0)
 		boulder(B, x+7, z-5, 1.5, stone, 3)
 		boulder(B, x-7.5, z-4.2, 1.1, stone, 4)
 		boulder(B, x-6, z-6.4, 0.7, stone, 5)
@@ -599,11 +697,13 @@ func stoneHead(B *Batch, x, z float64, bio *Biome) {
 	boulder(B, x+7, z-5, 1.5, stone, 3)
 	boulder(B, x-7.5, z-4.2, 1.1, stone, 4)
 	boulder(B, x-6, z-6.4, 0.7, stone, 5)
-	for k := 0; k < 5; k++ {
-		B.Draw(cached("moss", func() *Mesh {
-			return Icosphere(1, 0.25, 61, color.RGBA{110, 150, 80, 255}, color.RGBA{70, 104, 60, 255})
-		}), V3{x - 4.6 + float64(k)*2.3, 12.9 + float64(k%2)*0.2, z - 3.2}, V3{0.8, 0.35, 0.6}, identity, color.RGBA{}, 0)
-	}
+	B.Draw(cached("headMoss", func() *Mesh {
+		fb := newFloraB(61)
+		for k := 0; k < 5; k++ {
+			fb.mossTuft(V3{-4.6 + float64(k)*2.3, 12.9 + float64(k%2)*0.2, -3.2}, 0.7, 0.45, color.RGBA{70, 104, 60, 255}, color.RGBA{130, 170, 90, 255}, 30)
+		}
+		return fb.m
+	}), V3{x, 0, z}, v3(1), identity, color.RGBA{}, 0)
 }
 
 func skyCastle(B *Batch, x, z, s, t float64, bio *Biome) {
@@ -668,6 +768,11 @@ func airship(B *Batch, x, y, z, t float64) {
 }
 
 func gear(B *Batch, x, y, z, rad, a float64, col color.RGBA, bio *Biome) {
+	if !B.objBegin(x, y, z, rad+0.3) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
 	if drawModel(B, "gear", V3{x, y, z}, v3(rad), rotXYZ(0, 0, a), col, 0) {
 		B.Billboard(V3{x, y, z - 0.8}, rad*0.2, sprSoft, alpha(bio.Trim, 0.6), true)
 		return
@@ -691,6 +796,11 @@ func gear(B *Batch, x, y, z, rad, a float64, col color.RGBA, bio *Biome) {
 }
 
 func boiler(B *Batch, x, z, t float64) {
+	if !B.objBegin(x, 1.5, z, 2.5) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
 	if drawModel(B, "boiler", V3{x, -0.6, z}, v3(1), identity, color.RGBA{}, 0) {
 		B.Billboard(V3{x, 2.4, z - 2.4}, 1.6, sprSoft, alpha(color.RGBA{255, 120, 40, 255}, 0.6+0.3*math.Sin(t*5)), true)
 		for k := 0; k < 5; k++ { // steam
@@ -717,7 +827,11 @@ func (g *Game) drawPost(B *Batch, L *Level, x, z, wallH float64) {
 	bio := L.Biome
 	t := L.T
 	pulse := 0.6 + 0.4*math.Sin(t*2+z)
-	if pm := postModel(bio.ID); pm != nil {
+	if dreamWorld(bio.ID) {
+		dreamPost(B, dreamTextures(), x, z, t)
+		return
+	}
+	if pm := postModel(bio.ID); pm != nil && bio.ID != WNeon {
 		tint := color.RGBA{}
 		if bio.ID == WCaverns {
 			tint = bio.Hues[int(math.Abs(x+z))%6]
@@ -726,7 +840,7 @@ func (g *Game) drawPost(B *Batch, L *Level, x, z, wallH float64) {
 		switch bio.ID {
 		case WNeon:
 			B.Billboard(V3{x, wallH + 1.4, z}, 1.5, sprSoft, alpha(bio.Trim, 0.6*pulse), true)
-		case WMeadow:
+		case WMeadow, WDream:
 			B.Billboard(V3{x, 3.4, z}, 1.8, sprSoft, alpha(color.RGBA{255, 200, 110, 255}, 0.55*pulse), true)
 		case WCaverns:
 			B.Billboard(V3{x, wallH + 1.2, z}, 2.2, sprSoft, alpha(tint, 0.35*pulse), true)
@@ -740,11 +854,11 @@ func (g *Game) drawPost(B *Batch, L *Level, x, z, wallH float64) {
 	case WNeon:
 		B.Draw(cached("neonPost", func() *Mesh {
 			return Lathe([][2]float64{{0.85, 0}, {0.85, 1.6}, {0.6, 1.8}, {0.6, 2.2}, {0.3, 2.3}}, 8,
-				[]color.RGBA{{70, 56, 110, 255}, {90, 70, 140, 255}, {255, 90, 220, 255}, {90, 70, 140, 255}}, true)
+				[]color.RGBA{{58, 64, 96, 255}, {74, 82, 120, 255}, {110, 240, 215, 255}, {74, 82, 120, 255}}, true)
 		}), V3{x, 0, z}, v3(1), identity, color.RGBA{}, 0.1)
 		B.Billboard(V3{x, wallH + 1.4, z}, 1.5, sprSoft, alpha(bio.Trim, 0.6*pulse), true)
 		B.Billboard(V3{x, wallH + 1.4, z}, 0.5, sprSphere, lighten(bio.Trim, 0.4), false)
-	case WMeadow:
+	case WMeadow, WDream:
 		B.Draw(cached("meadowPost", func() *Mesh {
 			return Lathe([][2]float64{{0.55, 0}, {0.5, 2.8}, {0.6, 2.9}, {0.6, 3.05}, {0.3, 3.1}}, 6,
 				[]color.RGBA{{140, 100, 64, 255}, {120, 86, 56, 255}, {110, 80, 52, 255}}, true)
@@ -781,4 +895,18 @@ func (g *Game) drawPost(B *Batch, L *Level, x, z, wallH float64) {
 		B.Billboard(V3{x, wallH + 1.1, z}, 1.3, sprSoft, alpha(color.RGBA{255, 140, 30, 255}, blink), true)
 		B.Billboard(V3{x, wallH + 1.1, z}, 0.38, sprSphere, color.RGBA{255, 190, 90, 255}, false)
 	}
+}
+
+// pineTree draws a grown conifer rooted on the terrain.
+func pineTree(B *Batch, x, z, s float64, seed int64) {
+	y := terrainY(activeTerrain, x, z) + 0.1
+	if !B.objBegin(x, y+4*s, z, 4*s+0.5) {
+		B.objEnd()
+		return
+	}
+	defer B.objEnd()
+	set := treeVariantLOD("pine", seed, floraLOD(B, V3{x, 0, z}), func(sd int64, lite bool) *floraSet {
+		return growPine(sd, lite, color.RGBA{22, 66, 44, 255}, color.RGBA{96, 150, 96, 255})
+	})
+	drawFlora(B, set, V3{x, y, z}, v3(s), float64(seed)*2.3, color.RGBA{}, sceneT, 0.008)
 }

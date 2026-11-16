@@ -488,7 +488,7 @@ func (b *sb) worldNote(world int, start, f, gain, bright float64) {
 			return (wSaw(f*0.996*t+ph1) + wSaw(f*1.004*t+ph2) + 0.5*wSq(f*0.5*t)) * e
 		}, fLP, func(t float64) float64 { return 250 + (3500+3000*bright)*math.Exp(-t*16) }, 1.6, gain*0.55)
 		b.fm(start, 0.25, f*2, 2, 1.5, 20, 0, 18, gain*0.25)
-	case WMeadow: // marimba
+	case WMeadow, WDream: // marimba
 		b.modes(start, f, []float64{1, 3.93, 9.2}, []float64{1, 0.32 + 0.2*bright, 0.1}, []float64{6, 20, 45}, gain, 0.0015)
 		b.noise(start, 0.012, expEnv(0, 300), fBP, cst(2400), 1.5, gain*0.4)
 	case WCaverns: // crystal glass
@@ -509,7 +509,7 @@ func worldMaster(world int) master {
 	switch world {
 	case WNeon:
 		return master{wet: 0.22, room: 0.7, damp: 0.3, peak: 0.42}
-	case WMeadow:
+	case WMeadow, WDream:
 		return master{wet: 0.12, room: 0.5, damp: 0.5, peak: 0.45}
 	case WCaverns:
 		return master{wet: 0.42, room: 0.88, damp: 0.2, peak: 0.4}
@@ -535,7 +535,7 @@ func (b *sb) debris(world int, start, gain float64) {
 			return hold * math.Exp(-t*40) * gain * 0.5
 		})
 		b.tone(start, 0.06, sweep(1400, 180, 0.06), expEnv(0, 40), wSq, gain*0.12)
-	case WMeadow: // wood crack + knock
+	case WMeadow, WDream: // wood crack + knock
 		b.noise(start, 0.05, expEnv(0, 70), fBP, cst(1400+r.Float64()*600), 2.5, gain*0.9)
 		b.modes(start, 190+r.Float64()*40, []float64{1, 2.6}, []float64{1, 0.4}, []float64{30, 55}, gain*0.5, 0.001)
 	case WCaverns: // crystal crumble
@@ -679,6 +679,7 @@ var recipes = map[string]recipe{
 			WRuins:   {285, 45, 1.64},
 			WClouds:  {490, 28, 2.01},
 			WMachine: {555, 32, 3.24},
+			WDream:   {620, 30, 2.5},
 		}[world]
 		f := material.fundamental * (1 + float64(v-1)*0.035)
 		m := worldMaster(world)

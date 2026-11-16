@@ -114,6 +114,8 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	g.drawHero(screen, L, 22, 18, 150, 186)
 	if g.duel == nil {
 		g.drawLives(screen, L, 97, 224)
+		g.drawRunCharms(screen, 40, 260)
+		g.coinRain(screen)
 		g.drawQuip(screen)
 	}
 	// ---- vitals plate, beside the portrait
@@ -188,7 +190,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	ck := u.anim("hudcombo", L.Combo >= 3, 10)
 	if ck > 0.01 {
 		heat := math.Min(1, float64(g.comboShown)/40)
-		c := mixc(rgba(255, 232, 140, 255), rgba(255, 84, 60, 255), heat)
+		c, ember := comboHeat(g.comboShown) // white, gold, then fire
 		w := 300.0
 		x := 1898 - w + (1-ck)*80
 		u.frame(screen, x, 18, w, 104, 0.92*ck)
@@ -197,6 +199,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		size := 56 * (pulse + 0.22*g.comboPop*g.comboPop)
 		num := itoa(g.comboShown)
 		nW := u.measure(num, fTitle, size)
+		g.drawComboEmbers(screen, x+w-26-nW/2, 52, ember, ck)
 		u.textOutlined(screen, num, fTitle, size, x+w-26, 24-(size-56)*0.6, ca(c, ck), alignRight)
 		u.textOutlined(screen, "×", fBold, 32, x+w-34-nW, 46, ca(c, ck), alignRight)
 		bw := w - 56
@@ -233,6 +236,32 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		u.bar(screen, 504, y+46, 912, 20, bb.HP/bb.MaxHP, g.hudBoss/bb.MaxHP, col, 10, 1)
 		u.gem(screen, 488, y+56, 8, 11, th.Edge, 1)
 		u.gem(screen, 1432, y+56, 8, 11, th.Edge, 1)
+		// rage marks at two thirds and one third (ROADMAP-50 #71): crossing
+		// one makes the bar flare, so the fight's turning points read
+		frac := bb.HP / bb.MaxHP
+		phase := 0
+		for i, f := range []float64{2.0 / 3, 1.0 / 3} {
+			tx := 504 + 912*f
+			c := ca(rgba(255, 220, 160, 255), 0.95)
+			if frac < f {
+				c = ca(cDim, 0.5)
+				phase = i + 1
+			}
+			strokeLine(screen, u.X(tx), u.Y(y+42), u.X(tx), u.Y(y+70), 3*u.S, c)
+			u.gem(screen, tx, y+40, 5, 7, c, 1)
+		}
+		if phase != g.hudBossPhase {
+			if phase > g.hudBossPhase && g.hudBossPhase >= 0 {
+				g.hudBossFlare = 1
+			}
+			g.hudBossPhase = phase
+		}
+		if g.hudBossFlare > 0 {
+			g.hudBossFlare = math.Max(0, g.hudBossFlare-dt*1.6)
+			fl := g.hudBossFlare
+			drawSprite(screen, sprSoft, u.X(470), u.Y(y-30), 980*u.S, 140*u.S, ca(rgba(255, 120, 80, 255), 0.55*fl), true)
+			u.textOutlined(screen, "ENRAGED!", fRune, 30*(1+0.3*fl), 960, y+86, ca(rgba(255, 150, 110, 255), math.Min(1, fl*2)), alignCenter)
+		}
 	}
 
 	// ---- class ability (bottom-left, above power-ups)

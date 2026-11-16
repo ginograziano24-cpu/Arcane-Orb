@@ -17,7 +17,7 @@ import (
 
 // Version is bumped whenever the duel protocol changes; mismatched
 // builds refuse to pair.
-const Version = 1
+const Version = 2 // 2: duel stage select (ROADMAP-50 #49)
 
 // DefaultPort is where a direct-connect host listens.
 const DefaultPort = 7777

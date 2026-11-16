@@ -142,7 +142,7 @@ func drawModel(B *Batch, name string, pos, scale V3, rot Mat3, tint color.RGBA, 
 // nominal size the brick models are built at (models.py)
 const brickW, brickH, brickD = 1.88, 0.80, 0.99
 
-var brickModelNames = [NumWorlds]string{WNeon: "brick_neon", WMeadow: "brick_meadow", WCaverns: "brick_caverns", WRuins: "brick_ruins", WClouds: "brick_clouds", WMachine: "brick_machine"}
+var brickModelNames = [NumWorlds]string{WNeon: "brick_neon", WMeadow: "brick_meadow", WCaverns: "brick_caverns", WRuins: "brick_ruins", WClouds: "brick_clouds", WMachine: "brick_machine", WDream: "brick_meadow"}
 
 func brickModel(world int) *Mesh {
 	if world < 0 || world >= NumWorlds {
@@ -151,7 +151,7 @@ func brickModel(world int) *Mesh {
 	return model(brickModelNames[world])
 }
 
-var worldModelSuffix = [NumWorlds]string{WNeon: "neon", WMeadow: "meadow", WCaverns: "caverns", WRuins: "ruins", WClouds: "clouds", WMachine: "machine"}
+var worldModelSuffix = [NumWorlds]string{WNeon: "neon", WMeadow: "meadow", WCaverns: "caverns", WRuins: "ruins", WClouds: "clouds", WMachine: "machine", WDream: "meadow"}
 
 func wallModel(world int) *Mesh {
 	if world < 0 || world >= NumWorlds {

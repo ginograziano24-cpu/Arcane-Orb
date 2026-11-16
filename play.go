@@ -68,6 +68,7 @@ func (b *Brick) Z() float64 { return cellZ(b.R) }
 type Ball struct {
 	X, Z, VX, VZ, R float64
 	Stuck           bool
+	OnP2            bool // resting on player two's paddle (co-op)
 	Off             float64
 	trail           orbMotionTrail
 	PierceLeft      int
@@ -220,6 +221,7 @@ type Level struct {
 	hadFinale             bool
 	lastBrkX, lastBrkZ    float64
 	lostOrbs              int // orbs dropped this chamber (for Untouchable)
+	edgeHits              int // paddle-edge strikes this chamber (for Edge Artist)
 	startLeft             int
 	paddleGone            float64 // >0 while the exploded paddle reforms
 	gameOverT             float64 // >0 while the last life's blast plays out
@@ -281,6 +283,22 @@ type Level struct {
 	ambientT          float64
 	propsX            []V3
 	paddleBounce      float64
+	padSquash         float64 // squash-and-stretch after a hard return (feel.go)
+	dmgNums           int     // damage numbers started this frame
+	prevWorld         int     // the run's last world before this chamber (chambersave.go)
+	initBricks        int     // bricks as the chamber was built
+	stuckT            float64 // how long an orb has rested on the paddle (auto-launch)
+	famT              [8]float64 // familiar shot timers (familiars.go)
+	famAng, owlCD     float64
+	famIntro          bool // the familiars' arrival burst has played (visfx9.go)
+	p2Hist            [6]float64 // player two's recent paddle positions (visfx10.go)
+	p2Touch           bool       // the co-op paddles were touching last frame
+	p2On, drawingP2   bool    // co-op: player two's paddle (coop.go)
+	p2X               float64
+	nextSave          float64 // chamber clock of the next mid-chamber autosave
+	crackT, crackX    float64 // the faint arcane crackle on the paddle's face
+	shatter           []*Brick // a slain Guardian's armour, core outward
+	shatterN          int
 	kickX, kickZ      float64 // camera kick: offset and velocity (a damped spring)
 	kickVX, kickVZ    float64
 	hurtFlash         float64
@@ -295,6 +313,13 @@ type Level struct {
 	critT             float64 // seconds to the next critter
 	dropsSeen         int     // capsules on the board last frame (thieves watch for new ones)
 	critters          int     // critters popped this chamber
+	bursts            int     // particle bursts spawned this frame (burstBudget)
+	// cosmetic only (visualfx.go): its own random source, floor marks, weather
+	fx         *rand.Rand
+	Marks      []floorMark
+	weather    int
+	weatherSet bool
+	weatherT   float64
 }
 
 func (g *Game) newLevel(node NodeType, seed int64) *Level {
@@ -308,16 +333,21 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 	}
 	if r.Duel {
 		wi = int(uint64(seed)>>5) % NumWorlds // each duel round visits a different world
+		if g.duel != nil && g.duel.stage > 0 && g.duel.stage <= NumWorlds {
+			wi = g.duel.stage - 1 // the host picked a stage
+		}
 	}
+	prevWorld := r.LastWorld
 	r.LastWorld = wi
 	g.snd.SetWorld(wi)
+	g.noteChronicle(wi, node == NBoss)
 	b, vis := levelLook(&worlds[wi], seed)
 	if node == NBoss {
 		bc := worlds[wi]
 		bc.BossName = acts[r.AI()].BossName
 		b, vis = &bc, Visuals{}
 	}
-	L := &Level{g: g, Biome: b, Node: node, Vis: vis, rng: rand.New(rand.NewSource(seed ^ 0x5eed))}
+	L := &Level{g: g, Biome: b, Node: node, Vis: vis, rng: rand.New(rand.NewSource(seed ^ 0x5eed)), prevWorld: prevWorld}
 	gridShift = 0
 	r.Depth++
 	r.ActDepth++
@@ -374,6 +404,12 @@ func (g *Game) newLevel(node NodeType, seed int64) *Level {
 		opts := []Power{PExpand, PSlow, PFire, PLaser, PBarrier, PMagnet}
 		L.applyPower(opts[L.rng.Intn(len(opts))])
 	}
+	L.startCoopLevel()
+	L.keepsakeChamber()
+	// the mid-chamber autosave (chambersave.go) checks the chamber it
+	// rebuilds against this count, and saves first after 15 s of play
+	L.initBricks = len(L.Bricks)
+	L.nextSave = chamberSaveEvery
 	return L
 }
 
@@ -514,6 +550,7 @@ func (L *Level) Update(dt float64, in Input) {
 	g := L.g
 	r := g.run
 	gridShift = L.shift
+	L.bursts, L.dmgNums = 0, 0
 	L.updateEnv(dt)
 	L.updateCritters(dt)
 	if L.updateLives(dt) {
@@ -601,10 +638,12 @@ func (L *Level) Update(dt float64, in Input) {
 	}
 	L.updateAbility(dt, in)
 	L.updatePassives(dt)
+	L.updateFamiliars(dt)
 	L.abilFlash = math.Max(0, L.abilFlash-dt*2)
 	L.stun -= dt
 	L.hurtFlash = math.Max(0, L.hurtFlash-dt*2)
 	L.paddleBounce = math.Max(0, L.paddleBounce-dt*6)
+	L.updatePaddleFeel(dt)
 	L.updateKick(dt)
 
 	// paddle
@@ -635,11 +674,24 @@ func (L *Level) Update(dt float64, in Input) {
 			b.X, b.Z = L.PaddleX+b.Off, PaddleZ+PaddleD/2+b.R+0.02
 		}
 	}
+	L.updatePartner(dt, g.p2in)
 	if !L.Cleared {
 		if in.Fire {
 			if !L.release() && L.Timers[PLaser] > 0 {
 				L.fireLaser()
 			}
+		}
+		// Auto-launch (Settings > Controls): an orb resting on the paddle
+		// leaves by itself after a moment, so the game plays with movement
+		// alone
+		if L.g.settings.AutoLaunch && L.g.duel == nil && L.anyStuck() && L.paddleGone <= 0 {
+			L.stuckT += dt
+			if L.stuckT > 1.4 {
+				L.release()
+				L.stuckT = 0
+			}
+		} else {
+			L.stuckT = 0
 		}
 		// lasers
 		interval := r.Stats.LaserInterval
@@ -689,16 +741,19 @@ func (L *Level) Update(dt float64, in Input) {
 			L.collideWalls(b)
 			L.collideBricks(b)
 			L.collidePaddle(b)
+			L.collidePartner(b)
 			L.collideRocks(b)
 			L.collideCritters(b)
 			if L.aegisCatch(b) {
 				g.snd.PlayVol("shield", 0.7)
+			} else if L.owlCatch(b) {
 			} else if L.Barrier > 0 && b.VZ < 0 && b.Z-b.R <= BarrierZ && b.Z > BarrierZ-1 {
 				b.Z = BarrierZ + b.R
 				b.VZ = math.Abs(b.VZ)
 				L.Barrier--
 				g.snd.Play("shield")
 				L.sparks(V3{b.X, 0.3, BarrierZ}, 16, color.RGBA{170, 140, 255, 255}, 6)
+				L.barrierRipple(b.X)
 				L.barrierSaved(b.X)
 			}
 		}
@@ -808,7 +863,7 @@ func (L *Level) release() bool {
 		t := b.Off / (L.PaddleW / 2)
 		ang := t*50*math.Pi/180 + (L.rng.Float64()-0.5)*0.1
 		b.VX, b.VZ = sp*math.Sin(ang), sp*math.Cos(ang)
-		b.Stuck = false
+		b.Stuck, b.OnP2 = false, false
 		if L.slowServe > 0 {
 			L.timeWarp = math.Max(L.timeWarp, L.slowServe) // Iron Will
 			L.slowServe = 0
@@ -942,6 +997,9 @@ func (L *Level) collideWalls(b *Ball) {
 			L.orbImpact(b, 0, -1, 0.6, color.RGBA{230, 235, 255, 255}, 3)
 		}
 		L.env.onBump(side, b.Z)
+		if dreamWorld(L.Biome.ID) {
+			L.dreamWallHit(b.X, b.Z, side)
+		}
 		fixAngle(b)
 		L.stallNudge(b)
 		b.Rico++
@@ -1099,6 +1157,7 @@ func (L *Level) collidePaddle(b *Ball) {
 	b.Momentum = 0
 	b.Rico = 0
 	L.paddleBounce = 1
+	L.paddleStrike(b, sp)
 	L.orbImpact(b, 0, 1, 0.8, color.RGBA{255, 240, 210, 255}, 4)
 	if r.Stats.StaticPaddle {
 		L.zapNearest(b.X, b.Z, math.Max(1, r.Stats.Damage*(1+r.Stats.ChainMult)))
@@ -1119,6 +1178,7 @@ func (L *Level) collidePaddle(b *Ball) {
 		L.g.snd.PlayKeyed("split")
 	}
 	if math.Abs(t) >= 0.65 {
+		L.edgeHits++
 		L.g.snd.PlayKeyed("padedge")
 	} else {
 		L.g.snd.PlayKeyed("pad")
@@ -1183,6 +1243,9 @@ func (L *Level) damage(b *Brick, h Hit) (bool, bool) {
 	r := g.run
 	b.Flash = 1
 	b.SinceHit = 0
+	if g.settings.DmgNums && !h.Silent {
+		L.srcNumber(b, h)
+	}
 	if b.Core && L.Boss != nil {
 		if L.Boss.Dead {
 			return false, true
@@ -1273,7 +1336,11 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 		ball.Idle = 0 // real progress: not a stall
 	}
 	charged := ball.Charged
-	crit := L.rng.Float64() < s.CritChance || charged
+	cc := s.CritChance
+	if L.hasOmen("starlit") {
+		cc += 0.15
+	}
+	crit := L.rng.Float64() < cc || charged
 	ball.Charged = false
 	wasFrozen := b.Frozen > 0
 	dmg := s.Damage * s.DmgMult
@@ -1324,6 +1391,9 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 		h.Dmg *= 2
 	}
 	bx, bz := b.X(), b.Z()
+	if crit {
+		L.critRing(bx, bz)
+	}
 	times := 1
 	if (s.EchoEvery > 0 && L.impacts%s.EchoEvery == 0) || (s.EchoChance > 0 && L.rng.Float64() < s.EchoChance) {
 		times = 2
@@ -1346,7 +1416,9 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 			note = dmg * math.Min(s.Crescendo*float64(L.Combo), s.Crescendo*20)
 			L.damage(b, Hit{Src: "Crescendo", Dmg: note, Silent: true, Void: h.Void, Crit: crit})
 		}
-		L.dmgNumber(bx, bz, dmg*float64(times)+note, crit)
+		if !g.settings.DmgNums { // the per-hit numbers already show it
+			L.dmgNumber(bx, bz, dmg*float64(times)+note, crit)
+		}
 	}
 	if crit && L.T-L.critStopT > 0.35 && !g.settings.FastAnim {
 		L.critStopT = L.T
@@ -1397,6 +1469,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	}
 	if crit && !b.Core {
 		L.text(V3{bx, 1.4, bz}, "CRIT", color.RGBA{255, 90, 90, 255}, false)
+		L.addMark(bx, bz, 0.8, color.RGBA{255, 110, 90, 255}, true)
 	}
 	if crit && s.CritPierce && destroyed {
 		solid = false
@@ -1407,6 +1480,13 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	L.comboT = 3 + s.ComboTime
 	if L.Combo > r.MaxCombo {
 		r.MaxCombo = L.Combo
+		if L.Biome != nil && r.SeedCode != "MENU" {
+			rc := r.rc()
+			rc.ComboAct, rc.ComboWhere, rc.ComboBoss = r.Act, L.Biome.Name, false
+			if L.Node == NBoss && L.Biome.BossName != "" {
+				rc.ComboWhere, rc.ComboBoss = L.Biome.BossName, true
+			}
+		}
 	}
 	L.peakCombo = max(L.peakCombo, L.Combo)
 	if L.Combo%10 == 0 {
@@ -1568,6 +1648,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 		L.gainGold(10, x, z, true)
 		r.Elites++
 		L.text(V3{x, 2, z}, "ELITE TOPPLED!", color.RGBA{220, 160, 255, 255}, true)
+		L.eliteFall(x, z)
 		L.Shake = math.Max(L.Shake, 0.5)
 	case levelgen.Basic, levelgen.Regen, levelgen.Moving, levelgen.Armored, levelgen.Split:
 		if L.rng.Float64() < dropP && len(L.Drops) < 5 {
@@ -1720,6 +1801,7 @@ func (L *Level) explode(x, z, radiusCells, dmg float64, big bool) {
 	dmg *= 1 + st.BlastMult
 	rad := radiusCells * blastCell
 	rc := color.RGBA{255, 170, 60, 255}
+	L.addMark(x, z, rad*0.7, rc, true)
 	if st.CryoCharge {
 		rc = color.RGBA{150, 225, 255, 255}
 	}
@@ -1880,7 +1962,7 @@ func (L *Level) gainGold(n int, x, z float64, asCoin bool) {
 	if r.Cursed {
 		v *= 2
 	}
-	if L.hasOmen("gilded") {
+	if L.hasOmen("gilded") || L.hasOmen("vault") {
 		v *= 2
 	}
 	v = max(v, 1)
@@ -2207,9 +2289,13 @@ func (L *Level) updateDrops(dt float64) {
 		if magnet && d.Z < 14 {
 			d.X += (L.PaddleX - d.X) * math.Min(1, dt*2.5)
 		}
-		caught := d.Z-0.4 <= PaddleZ+PaddleD/2 && d.Z+0.4 >= PaddleZ-PaddleD/2 && math.Abs(d.X-L.PaddleX) <= half+0.6
+		caught := d.Z-0.4 <= PaddleZ+PaddleD/2 && d.Z+0.4 >= PaddleZ-PaddleD/2 && math.Abs(d.X-L.PaddleX) <= half+0.6 || L.partnerCatches(d.X, d.Z, 0.6)
 		if caught {
 			L.applyPower(d.P)
+			L.pickupFX(d.P, d.X)
+			if !powerDefs[d.P].Good {
+				L.badPickupSmoke(d.X)
+			}
 		}
 		if caught || d.Z < LoseZ {
 			L.Drops = append(L.Drops[:i], L.Drops[i+1:]...)
@@ -2230,13 +2316,18 @@ func (L *Level) updateDrops(dt float64) {
 			c.VX *= 0.7
 		}
 		c.VZ = math.Max(c.VZ-14*dt, -9)
+		L.coinGlint(c, dt)
 		if magnet || L.Cleared {
 			dx, dz := L.PaddleX-c.X, PaddleZ-c.Z
 			c.VX += dx * dt * 6
 			c.VZ += dz * dt * 3
 		}
 		c.X = math.Max(-HalfW+0.3, math.Min(HalfW-0.3, c.X))
-		caught := math.Abs(c.Z-PaddleZ) < 0.7 && math.Abs(c.X-L.PaddleX) <= half+0.4
+		byP1 := math.Abs(c.Z-PaddleZ) < 0.7 && math.Abs(c.X-L.PaddleX) <= half+0.4
+		caught := byP1 || L.partnerCatches(c.X, c.Z, 0.4)
+		if caught && !byP1 {
+			L.partnerCatchFX(c.X)
+		}
 		if caught {
 			L.gainGold(c.Val, 0, 0, false)
 			L.g.snd.Coin()
@@ -2312,6 +2403,9 @@ func (L *Level) updateDrops(dt float64) {
 }
 
 func (L *Level) updateEffects(dt float64) {
+	L.updateMarks(dt)
+	L.updateTrails(dt)
+	L.updateWeather(dt)
 	for i := 0; i < len(L.Parts); {
 		p := &L.Parts[i]
 		p.Life -= dt
@@ -2371,7 +2465,7 @@ func (L *Level) updateEffects(dt float64) {
 			case WNeon: // drifting motes
 				p = Particle{P: V3{(rf() - 0.5) * 34, 0.5 + rf()*4, rf() * 42}, V: V3{(rf() - 0.5) * 0.6, (rf() - 0.3) * 0.5, (rf() - 0.5) * 0.6},
 					Life: 3, Max: 3, Size: 0.35, Col: L.Biome.Hues[L.rng.Intn(6)], Kind: pAmbient}
-			case WMeadow: // dandelion seeds on the breeze
+			case WMeadow, WDream: // dandelion seeds on the breeze
 				p = Particle{P: V3{-30 + rf()*10, 1 + rf()*6, rf() * 44}, V: V3{2 + rf()*1.5, (rf() - 0.4) * 0.4, (rf() - 0.5) * 0.5},
 					Life: 9, Max: 9, Size: 0.28, Col: color.RGBA{255, 250, 235, 255}, Kind: pAmbient}
 			case WCaverns: // sparkling motes
@@ -2396,10 +2490,31 @@ func (L *Level) updateEffects(dt float64) {
 	}
 }
 
+// burstBudget thins particle bursts when many land in the same frame
+// (multiball, chain explosions), so the orb stays readable and a big
+// moment doesn't bury the board: the first few bursts in a frame are
+// full, the next few a third, the rest a sixth (roadmap #9).
+func (L *Level) burstBudget(n int) int {
+	L.bursts++
+	switch {
+	case L.bursts <= burstsFull:
+		return n
+	case L.bursts <= burstsThinned:
+		return max(1, n/3)
+	}
+	return n / 6
+}
+
+const (
+	burstsFull    = 6
+	burstsThinned = 12
+)
+
 func (L *Level) sparks(p V3, n int, c color.RGBA, spd float64) {
 	if L.g.settings.Particles == 0 {
 		n = n / 3
 	}
+	n = L.burstBudget(n)
 	for i := 0; i < n; i++ {
 		a := L.rng.Float64() * 2 * math.Pi
 		e := L.rng.Float64() * 1.2
@@ -2413,6 +2528,7 @@ func (L *Level) debris(p V3, n int, c color.RGBA) {
 	if L.g.settings.Particles == 0 {
 		n = n / 3
 	}
+	n = L.burstBudget(n)
 	rnd := func() float64 { return L.rng.Float64() - 0.5 }
 	add := func(pp Particle) {
 		if pp.Kind == pDebris {
@@ -2432,7 +2548,7 @@ func (L *Level) debris(p V3, n int, c color.RGBA) {
 		case WNeon: // energy fragments + glowing motes
 			add(Particle{P: base, V: v, Life: 0.9, Max: 1.2, Size: 0.16 + L.rng.Float64()*0.2, Col: lighten(c, 0.3), Kind: pDebris, Grav: 22})
 			add(Particle{P: base, V: v.Mul(0.6), Life: 0.6, Max: 0.6, Size: 0.5, Col: c, Kind: pSpark, Grav: 2})
-		case WMeadow: // wooden splinters and a few petals
+		case WMeadow, WDream: // wooden splinters and a few petals
 			add(Particle{P: base, V: v, Life: 1.1, Max: 1.4, Size: 0.14 + L.rng.Float64()*0.15, Col: mixc(c, color.RGBA{150, 100, 60, 255}, 0.5), Kind: pDebris, Grav: 26})
 			if i%3 == 0 {
 				add(Particle{P: base, V: V3{rnd() * 3, 2 + L.rng.Float64()*2, rnd() * 3}, Life: 1.6, Max: 1.6, Size: 0.35, Col: color.RGBA{255, 200, 210, 255}, Kind: pSmoke, Grav: 1})
@@ -2468,7 +2584,7 @@ func (L *Level) setupBoss() {
 	act := L.g.run.Act
 	// the Guardian grows with the build you bring to it (heat), so it stays
 	// a real fight however the world went
-	b := &Boss{Name: L.Biome.BossName, MaxHP: (115 + 125*float64(act-1)) * (1 + heatHP*float64(L.heat)) * ascHP(L.g.run.Asc, false, true) * math.Pow(1.25, float64(L.g.run.Loop()))}
+	b := &Boss{Name: L.Biome.BossName, MaxHP: (115 + 125*float64(act-1)) * (1 + heatHP*float64(L.heat)) * ascHP(L.g.run.Asc, false, true) * math.Pow(1.25, float64(L.g.run.Loop())) * (1 + L.g.run.Stats.BossHPMult)}
 	b.HP = b.MaxHP
 	L.Boss = b
 	shape := []string{
@@ -2552,16 +2668,7 @@ func (L *Level) updateBoss(dt float64) {
 	b.recoveryT = max(0, b.recoveryT-dt)
 	if b.Dead {
 		b.deathT += dt
-		if L.rng.Float64() < dt*10 {
-			for _, br := range L.Bricks {
-				if br.Alive && br.BossPart {
-					br.Alive = false
-					L.Grid[br.R][br.C] = nil
-					L.explode(br.X(), br.Z(), 0.5, 0, false)
-					break
-				}
-			}
-		}
+		L.updateShatter(b.deathT) // the armour breaks from the core outward
 		return
 	}
 	b.coreT += dt
@@ -2583,7 +2690,7 @@ func (L *Level) updateBoss(dt float64) {
 	}
 	b.atkT -= dt * rage
 	if b.atkT <= 0 {
-		b.atkT = 6
+		b.atkT = bossAttackGap(L.g.run.Asc)
 		n := 2 + L.rng.Intn(2)
 		for i := 0; i < n; i++ {
 			tx := (L.rng.Float64() - 0.5) * 2 * (HalfW - 2)
@@ -2612,7 +2719,9 @@ func (L *Level) killBoss() {
 		}
 	}
 	L.Rocks = nil
+	L.startShatter()
 	L.text(V3{0, 4, 28}, b.Name+" FALLS!", color.RGBA{255, 220, 120, 255}, true)
+	L.confetti()
 	L.Shake = 1
 	L.Flash = 0.8
 	L.g.snd.PlayKeyed("bossdie")

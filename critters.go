@@ -226,7 +226,7 @@ func critterCol(world int, golden bool) color.RGBA {
 		return color.RGBA{255, 214, 90, 255}
 	}
 	switch world {
-	case WMeadow:
+	case WMeadow, WDream:
 		return color.RGBA{240, 230, 215, 255}
 	case WRuins:
 		return color.RGBA{60, 190, 170, 255}
@@ -290,7 +290,7 @@ func (g *Game) drawCritters(B *Batch, L *Level) {
 			continue
 		}
 		switch L.Biome.ID {
-		case WMeadow: // a hopping rabbit
+		case WMeadow, WDream: // a hopping rabbit
 			hop := math.Abs(math.Sin(c.hop)) * 0.45
 			ball("rab", at(0, 0.45+hop, 0), V3{0.42, 0.36, 0.5}, col, darken(col, 0.8), emis)
 			ball("rab", at(0, 0.8+hop, 0.38), V3{0.28, 0.27, 0.28}, col, darken(col, 0.8), emis)
@@ -370,7 +370,7 @@ func (g *Game) drawCritters(B *Batch, L *Level) {
 	}
 }
 
-var critterModelNames = [NumWorlds]string{WNeon: "critter_neon", WMeadow: "critter_meadow", WCaverns: "critter_caverns", WRuins: "critter_ruins", WClouds: "critter_clouds", WMachine: "critter_machine"}
+var critterModelNames = [NumWorlds]string{WNeon: "critter_neon", WMeadow: "critter_meadow", WCaverns: "critter_caverns", WRuins: "critter_ruins", WClouds: "critter_clouds", WMachine: "critter_machine", WDream: "critter_meadow"}
 
 // drawCritterModel draws a wanderer with its modelled body plus the parts
 // that animate (legs, wings, rotors, the wind-up key). s is the draw scale
@@ -395,7 +395,7 @@ func (g *Game) drawCritterModel(B *Batch, L *Level, c *Critter, s float64, rot M
 	}
 	y := 0.0
 	switch w {
-	case WMeadow:
+	case WMeadow, WDream:
 		y = math.Abs(math.Sin(c.hop)) * 0.45 * s
 	case WClouds:
 		y = math.Sin(c.T*3) * 0.12 * s

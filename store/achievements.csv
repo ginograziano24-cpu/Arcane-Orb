@@ -35,3 +35,9 @@ ACH_SUPERCHARGE,Living Lightning,Supercharge the orb as the Stormcaller.,yes,ach
 ACH_CHALLENGE,Tested,Finish a challenge run.,no,achievements/ACH_CHALLENGE.jpg,achievements/ACH_CHALLENGE_locked.jpg
 ACH_CHALLENGE_5,Proven,Finish five different challenge runs.,no,achievements/ACH_CHALLENGE_5.jpg,achievements/ACH_CHALLENGE_5_locked.jpg
 ACH_CHALLENGE_ALL,Master of Trials,Finish every challenge run.,no,achievements/ACH_CHALLENGE_ALL.jpg,achievements/ACH_CHALLENGE_ALL_locked.jpg
+ACH_KEEP_MAX,Heirloom,Raise any keepsake to its highest rank.,no,achievements/ACH_KEEP_MAX.jpg,achievements/ACH_KEEP_MAX_locked.jpg
+ACH_KEEP_ALL,The Full Reliquary,Buy every rank of every keepsake.,no,achievements/ACH_KEEP_ALL.jpg,achievements/ACH_KEEP_ALL_locked.jpg
+ACH_TRIAL_WIN,Trial by Fire,Finish the story at Trial 5 or higher.,no,achievements/ACH_TRIAL_WIN.jpg,achievements/ACH_TRIAL_WIN_locked.jpg
+ACH_COOP_WIN,Two Wardens,Finish the story in couch co-op.,no,achievements/ACH_COOP_WIN.jpg,achievements/ACH_COOP_WIN_locked.jpg
+ACH_NO_BANISH,Took What Came,Win at Trial 3 or higher without banishing a card.,no,achievements/ACH_NO_BANISH.jpg,achievements/ACH_NO_BANISH_locked.jpg
+ACH_FAMILIARS,Menagerie,Carry three kinds of familiar at once.,no,achievements/ACH_FAMILIARS.jpg,achievements/ACH_FAMILIARS_locked.jpg

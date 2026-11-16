@@ -75,7 +75,7 @@ var challenges = []challenge{
 		Map: func(m *ActMap, rng *rand.Rand) {
 			for _, n := range m.Nodes {
 				if (n.Type == NCombat && n.Row > 0) || n.Type == NElite {
-					n.Omen = omens[rng.Intn(len(omens))].ID
+					n.Omen = randomOmen(rng)
 				}
 			}
 		}},
@@ -104,6 +104,9 @@ func (r *Run) applyChallengeMap() {
 
 // offerAllowed filters item offers for challenges that restrict them.
 func (r *Run) offerAllowed(m *Mod) bool {
+	if !r.familiarOnly(m) || r.Banished[m.ID] {
+		return false
+	}
 	switch r.Challenge {
 	case "pyro":
 		for _, t := range m.Tags {
@@ -170,6 +173,7 @@ func (g *Game) drawChallenges(s *ebiten.Image) {
 	u := g.ui
 	S := u.S
 	u.heading(s, "CHALLENGES", 72, 40, cGold, 1)
+	g.drawSkinPicker(s, 1520, 70)
 	u.text(s, "Story runs under special rules. Finish one for 150 shards and its seal.", fReg, 22, 960, 140, cDim, alignCenter)
 	cols, w, h, gap := 5, 330.0, 360.0, 22.0
 	x0 := 960 - (float64(cols)*w+float64(cols-1)*gap)/2
@@ -197,6 +201,10 @@ func (g *Game) drawChallenges(s *ebiten.Image) {
 		strokePath(s, circlePath(u.X(cx), u.Y(cy), 56*S), 3*S, ca(c.Col, 0.9), false)
 		drawSprite(s, sprSoft, u.X(cx-60), u.Y(cy-60), 120*S, 120*S, ca(c.Col, 0.25+0.2*k), true)
 		u.drawEmblem(s, glyphImage(c.Glyph, c.Col), cx, cy, 76, 1)
+		g.challengeMotes(s, x, yy, w, h, c.Col, i)
+		if done {
+			g.sealShine(s, cx, cy, i)
+		}
 		u.text(s, c.Name, fSerif, 28, cx, yy+156, lighten(c.Col, 0.35), alignCenter)
 		u.paragraph(s, c.Rules, fReg, 18, cx, yy+200, w-40, cDim, alignCenter)
 		// status line
@@ -212,12 +220,13 @@ func (g *Game) drawChallenges(s *ebiten.Image) {
 			u.drawEmblem(s, glyphImage("star", cGold), x+w-30, yy+28, 30, 1)
 		}
 		if clk {
-			g.challengeSel = c.ID
+			g.challengeSel, g.weeklySel = c.ID, false
 			g.daily, g.endlessMode, g.seedText = false, false, ""
 			g.snd.Play("click")
 			g.setState(StArch)
 		}
 	}
+	g.drawWeeklyCard(s, 300, 968, 1320, 92)
 	if u.button(s, "chback", "Back", 60, 990, 200, 56, cAcc, true) {
 		g.setState(StMenu)
 	}

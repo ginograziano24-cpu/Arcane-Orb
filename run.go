@@ -230,6 +230,14 @@ type Run struct {
 	NextBarrier  int    // barrier charges waiting for the next chamber (events, rests)
 	Lives        int    // lives left (lives.go)
 	Challenge    string // challenge run id (challenges.go), "" for none
+	Weekly       []string // the weekly run's mutators (weekly.go)
+	Keepsake     string          // the charm carried into this run (keepsakes.go)
+	Trials       []string        // custom difficulty modifiers (trials.go)
+	Coop         bool            // couch co-op: a second paddle (coop.go)
+	Banished     map[string]bool // items removed from this run's offers (banish.go)
+	BanishUsed   int             // banishes spent
+	KeepUsed     bool            // a once-per-run keepsake was spent
+	KeepRank     int             // the carried keepsake's rank
 	LifeFinds    int    // hearts caught this run
 	Cursed       bool
 	LastWorld    int
@@ -258,6 +266,7 @@ type Run struct {
 	statsPaid    [3]int // bricks, bosses, elites already added to the save
 	metaLuck     int
 	recap        *runRecap
+	skipFusion   string // Recompute leaves this fusion out (fusionGains)
 
 	// statistics
 	Bricks, Bosses, Elites, MaxCombo, Score int
@@ -353,6 +362,10 @@ func (r *Run) Recompute(meta *SaveData) {
 	if c := r.challenge(); c != nil && c.Stats != nil {
 		c.Stats(&s)
 	}
+	r.applyWeeklyStats(&s)
+	r.applyKeepsake(&s)
+	r.applyTrials(&s)
+	r.applyCoop(&s)
 	tags := map[string]int{}
 	for _, id := range r.Order {
 		m := modByID[id]
@@ -368,6 +381,9 @@ func (r *Run) Recompute(meta *SaveData) {
 			s.CurseCount++
 		}
 	}
+	if s.FamBanner {
+		s.DmgMult *= 1 + 0.05*float64(min(4, s.familiarKinds())) // Spirit Banner
+	}
 	if s.CurseWard {
 		s.BarrierPerLevel += min(2, s.CurseCount) // the talisman turns curses into wards
 	}
@@ -380,6 +396,9 @@ func (r *Run) Recompute(meta *SaveData) {
 	}
 	for i := range fusions {
 		f := &fusions[i]
+		if f.ID == r.skipFusion {
+			continue
+		}
 		if r.Owned(f.A) && r.Owned(f.B) {
 			f.Apply(&s)
 			if !r.HasFusion(f.ID) {
@@ -427,7 +446,7 @@ func (r *Run) AI() int { return (r.Act - 1) % numActs }
 func (r *Run) Loop() int { return max(0, r.Act-numActs) }
 
 // choices is how many cards a reward offers.
-func (r *Run) choices() int { return 3 + r.Stats.ExtraChoices }
+func (r *Run) choices() int { return max(2, 3+r.Stats.ExtraChoices) }
 
 // freeRerolls left this run.
 func (r *Run) freeRerolls() int { return r.Stats.FreeRerolls - r.Rerolls }
@@ -461,8 +480,12 @@ func (r *Run) Offer(n int, relic bool, minRarity int, rng *rand.Rand) []*Mod {
 	}
 	var out []*Mod
 	luck := 1 + (r.Stats.Luck-1)*0.3 + float64(min(r.Act-1, 4))*0.25 + 0.04*float64(r.metaLuck)
+	gated := true
 	weight := func(m *Mod) float64 {
 		w := rarityWeights[m.Rarity] * math.Pow(luck, float64(m.Rarity))
+		if gated && m.Rarity > minRarity {
+			w *= r.rarityGate(m.Rarity) // the strongest items wait for later in a run
+		}
 		if r.fusionWith(m.ID) != nil {
 			w *= 4 // completing a fusion is exciting: offer it more
 		}
@@ -472,6 +495,10 @@ func (r *Run) Offer(n int, relic bool, minRarity int, rng *rand.Rand) []*Mod {
 		total := 0.0
 		for _, m := range pool {
 			total += weight(m)
+		}
+		if total <= 0 && gated {
+			gated = false // everything left is gated: offer it anyway
+			continue
 		}
 		x := rng.Float64() * total
 		for i, m := range pool {
@@ -487,6 +514,43 @@ func (r *Run) Offer(n int, relic bool, minRarity int, rng *rand.Rand) []*Mod {
 	return out
 }
 
+// rarityGate paces a run's power (balance pass, 2026-11-12): Epic,
+// Legendary and Mythic items are rare-to-impossible in the first chambers of
+// a run and reach their full odds by the middle of the first act or later,
+// so a build can't snowball off one lucky early card. Rewards that promise a
+// rarity (a Guardian's relic, a vault) still give it: only the luck of an
+// ordinary offer is held back. Endless loops and later acts are ungated.
+func (r *Run) rarityGate(rarity int) float64 {
+	if r.Act > 1 || r.Loop() > 0 || r.Duel {
+		return 1
+	}
+	d := r.Depth // chambers entered so far this run
+	switch rarity {
+	case Epic:
+		switch {
+		case d < 3:
+			return 0.25
+		case d < 6:
+			return 0.6
+		}
+	case Legendary:
+		switch {
+		case d < 4:
+			return 0
+		case d < 8:
+			return 0.35
+		}
+		return 0.7
+	case Mythic:
+		switch {
+		case d < 8:
+			return 0
+		}
+		return 0.4
+	}
+	return 1
+}
+
 func (r *Run) NodeSeed(i int) int64 {
 	return levelgen.Mix(r.SeedN, int64(r.Act), int64(i), 77)
 }
@@ -498,6 +562,7 @@ func (r *Run) NextAct(meta *SaveData) bool {
 	r.Act++
 	r.Map = genMap(rand.New(rand.NewSource(levelgen.Mix(r.SeedN, int64(r.Act)))), r.Act)
 	r.applyChallengeMap()
+	r.applyWeeklyMap()
 	r.Cur = -1
 	if r.carries() {
 		// the build carries on: the bricks are scaled to it instead (power.go)
@@ -507,6 +572,7 @@ func (r *Run) NextAct(meta *SaveData) bool {
 		r.startKit(meta) // fresh acts: the build starts over
 	}
 	r.Lives = max(r.Lives, r.maxLives()) // every act tops lives back up
+	r.keepsakeActStart()
 	return true
 }
 
@@ -546,7 +612,7 @@ type Event struct {
 
 func makeEvent(g *Game, rng *rand.Rand) *Event {
 	r := g.run
-	extra := moreEvents(g, rng)
+	extra := append(moreEvents(g, rng), evenMoreEvents(g, rng)...)
 	for try := 0; try < 4; try++ {
 		k := rng.Intn(6 + len(extra))
 		if k < 6 {

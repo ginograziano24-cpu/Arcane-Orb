@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -12,6 +13,12 @@ import (
 func (g *Game) textScale() float64 {
 	s := g.settings.TextScale
 	if s <= 0 {
+		// not chosen yet: on the Deck's 1280x800 (and other small screens)
+		// the smallest labels would fall under ~9 px, below Valve's
+		// legibility bar, so text starts a size up there
+		if steamOnDeck() || (g.ui != nil && g.ui.SH > 0 && math.Min(g.ui.SW/1920, g.ui.SH/1080) < 0.72) {
+			return 1.15
+		}
 		return 1
 	}
 	return math.Max(0.9, math.Min(1.35, s))
@@ -143,17 +150,26 @@ func (g *Game) updateRestartHold(dt float64) bool {
 		return false
 	}
 	g.restartHold = 0
-	arch, ch, endless := r.Arch, r.Challenge, r.EndlessStart
+	arch, ch, endless, weekly := r.Arch, r.Challenge, r.EndlessStart, len(r.Weekly) > 0
 	clearRun()
 	g.run, g.level = nil, nil
 	g.seedText, g.endlessMode = "", endless
 	g.snd.Play("warp")
+	if weekly {
+		g.startWeekly(arch) // the week's run again (its seed is the week's)
+		return true
+	}
 	g.startRunWith(arch, ch)
 	return true
 }
 
 func (g *Game) drawRestartHold(s *ebiten.Image) {
-	if g.restartHold <= 0.05 || g.state != StLevel {
+	if g.state == StSummary && !g.victory && g.run != nil && !g.run.Daily && !g.padActive {
+		g.ui.rawText = true
+		g.ui.text(s, fmt.Sprintf(tr("Hold %s to start a new run with this origin"), keyLabel(g.bind("restart").Keys[0])), fReg, 16, 960, 1040, cDim, alignCenter)
+		g.ui.rawText = false
+	}
+	if g.restartHold <= 0.05 || (g.state != StLevel && g.state != StSummary) {
 		return
 	}
 	u := g.ui

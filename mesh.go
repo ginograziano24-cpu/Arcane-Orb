@@ -5,8 +5,6 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-
-	"github.com/hajimehoshi/ebiten/v2"
 )
 
 // A tiny triangle-mesh toolkit for stylised low-poly scenery: faceted
@@ -65,9 +63,22 @@ func (m *Mesh) topology() *meshTopo {
 
 // projected is a mesh corner in world space and on screen.
 type projected struct {
-	p         V3
-	sx, sy, d float64
-	fog       float32
+	p      V3
+	d      float64
+	sx, sy float32 // screen position, already as the vertex stores it
+	fog    float32
+}
+
+// litChan is one channel of Batch.lit.
+func litChan(v uint8, t float32) uint8 {
+	if t > 1.25 {
+		t = 1.25
+	}
+	x := float32(v) * t
+	if x > 255 {
+		x = 255
+	}
+	return uint8(x)
 }
 
 type Mat3 [3]V3 // rows
@@ -90,6 +101,16 @@ func (m Mat3) Mul(v V3) V3 {
 
 // Draw renders the mesh with scale, rotation and translation.
 func (b *Batch) Draw(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emissive float32) {
+	if b.obj.n > 0 {
+		if b.obj.k > 0 {
+			pos, scale = b.obj.apply(pos, scale)
+		}
+	} else {
+		var ok bool
+		if pos, scale, ok = b.autoClear(m, pos, scale, rot); !ok {
+			return
+		}
+	}
 	if b.cut.on {
 		// a mesh is one primitive (see keep), costed by its triangles
 		if !b.keep(0.5 * float64(len(m.Tris))) {
@@ -100,7 +121,9 @@ func (b *Batch) Draw(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emiss
 		defer func() { b.cut = cut }()
 	}
 	if t := m.topo; t != nil && t.n == len(m.Tris) {
-		b.drawShared(m, pos, scale, rot, tint, emissive)
+		if !b.drawCached(m, pos, scale, rot, tint, emissive) {
+			b.drawShared(m, pos, scale, rot, tint, emissive)
+		}
 		return
 	}
 	eye := b.cam.Eye
@@ -134,6 +157,9 @@ func (b *Batch) Draw(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emiss
 // same normals from the transformed corners, the same colours and depths.
 func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emissive float32) {
 	t := m.topo
+	if t == nil || t.n != len(m.Tris) {
+		t = m.topology()
+	}
 	eye := b.cam.Eye
 	cam := b.cam
 	if cap(b.proj) < len(t.pos) {
@@ -145,7 +171,7 @@ func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA,
 		q := V3{lp.X * scale.X, lp.Y * scale.Y, lp.Z * scale.Z}
 		p := rot.Mul(q).Add(pos)
 		sx, sy, d := cam.Project(p)
-		pr[i] = projected{p: p, sx: sx, sy: sy, d: d, fog: float32(math.Max(0, math.Min(1, (d-b.fogNear)/span)))}
+		pr[i] = projected{p: p, sx: float32(sx), sy: float32(sy), d: d, fog: float32(math.Max(0, math.Min(1, (d-b.fogNear)/span)))}
 	}
 	useTint := tint.A > 0
 	fc := b.fogColor
@@ -156,10 +182,11 @@ func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA,
 		a, bb, c := &pr[ix[0]], &pr[ix[1]], &pr[ix[2]]
 		// Cull using the same float32 coordinates as the emitted quad.
 		// The fourth corner duplicates the third, so it adds no test.
-		ax, bx, cx := float32(a.sx), float32(bb.sx), float32(c.sx)
-		ay, by, cy := float32(a.sy), float32(bb.sy), float32(c.sy)
-		if (ax < 0 && bx < 0 && cx < 0) || (ax > fw && bx > fw && cx > fw) ||
-			(ay < 0 && by < 0 && cy < 0) || (ay > fh && by > fh && cy > fh) {
+		ax, bx, cx := a.sx, bb.sx, c.sx
+		ay, by, cy := a.sy, bb.sy, c.sy
+		near := triBehind(a, bb, c)
+		if !near && ((ax < 0 && bx < 0 && cx < 0) || (ax > fw && bx > fw && cx > fw) ||
+			(ay < 0 && by < 0 && cy < 0) || (ay > fh && by > fh && cy > fh)) {
 			continue
 		}
 		n := bb.p.Sub(a.p).Cross(c.p.Sub(a.p))
@@ -177,18 +204,29 @@ func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA,
 			col = color.RGBA{uint8(int(col.R) * int(tint.R) / 255), uint8(int(col.G) * int(tint.G) / 255), uint8(int(col.B) * int(tint.B) / 255), col.A}
 		}
 		e := 1 + tr.Emi + emissive
-		cc := cf(b.lit(col, n))
-		r, g, bl, al := cc[0]*e, cc[1]*e, cc[2]*e, cc[3]
-		var q quad
+		// b.lit and cf, inlined: the same float32 steps and the same
+		// rounding to bytes, so the colours are bit-for-bit unchanged
+		dl := float32(math.Max(0, n.Dot(b.light)))
+		al := float32(col.A) / 255
+		r := float32(litChan(col.R, b.ambCol[0]+b.lightCol[0]*dl*0.85)) / 255 * e
+		g := float32(litChan(col.G, b.ambCol[1]+b.lightCol[1]*dl*0.85)) / 255 * e
+		bl := float32(litChan(col.B, b.ambCol[2]+b.lightCol[2]*dl*0.85)) / 255 * e
+		if near {
+			b.clipTri(a.p, bb.p, c.p, [4]float32{r, g, bl, al})
+			continue
+		}
+		// fill the quad in place rather than building one and copying it
+		b.quads = append(b.quads, quad{})
+		q := &b.quads[len(b.quads)-1]
 		for k, v := range [3]*projected{a, bb, c} {
 			fog := v.fog
-			q.v[k] = ebiten.Vertex{
-				DstX: float32(v.sx), DstY: float32(v.sy), SrcX: sprWhite.X0, SrcY: sprWhite.Y0,
-				ColorR: (r*(1-fog) + fc[0]*fog) * al,
-				ColorG: (g*(1-fog) + fc[1]*fog) * al,
-				ColorB: (bl*(1-fog) + fc[2]*fog) * al,
-				ColorA: al,
-			}
+			vx := &q.v[k]
+			vx.DstX, vx.DstY = v.sx, v.sy
+			vx.SrcX, vx.SrcY = sprWhite.X0, sprWhite.Y0
+			vx.ColorR = (r*(1-fog) + fc[0]*fog) * al
+			vx.ColorG = (g*(1-fog) + fc[1]*fog) * al
+			vx.ColorB = (bl*(1-fog) + fc[2]*fog) * al
+			vx.ColorA = al
 		}
 		q.v[3] = q.v[2]
 		q.v[1].SrcX = sprWhite.X1
@@ -200,7 +238,6 @@ func (b *Batch) drawShared(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA,
 		sum += c.d
 		sum += c.d
 		q.depth = sum / 4
-		b.quads = append(b.quads, q)
 	}
 }
 

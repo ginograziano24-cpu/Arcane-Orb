@@ -10,8 +10,8 @@ import (
 const frameCapDisplay = -1
 const desktopFramePacing = runtime.GOOS != "js"
 
-var frameCaps = [...]int{0, 60, 120, 144, frameCapDisplay}
-var frameCapLabels = []string{"Off", "60", "120", "144", "Display"}
+var frameCaps = [...]int{0, 30, 60, 120, 144, 165, 240, frameCapDisplay} // 30: battery saver (Steam Deck)
+var frameCapLabels = []string{"Off", "30", "60", "120", "144", "165", "240", "Display"}
 
 func frameCapIndex(cap int) int {
 	for i, value := range frameCaps {
@@ -39,13 +39,13 @@ func (g *Game) paceFrame() {
 		cap, vsync = benchFrameCap, benchVSync
 	} else if !vsync && cap == 0 && g.duel == nil {
 		switch g.state {
-		case StMenu, StArch, StSeed, StSanctum, StHelp, StCodex, StChallenge, StPause:
+		case StMenu, StArch, StSeed, StSanctum, StKeepsakes, StHelp, StCodex, StChallenge, StPause:
 			// Limit otherwise unbounded local menus while keeping input and animation responsive.
 			cap = 120
 		}
 	}
-	if vsync {
-		cap = 0
+	if vsync && cap != 30 {
+		cap = 0 // VSync paces the frames, except for the 30 fps battery saver
 	}
 	switch cap {
 	case frameCapDisplay:
@@ -53,7 +53,7 @@ func (g *Game) paceFrame() {
 		if cap <= 0 {
 			cap = 60
 		}
-	case 60, 120, 144:
+	case 30, 60, 120, 144, 165, 240:
 	default:
 		g.framePacer = framePacer{}
 		return
@@ -75,7 +75,13 @@ func (p *framePacer) wait(interval time.Duration) {
 		p.deadline = now.Add(interval)
 		return
 	}
-	const spinWindow = 400 * time.Microsecond
+	// Sleep wakes late by up to a timer tick, so the last stretch is spun.
+	// Keep the spin short at high refresh rates, where 400 us is a tenth of
+	// the frame and burns a core for nothing.
+	spinWindow := 400 * time.Microsecond
+	if interval < 5*time.Millisecond {
+		spinWindow = 250 * time.Microsecond
+	}
 	if delay := p.deadline.Sub(now) - spinWindow; delay > 0 {
 		time.Sleep(delay)
 	}

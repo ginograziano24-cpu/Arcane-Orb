@@ -33,7 +33,8 @@ type savedReward struct {
 
 type savedRun struct {
 	Version   int
-	Phase     string // "map", "node" or "reward"
+	Phase     string // "map", "node", "reward" or "chamber" (mid-play, chambersave.go)
+	Chamber   *savedChamber `json:",omitempty"`
 	Node      int
 	Rewards   []savedReward
 	Endless   bool // g.endlessMode
@@ -54,6 +55,13 @@ type savedRun struct {
 	PhoenixUsed                             bool
 	Lives, LifeFinds                        int
 	Challenge                               string
+	Weekly                                  []string `json:",omitempty"`
+	Keepsake                                string          `json:",omitempty"`
+	Trials                                  []string        `json:",omitempty"`
+	Coop, KeepUsed                          bool            `json:",omitempty"`
+	Banished                                map[string]bool `json:",omitempty"`
+	BanishUsed                              int             `json:",omitempty"`
+	KeepRank                                int             `json:",omitempty"`
 	Cursed                                  bool
 	LastWorld                               int
 	Element                                 string
@@ -75,6 +83,13 @@ type savedRun struct {
 	PowerItems                              int
 	PowerFF                                 float64
 	NextBarrier                             int // barriers waiting for the next chamber
+	// v2+: the origin's mastery as it was when the run began. It decides
+	// which origin items can be offered and the paddle's livery, so a
+	// resumed run must not lose it (older saves fall back to the current
+	// mastery).
+	MasterySet       bool
+	Mastery          int
+	Livery, TrailCol bool
 }
 
 func runPath() string { return filepath.Join(filepath.Dir(savePath()), "run.json") }
@@ -98,20 +113,24 @@ func (g *Game) saveRun(phase string, node int) {
 // snapRun serialises the run (nil when there's nothing worth keeping).
 func (g *Game) snapRun(phase string, node int) []byte {
 	r := g.run
-	if r == nil || r.Duel || r.SeedCode == "MENU" || r.SeedCode == "SIM" || r.SeedCode == "TRAILER" || r.SeedCode == "LIFE" || r.FinalScore != 0 && !r.Endless {
+	if r == nil || r.Duel || r.SeedCode == "MENU" || r.SeedCode == "SIM" || r.SeedCode == "TRAILER" || r.SeedCode == "LIFE" || r.SeedCode == "BENCH" || r.FinalScore != 0 && !r.Endless {
 		return nil
 	}
 	s := savedRun{Version: runSaveVersion, Phase: phase, Node: node, Endless: g.endlessMode, DailyMode: g.daily,
 		SeedCode: r.SeedCode, SeedN: r.SeedN, Daily: r.Daily, Arch: r.Arch.ID, Act: r.Act, Cur: r.Cur, Depth: r.Depth, ActDepth: r.ActDepth,
 		MapRows: r.Map.Rows, Gold: r.Gold, Mods: r.Mods, Order: r.Order, PhoenixUsed: r.PhoenixUsed,
-		Lives: r.Lives, LifeFinds: r.LifeFinds, Challenge: r.Challenge, Cursed: r.Cursed, LastWorld: r.LastWorld,
+		Lives: r.Lives, LifeFinds: r.LifeFinds, Challenge: r.Challenge, Weekly: r.Weekly, Keepsake: r.Keepsake, KeepRank: r.KeepRank, Trials: r.Trials, Coop: r.Coop, KeepUsed: r.KeepUsed, Banished: r.Banished, BanishUsed: r.BanishUsed, Cursed: r.Cursed, LastWorld: r.LastWorld,
 		Element: r.Element, Rerolls: r.Rerolls, Fused: r.Fused, Scrolls: r.Scrolls, Rank: r.Rank, Asc: r.Asc,
 		RunEndless: r.Endless, EndlessStart: r.EndlessStart, XPPaid: r.xpPaid, ShardsPaid: r.shardsPaid,
 		StatsPaid: r.statsPaid, MetaLuck: r.metaLuck, Bricks: r.Bricks, Bosses: r.Bosses, Elites: r.Elites,
 		MaxCombo: r.MaxCombo, Score: r.Score, Elapsed: time.Since(r.Start).Seconds(), Recap: r.recap, Assisted: r.Assisted,
-		Carry: r.Carry, Power: r.Power, PowerN: r.PowerN, PowerI: r.PowerI, PowerItems: r.PowerItems, PowerFF: r.PowerFF, NextBarrier: r.NextBarrier}
+		Carry: r.Carry, Power: r.Power, PowerN: r.PowerN, PowerI: r.PowerI, PowerItems: r.PowerItems, PowerFF: r.PowerFF, NextBarrier: r.NextBarrier,
+		MasterySet: true, Mastery: r.Mastery, Livery: r.Livery, TrailCol: r.TrailCol}
 	for _, n := range r.Map.Nodes {
 		s.Map = append(s.Map, savedNode{n.Row, n.Lane, n.Type, n.Next, n.Visited, n.Seed, n.Omen})
+	}
+	if phase == "chamber" {
+		s.Chamber = g.pendingChamber
 	}
 	if phase == "reward" {
 		for _, rs := range g.rewards {
@@ -176,7 +195,7 @@ func (g *Game) continueRun(s *savedRun) {
 	arch := archByIDOK(s.Arch)
 	r := &Run{SeedCode: s.SeedCode, SeedN: s.SeedN, Daily: s.Daily, Arch: arch, Act: s.Act, Cur: s.Cur, Depth: s.Depth, ActDepth: s.ActDepth,
 		Gold: s.Gold, Mods: s.Mods, Order: s.Order, PhoenixUsed: s.PhoenixUsed, Lives: s.Lives, LifeFinds: s.LifeFinds,
-		Challenge: s.Challenge, Cursed: s.Cursed, LastWorld: s.LastWorld, Element: s.Element, Rerolls: s.Rerolls,
+		Challenge: s.Challenge, Weekly: s.Weekly, Keepsake: s.Keepsake, KeepRank: s.KeepRank, Trials: s.Trials, Coop: s.Coop, KeepUsed: s.KeepUsed, Banished: s.Banished, BanishUsed: s.BanishUsed, Cursed: s.Cursed, LastWorld: s.LastWorld, Element: s.Element, Rerolls: s.Rerolls,
 		Fused: s.Fused, Scrolls: s.Scrolls, Rank: s.Rank, Asc: s.Asc, Endless: s.RunEndless, EndlessStart: s.EndlessStart,
 		xpPaid: s.XPPaid, shardsPaid: s.ShardsPaid, statsPaid: s.StatsPaid, metaLuck: s.MetaLuck,
 		Bricks: s.Bricks, Bosses: s.Bosses, Elites: s.Elites, MaxCombo: s.MaxCombo, Score: s.Score,
@@ -190,6 +209,15 @@ func (g *Game) continueRun(s *savedRun) {
 	r.Carry, r.Power, r.PowerN, r.PowerI, r.PowerItems = s.Carry, s.Power, s.PowerN, s.PowerI, s.PowerItems
 	r.PowerFF = s.PowerFF
 	r.NextBarrier = s.NextBarrier
+	if s.MasterySet {
+		r.Mastery, r.Livery, r.TrailCol = s.Mastery, s.Livery, s.TrailCol
+	} else if arch != nil {
+		// saved before mastery was kept: use the origin's mastery now, the
+		// same way NewRun reads it
+		r.Mastery, _ = g.save.masteryOf(arch.ID)
+		r.Livery = r.Mastery >= 2 && g.save.masteryOpt(arch.ID, mOptLivery)
+		r.TrailCol = r.Mastery >= 4 && g.save.masteryOpt(arch.ID, mOptTrail)
+	}
 	if r.Power <= 0 {
 		r.Power = r.itemPower()
 	}
@@ -208,6 +236,10 @@ func (g *Game) continueRun(s *savedRun) {
 	g.endlessMode, g.daily, g.seedText = s.Endless, s.DailyMode, ""
 	g.toasts = nil
 	switch s.Phase {
+	case "chamber":
+		if g.resumeChamber(s.Chamber) {
+			return
+		}
 	case "node":
 		if s.Node >= 0 && s.Node < len(r.Map.Nodes) {
 			g.enterNode(s.Node)

@@ -90,6 +90,8 @@ func benchParse() {
 		switch {
 		case a == "-bench" || a == "--bench":
 			benchOn, noPersist = true, true
+		case a == "-shots":
+			shotsParse()
 		case a == "-nosave":
 			noPersist = true
 		case a == "-livemenu":
@@ -99,6 +101,10 @@ func benchParse() {
 			benchTraceScene = strings.TrimPrefix(a, "-benchtrace=")
 		case a == "-benchtrace":
 			benchTrace = true
+		case a == "-soak":
+			soakOn, noPersist = true, true
+		case a == "-boottrace":
+			bootFile = true
 		case a == "-benchaudio":
 			benchAudio = true
 		case a == "-benchvsync":
@@ -110,18 +116,26 @@ func benchParse() {
 			switch strings.TrimPrefix(a, "-benchcap=") {
 			case "display":
 				benchFrameCap = frameCapDisplay
+			case "30":
+				benchFrameCap = 30
 			case "60":
 				benchFrameCap = 60
 			case "120":
 				benchFrameCap = 120
 			case "144":
 				benchFrameCap = 144
+			case "165":
+				benchFrameCap = 165
+			case "240":
+				benchFrameCap = 240
 			case "off":
 				benchFrameCap = 0
 			default:
-				fmt.Fprintln(os.Stderr, "Invalid -benchcap (use off, 60, 120, 144, or display)")
+				fmt.Fprintln(os.Stderr, "Invalid -benchcap (use off, 30, 60, 120, 144, 165, 240, or display)")
 				os.Exit(2)
 			}
+		case a == "-audit":
+			auditOn = true
 		case strings.HasPrefix(a, "-benchscenes="):
 			benchSceneNames = strings.TrimPrefix(a, "-benchscenes=")
 		case strings.HasPrefix(a, "-benchduration="):
@@ -214,6 +228,12 @@ func benchSetupGame(g *Game) {
 	}
 	ebiten.SetVsyncEnabled(benchVSync)
 	bench = &benchRun{scenes: benchScenes()}
+	if shotsOn {
+		bench.scenes = append(bench.scenes, shotScenes()...)
+	}
+	if auditOn {
+		bench.scenes = auditScenes()
+	}
 	if benchSceneNames != "" {
 		bench.scenes, _ = selectBenchScenes(bench.scenes, benchSceneNames)
 	}
@@ -291,6 +311,7 @@ func benchScenes() []benchScene {
 		{name: "world4", setup: chamber(3, 0, false), level: true},
 		{name: "world5", setup: chamber(4, 0, false), level: true},
 		{name: "world6", setup: chamber(5, 0, false), level: true},
+		{name: "world7", setup: chamber(WDream, 0, false), level: true},
 		{name: "multiball", setup: chamber(3, 8, false), level: true},
 		// Classic backdrop: the painted picture, and the modelled bricks
 		{name: "classic2", setup: chamber(1, 0, true), level: true},
@@ -325,7 +346,7 @@ func benchRunFor(g *Game) {
 	if g.run == nil {
 		g.run = NewRun("BENCH", &archetypes[0], &g.save, false)
 	}
-	g.run.Lives = 3
+	g.run.Lives = g.run.maxLives()
 }
 
 // benchPilot follows the lowest orb heading for the paddle.
@@ -348,7 +369,7 @@ func benchPilot(g *Game) Input {
 		L.release()
 	}
 	if g.run != nil {
-		g.run.Lives = 3 // topped up every frame, so the tour never ends early
+		g.run.Lives = g.run.maxLives() // topped up every frame, so the tour never ends early
 	}
 	return in
 }
@@ -474,6 +495,9 @@ func benchFinish(g *Game) {
 			b.names[i], s.fps, s.low1, s.frameMS,
 			s.sec[secUpdate], s.sec[secWorld], s.sec[secFlush], s.sec[secPost], s.sec[secHUD], s.sec[secDraw], other,
 			s.quads, s.world, s.sdf, s.sprite, s.text, s.rect, s.allocs, s.kb)
+	}
+	if bootDone {
+		sb.WriteString("\n" + bootReport())
 	}
 	sb.WriteString("\nFrame pacing (milliseconds; over-budget counts use strict >; sample count excludes warmup):\n")
 	fmt.Fprintf(&sb, "%-10s %7s %7s %7s %7s %7s %7s %7s | %7s %7s %7s %7s\n", "scene", "samples", "0.1%low", "p95", "p99", "p99.9", "max", "stddev", "miss60", "miss120", "miss144", ">33.3ms")

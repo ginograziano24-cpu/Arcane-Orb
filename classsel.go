@@ -9,6 +9,7 @@ import (
 	_ "image/png"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -105,6 +106,17 @@ func (g *Game) drawArch(s *ebiten.Image) {
 		g.drawLore(s)
 		return
 	}
+	if g.archPanel != 0 {
+		// a keepsake or trials panel is on top: the screen behind takes no
+		// clicks
+		clk, conf := u.Click, u.nav.confirm
+		u.Click, u.nav.confirm = false, false
+		g.archActivate = false
+		defer func() {
+			u.Click, u.nav.confirm = clk, conf
+			g.drawTrialsPanel(s)
+		}()
+	}
 	// keyboard
 	defer func() { g.archActivate = false }()
 	a := &archetypes[g.archSel]
@@ -149,6 +161,18 @@ func (g *Game) drawArch(s *ebiten.Image) {
 			punch = 0.035 * lt * lt
 		}
 		xf := portraitXform{px, py, pw, ph, 1 + 0.003*br + punch, 1 + 0.009*br + punch, g.archPar[0], g.archPar[1] + dy}
+		if heroModel(id) != nil {
+			// the live 3D hero: a slow sway on a turntable, nudged by the mouse
+			dim := 1.0
+			if locked && id == a.ID {
+				dim = 0.55
+			}
+			heroClock = g.stateT // the breathing idle
+			yaw := 0.3*math.Sin(g.stateT*0.35) - g.archPar[0]*0.025
+			hh := ph * S * 0.97 * xf.sy
+			drawHero3D(s, id, u.X(px+pw/2+xf.dx), u.Y(py+ph+xf.dy), pw*S*1.45*xf.sx, hh, yaw, lighten(classInfo[id].Col, 0.2), alpha, dim)
+			return
+		}
 		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 		op.GeoM.Scale(pw*S/float64(img.Bounds().Dx()), ph*S/float64(img.Bounds().Dy()))
 		op.GeoM.Translate(-pw*S/2, -ph*S)
@@ -209,6 +233,9 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	}
 	if c := challengeByID[g.challengeSel]; c != nil {
 		sub = "Challenge  ·  " + c.Name
+	}
+	if g.weeklySel {
+		sub = "Weekly mutators  ·  " + weekKey(time.Now())
 	}
 	u.textOutlined(s, "Choose your Origin", fRune, 46, 70, 40, rgba(232, 214, 170, 255), alignLeft)
 	u.text(s, strings.ToUpper(sub), fBold, 17, 72, 104, ca(lighten(u.theme().Accent, 0.3), 0.9), alignLeft)
@@ -419,17 +446,21 @@ func (g *Game) drawArch(s *ebiten.Image) {
 	}
 
 	// ascension (compact, under the panel); challenges set their own rules
-	if g.challengeSel == "" {
+	switch {
+	case g.weeklySel:
+		g.weeklyBanner(s)
+	case g.challengeSel == "":
 		g.drawAscCompact(s, rx, 900, rw)
-	} else {
+	default:
 		g.challengeBanner(s)
 	}
+	g.drawPersonalRow(s)
 	if u.button(s, "archlore", "Lore", 280, 990, 200, 56, cGold, true) {
 		g.openLore(g.archSel)
 		return
 	}
 	if u.button(s, "back", "Back", 60, 990, 200, 56, cAcc, true) {
-		if g.challengeSel != "" {
+		if g.challengeSel != "" || g.weeklySel {
 			g.setState(StChallenge)
 		} else {
 			g.setState(StMenu)

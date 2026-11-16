@@ -250,7 +250,11 @@ func (p *Post) upscaleTo(dst, src *ebiten.Image) {
 
 func (p *Post) applyAt(dst *ebiten.Image, g Grade, enabled bool) {
 	if !p.ok || !enabled {
-		dst.DrawImage(p.scene, nil)
+		if gradeIsPlain(g) {
+			dst.DrawImage(p.scene, nil)
+		} else {
+			gradeLite(dst, p.scene, g) // the style and time of day without bloom
+		}
 		return
 	}
 	u := p.shaderInputs()
@@ -288,6 +292,7 @@ func (p *Post) applyAt(dst *ebiten.Image, g Grade, enabled bool) {
 }
 
 var worldGrades = map[int]Grade{
+	WDream:   {Bloom: 0.5, Threshold: 0.7, Tint: [3]float32{1.0, 0.98, 1.04}, Saturation: 1.1, Contrast: 1.04, Vig: 0.4},
 	WNeon:    {Bloom: 1.1, Threshold: 0.55, Tint: [3]float32{1.02, 0.98, 1.06}, Saturation: 1.12, Contrast: 1.06, Vig: 0.55},
 	WMeadow:  {Bloom: 0.45, Threshold: 0.72, Tint: [3]float32{1.05, 1.0, 0.92}, Lift: [3]float32{0.02, 0.01, 0}, Saturation: 1.08, Contrast: 1.04, Vig: 0.38},
 	WCaverns: {Bloom: 1.0, Threshold: 0.5, Tint: [3]float32{0.94, 1.0, 1.08}, Saturation: 1.1, Contrast: 1.1, Vig: 0.62},

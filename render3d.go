@@ -515,6 +515,7 @@ func registerTex(img *ebiten.Image) uint8 {
 }
 
 type Batch struct {
+	obj      objScope // the prop being drawn, cleared from the camera's way
 	cam      *Camera
 	quads    []quad
 	glow     []quad
@@ -556,6 +557,7 @@ type Batch struct {
 	lightCol [3]float32
 	ambCol   [3]float32
 	pts      []ptLight
+	back     *backCache // the background cache, when this is the world batch (backcache.go)
 }
 
 // ptLight is a coloured point light (an orb, a blast, a glowing brick)
@@ -657,6 +659,7 @@ func (b *Batch) side(i int) *Batch {
 	s.fogColor, s.fogNear, s.fogFar = b.fogColor, b.fogNear, b.fogFar
 	s.light, s.lightCol, s.ambCol = b.light, b.lightCol, b.ambCol
 	s.pts = append(s.pts[:0], b.pts...)
+	s.back = b.back
 	s.quads = s.quads[:0]
 	s.glow = s.glow[:0]
 	for l := range s.wantMeta {
@@ -814,6 +817,9 @@ func (b *Batch) Quad(p [4]V3, spr Sprite, col color.RGBA, shades [4]float32, glo
 	var q quad
 	uv := [4][2]float32{{spr.X0, spr.Y0}, {spr.X1, spr.Y0}, {spr.X1, spr.Y1}, {spr.X0, spr.Y1}}
 	c := cf(col)
+	if b.clipQuad(&p, &uv, c, &shades, 0, glow) {
+		return
+	}
 	sum := 0.0
 	for i := 0; i < 4; i++ {
 		var d float64
@@ -832,6 +838,9 @@ func (b *Batch) QuadUV(p [4]V3, tex uint8, uv [4][2]float32, col color.RGBA, sha
 	}
 	q := quad{tex: tex}
 	c := cf(col)
+	if b.clipQuad(&p, &uv, c, &shades, tex, glow) {
+		return
+	}
 	sum := 0.0
 	for i := 0; i < 4; i++ {
 		var d float64
@@ -1080,6 +1089,9 @@ func (b *Batch) planList(segs [][]quad, list int) ([]*quad, []quadRun) {
 // drawRuns submits planned runs: one DrawTriangles per run, at most maxQ
 // quads each.
 func (b *Batch) drawRuns(dst *ebiten.Image, qs []*quad, runs []quadRun, blend ebiten.Blend, scale float32) {
+	if len(qs) == 0 || len(runs) == 0 {
+		return // an empty list (planList leaves runIdx from the last one)
+	}
 	if flushTrace != nil {
 		for i := 1; i < len(runs); i++ {
 			flushTrace(runs[i-1].tex, runs[i].tex, float64(runs[i].last-runs[i].first))
@@ -1129,7 +1141,9 @@ func (b *Batch) fillVerts(qs []*quad, scale float32) {
 			copy(vs[i*4:i*4+4], qs[oi].v[:])
 		}
 		// the colour scale premultiplied here (what Ebitengine would do
-		// per vertex for straight alpha; see drawRuns), and the scale
+		// per vertex for straight alpha; see drawRuns), and the scale.
+		// (A one-pass version that premultiplied while copying measured
+		// 4-7% slower in chambers: the bulk copy is faster. Kept as two.)
 		for k := range vs {
 			v := &vs[k]
 			v.ColorR *= v.ColorA
@@ -1215,7 +1229,7 @@ func quadMipLevel(q *quad) int {
 	v := &q.v
 	k := float32(1) // the scale the quad is drawn at (see aaBegin)
 	if worldAA {
-		k = aaScale
+		k = float32(aaScale)
 	}
 	edge := func(a, b int) int {
 		return mipLevelFromDistance(k*v[a].DstX, k*v[a].DstY, k*v[b].DstX, k*v[b].DstY, v[a].SrcX, v[a].SrcY, v[b].SrcX, v[b].SrcY)
@@ -1276,7 +1290,9 @@ func mipLevelFromDistance(dx0, dy0, dx1, dy1, sx0, sy0, sx1, sy1 float32) int {
 // copy up and a single resolve.
 var worldAA = true
 
-const aaScale = 2
+// aaScale is the supersampling factor: 2 normally, stepped down toward 1
+// by dynamic quality when frames run long (settings.go, renderScale).
+var aaScale = 2.0
 
 // aaOwn selects the supersampled target kept here over Ebitengine's
 // AntiAlias option (bench: -ebitenaa).
@@ -1288,7 +1304,7 @@ var aaImg *ebiten.Image
 // picture (so blending onto it is unchanged).
 func aaBegin(dst *ebiten.Image) *ebiten.Image {
 	r := dst.Bounds()
-	w, h := r.Dx()*aaScale, r.Dy()*aaScale
+	w, h := int(math.Ceil(float64(r.Dx())*aaScale)), int(math.Ceil(float64(r.Dy())*aaScale))
 	if aaImg == nil || aaImg.Bounds().Dx() != w || aaImg.Bounds().Dy() != h {
 		if aaImg != nil {
 			aaImg.Deallocate()
@@ -1931,6 +1947,10 @@ var lastQuads int
 func (b *Batch) Flush(dst *ebiten.Image) {
 	perfBegin(secFlush)
 	defer perfEnd(secFlush)
+	if b.back != nil && b.back.on {
+		b.flushBack(dst)
+		return
+	}
 	lastQuads = len(b.quads) + len(b.glow)
 	nGlow := len(b.glow)
 	for i := range b.extQ {
@@ -1941,7 +1961,7 @@ func (b *Batch) Flush(dst *ebiten.Image) {
 	tgt, sc := dst, float32(1)
 	own := worldAA && aaOwn
 	if own {
-		tgt, sc = aaBegin(dst), aaScale
+		tgt, sc = aaBegin(dst), float32(aaScale)
 	}
 	segQ := append(b.extQ, b.quads)
 	segG := append(b.extG, b.glow)

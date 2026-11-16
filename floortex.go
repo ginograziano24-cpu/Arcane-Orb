@@ -55,7 +55,7 @@ func bakedTexture(name string) *bakedTex {
 	return t
 }
 
-var floorTexNames = map[int]string{WMeadow: "meadow", WRuins: "ruins", WCaverns: "caverns", WClouds: "clouds", WMachine: "machine"}
+var floorTexNames = map[int]string{WMeadow: "meadow", WRuins: "ruins", WCaverns: "caverns", WClouds: "clouds", WMachine: "machine", WDream: "dream_meadow"}
 
 // floorTexture returns the baked floor for this level's world, or nil.
 func floorTexture(L *Level) *bakedTex {
@@ -148,12 +148,18 @@ func meanColour(src image.Image) color.RGBA {
 // tessellated; beyond the textured band the ground is its mean colour
 // (no mipmaps, so a minified texture would only shimmer there).
 func drawBakedGround(B *Batch, t *bakedTex, tint color.RGBA, y float64) {
+	if _, ok := terrainStyles[activeTerrain]; ok && y == -0.6 {
+		drawTerrain(B, activeTerrain, t, tint)
+		return
+	}
 	xs := []float64{-300, -200, -140, -100, -80, -64}
 	for x := -56.0; x <= 56; x += 8 {
 		xs = append(xs, x)
 	}
 	xs = append(xs, 64, 80, 100, 140, 200, 300)
-	zs := []float64{-20, -12, -6}
+	// the ground runs out to the fog in every direction, behind the camera
+	// too, so a camera moved anywhere never sees its edge
+	zs := []float64{-300, -200, -120, -60, -36, -20, -12, -6}
 	for z := 0.0; z <= 96; z += 8 {
 		zs = append(zs, z)
 	}
@@ -162,14 +168,15 @@ func drawBakedGround(B *Batch, t *bakedTex, tint color.RGBA, y float64) {
 		return [2]float32{float32(x / groundTile * float64(t.w)), float32(-z / groundTile * float64(t.h))}
 	}
 	far := mulc(t.avg, tint)
-	// the plain outer ring first, then the textured band: two runs of one
-	// texture each instead of a switch at every tile along the band's edge
-	for pass := 0; pass < 2; pass++ {
+	_ = far
+	// textured all the way out (fog hides the repeat), so there is no seam
+	// between a textured band and a plain ring when seen from above
+	for pass := 1; pass < 2; pass++ {
 		for i := 0; i+1 < len(xs); i++ {
 			for j := 0; j+1 < len(zs); j++ {
 				x0, x1, z0, z1 := xs[i], xs[i+1], zs[j], zs[j+1]
 				pts := [4]V3{{x0, y, z1}, {x1, y, z1}, {x1, y, z0}, {x0, y, z0}}
-				inner := math.Max(math.Abs(x0), math.Abs(x1)) <= 64 && z1 <= 96
+				inner := true
 				switch {
 				case inner && pass == 1:
 					B.QuadUV(pts, t.id, [4][2]float32{uv(x0, z1), uv(x1, z1), uv(x1, z0), uv(x0, z0)}, tint, [4]float32{1, 1, 1, 1}, false)
@@ -191,7 +198,7 @@ func mulc(a, b color.RGBA) color.RGBA {
 // ---------------------------------------------------------------- bricks
 
 // The brick sheet (tools/textures/bricks.py): 8 x 6 cells of 256 x 128.
-var brickSheetCol = map[int]int{WNeon: 0, WMeadow: 1, WCaverns: 2, WRuins: 3, WClouds: 4, WMachine: 5}
+var brickSheetCol = map[int]int{WNeon: 0, WMeadow: 1, WCaverns: 2, WRuins: 3, WClouds: 4, WMachine: 5, WDream: 1}
 
 var brickSpecialCell = map[levelgen.Kind]int{
 	levelgen.Armored: 0, levelgen.Explosive: 1, levelgen.Chain: 2, levelgen.Split: 3, levelgen.Regen: 4,

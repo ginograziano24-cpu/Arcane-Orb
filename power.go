@@ -155,9 +155,9 @@ func (L *Level) powerRate() float64 {
 // critterPace speeds critter visits up in later acts of a carried run.
 func (r *Run) critterPace() float64 {
 	if !r.carries() {
-		return 1
+		return r.loopCritterPace()
 	}
-	return 1 + 0.15*float64(min(r.Act-1, 3))
+	return (1 + 0.15*float64(min(r.Act-1, 3))) * r.loopCritterPace()
 }
 
 // ballsInPlay reports whether any real orb is in flight.

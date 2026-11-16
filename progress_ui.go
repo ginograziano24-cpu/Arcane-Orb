@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -42,6 +43,7 @@ func (g *Game) drawRankBadge(s *ebiten.Image, x, y float64) {
 func (g *Game) drawSanctum(s *ebiten.Image) {
 	u := g.ui
 	u.heading(s, "THE SANCTUM", 72, 40, cGold, 1)
+	g.sanctumTabs(s, 0)
 	u.iconLabel(s, icShard, fmt.Sprintf("%d shards", g.save.Shards), fBold, 28, 960, 142, rgba(200, 180, 255, 255), alignCenter)
 	cols, w, h, gap := 5, 330.0, 236.0, 22.0
 	x0 := 960 - (float64(cols)*w+float64(cols-1)*gap)/2
@@ -89,16 +91,48 @@ func (g *Game) drawSanctum(s *ebiten.Image) {
 	}
 }
 
+// sanctumTabs: the Sanctum holds both the shard upgrades and the keepsake
+// tree; two tabs in the top corner switch between them.
+func (g *Game) sanctumTabs(s *ebiten.Image, active int) {
+	u := g.ui
+	tabs := []string{"Upgrades", "Keepsakes"}
+	for i, t := range tabs {
+		acc := cAcc
+		if i == active {
+			acc = cGold
+		}
+		x := 1470 + float64(i)*200
+		if u.button(s, "sanctab"+itoa(i), t, x, 46, 188, 52, acc, true) && i != active {
+			if i == 0 {
+				g.setState(StSanctum)
+			} else {
+				g.openKeepsakes(StMenu)
+			}
+		}
+		if i == active {
+			g.tabSlide(s, "sanctum", x+18, 104, 152)
+		}
+	}
+	if active == 0 && g.keepAffordable() {
+		// a keepsake rank is affordable: the tab glows like the old menu badge
+		p := 0.6 + 0.4*math.Sin(g.stateT*4)
+		drawSprite(s, sprSoft, u.X(1670+188-24), u.Y(46-10), 34*u.S, 34*u.S, ca(rgba(200, 180, 255, 255), 0.8*p), true)
+		u.gem(s, 1670+188-7, 46+7, 6, 8, rgba(215, 195, 255, 255), 1)
+	}
+}
+
 // ---------------------------------------------------------------- codex
 
 func (g *Game) drawCodex(s *ebiten.Image) {
 	u := g.ui
 	u.heading(s, "THE CODEX", 72, 40, cGold, 1)
+	g.codexPageGlow(s)
 	if g.loreOpen {
 		g.drawLore(s)
 		return
 	}
-	tabs := []string{"Upgrades", "Relics", "Fusions", "Achievements", "Endless", "Run History", "Origins"}
+	tabs := []string{"Upgrades", "Relics", "Fusions", "Achievements", "Endless", "Run History", "Origins", "Soundtrack", "Bestiary", "Chronicle"}
+	tw := min(186.0, 1780/float64(len(tabs))) // tab pitch: ten tabs still fit the screen
 	// Q/E or the shoulder buttons flip tabs
 	if g.navLatch.pageL {
 		g.codexTab = (g.codexTab + len(tabs) - 1) % len(tabs)
@@ -109,21 +143,43 @@ func (g *Game) drawCodex(s *ebiten.Image) {
 		g.snd.Play("hover")
 	}
 	if g.padActive {
-		u.keycap(s, "LB", 960-640-70, 152, 0.9)
-		u.keycap(s, "RB", 960+640+14, 152, 0.9)
+		half := (float64(len(tabs))*tw - 8) / 2
+		u.keycap(s, padLabel(ebiten.StandardGamepadButtonFrontTopLeft), 960-half-70, 152, 0.9)
+		u.keycap(s, padLabel(ebiten.StandardGamepadButtonFrontTopRight), 960+half+14, 152, 0.9)
 	}
 	for i, t := range tabs {
 		acc := cAcc
 		if g.codexTab == i {
 			acc = cGold
 		}
-		tx := 960 - (float64(len(tabs))*186-8)/2 + float64(i)*186
-		if u.button(s, "ctab"+itoa(i), t, tx, 140, 178, 50, acc, true) {
+		tx := 960 - (float64(len(tabs))*tw-8)/2 + float64(i)*tw
+		if u.button(s, "ctab"+itoa(i), t, tx, 140, tw-8, 50, acc, true) {
 			g.codexTab = i
 		}
 		if g.codexTab == i {
-			u.glowLine(s, tx+18, tx+160, 198, 3, cGold, 1)
+			g.tabSlide(s, "codex", tx+18, 198, tw-44)
 		}
+	}
+	if g.codexTab == 9 {
+		g.drawChronicleTab(s, 236)
+		if u.button(s, "cback", "Back", 60, 990, 200, 56, cAcc, true) {
+			g.setState(StMenu)
+		}
+		return
+	}
+	if g.codexTab == 8 {
+		g.drawBestiaryTab(s, 236)
+		if u.button(s, "cback", "Back", 60, 990, 200, 56, cAcc, true) {
+			g.setState(StMenu)
+		}
+		return
+	}
+	if g.codexTab == 7 {
+		g.drawSoundtrackTab(s, 236)
+		if u.button(s, "cback", "Back", 60, 990, 200, 56, cAcc, true) {
+			g.setState(StMenu)
+		}
+		return
 	}
 	if g.codexTab == 6 {
 		g.drawOriginsTab(s, 236)
@@ -313,9 +369,13 @@ func (g *Game) announceFusions() {
 			continue
 		}
 		g.save.Fusions[id] = true
+		r.log("fusion", "Forged "+f.Name, "burst")
+		if g.cinematic() {
+			g.queueForge(f) // the full forge show (fusionfx.go)
+			continue
+		}
 		g.banner, g.bannerDesc, g.bannerT = "FUSION: "+strings.ToUpper(f.Name), f.Desc, 4.5
 		g.react(reactFusion)
-		r.log("fusion", "Forged "+f.Name, "burst")
 		g.bannerIcon = fusionEmblem(f)
 		g.bannerCol = f.Col
 		g.snd.PlayKeyed("synergy")

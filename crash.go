@@ -33,6 +33,8 @@ func (g *Game) guard(where string) {
 	if f, err := os.OpenFile(p, flag, 0o644); err == nil {
 		fmt.Fprintf(f, "==== Arcane Orb %s crashed %s ====\n", gameVersion, time.Now().Format(time.RFC3339))
 		fmt.Fprintf(f, "os %s/%s  go %s  in %s  state %d\n", runtime.GOOS, runtime.GOARCH, runtime.Version(), where, g.state)
+		// the graphics path and screen matter for most rendering crashes
+		fmt.Fprintf(f, "graphics %s  screen %dx%d  deck %v  uptime %s\n", graphicsLib(), perfScreen.X, perfScreen.Y, steamOnDeck(), time.Since(bootStart).Round(time.Second))
 		if r := g.run; r != nil {
 			fmt.Fprintf(f, "run: %s seed %s act %d depth %d challenge %q asc %d endless %v\n", r.Arch.ID, r.SeedCode, r.Act, r.Depth, r.Challenge, r.Asc, r.Endless)
 			fmt.Fprintf(f, "build: %v\n", r.Order)
@@ -42,6 +44,14 @@ func (g *Game) guard(where string) {
 		}
 		fmt.Fprintf(f, "panic: %v\n%s\n", v, stack)
 		f.Close()
+	}
+	if benchOn {
+		// test tours run unattended: leave a copy beside the exe as well
+		if exe, err := os.Executable(); err == nil {
+			_ = os.WriteFile(filepath.Join(filepath.Dir(exe), "crash-last.log"),
+				[]byte(fmt.Sprintf("in %s state %d\npanic: %v\n%s\n", where, g.state, v, stack)), 0o644)
+		}
+		os.Exit(1)
 	}
 	writeSave(&g.save)
 	steamShutdown()

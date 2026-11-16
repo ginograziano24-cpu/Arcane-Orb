@@ -207,6 +207,7 @@ func (L *Level) useScroll(i int) {
 	}
 	g.scrollSel = min(g.scrollSel, max(0, len(r.Scrolls)-1))
 	L.text(V3{L.PaddleX, 2.2, PaddleZ + 2}, sd.Name, lighten(sd.Col, 0.3), true)
+	L.scrollCast(sd)
 	L.Flash = math.Max(L.Flash, 0.25)
 	L.abilFlash = 1
 	g.snd.Play("scroll")
@@ -220,7 +221,7 @@ func (g *Game) scrollInput(L *Level) {
 			L.useScroll(i)
 		}
 	}
-	if padJust(ebiten.StandardGamepadButtonFrontTopLeft) && len(g.run.Scrolls) > 0 {
+	if g.padScrollPick() && len(g.run.Scrolls) > 0 {
 		g.scrollSel = (g.scrollSel + 1) % len(g.run.Scrolls)
 		g.snd.Play("hover")
 	}
@@ -260,10 +261,20 @@ func (g *Game) drawScrolls(screen *ebiten.Image, L *Level) {
 			if u.hover(x, y, size, size) {
 				g.tooltip = trJoin(sd.Name, " — ", sd.Desc)
 			}
+		} else {
+			// an empty slot shows a faint tome outline, so it reads
+			// as "room for a scroll" rather than a blank box
+			u.drawEmblem(screen, glyphImage("book", ca(th.Edge, 0.35)), x+size/2, y+size/2, 34, 0.5)
 		}
 	}
 	if g.padActive && len(r.Scrolls) > 0 {
-		u.text(screen, "LB pick · Y read", fBold, 14, 1898, y-22, cDim, alignRight)
+		u.rawText = true
+		pick := ebiten.StandardGamepadButtonFrontTopLeft
+		if g.settings.PadLeft {
+			pick = ebiten.StandardGamepadButtonFrontTopRight
+		}
+		u.text(screen, padLabel(pick)+tr(" pick · ")+padLabel(g.bind("readsel").Pad)+tr(" read"), fBold, 14, 1898, y-22, cDim, alignRight)
+		u.rawText = false
 	}
 	g.drawScrollShelf(screen, L, x0, y)
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 	"strings"
@@ -101,7 +102,9 @@ func (g *Game) drawHelp(s *ebiten.Image) {
 	if u.button(s, "hback", "Back", 60, 990, 200, 56, cAcc, true) {
 		g.setState(StMenu)
 	}
-	u.text(s, "Q / E  or  LB / RB  to turn pages", fReg, 15, 1860, 1050, ca(cDim, 0.6), alignRight)
+	u.rawText = true
+	u.text(s, fmt.Sprintf(tr("Q / E  or  %s / %s  to turn pages"), padLabel(ebiten.StandardGamepadButtonFrontTopLeft), padLabel(ebiten.StandardGamepadButtonFrontTopRight)), fReg, 15, 1860, 1050, ca(cDim, 0.6), alignRight)
+	u.rawText = false
 }
 
 // illus frames the left illustration area.
@@ -206,11 +209,12 @@ func (g *Game) helpControls(s *ebiten.Image, a float64) {
 	u.text(s, "CONTROLLER", fBold, 18, tx, y, ca(cGold, a), alignLeft)
 	y += 36
 	row([]string{"Left stick", "D-pad"}, "Move the paddle")
-	row([]string{"A"}, "Launch / select")
-	row([]string{"X", "RB"}, "Ability")
-	row([]string{"Y", "LB"}, "Read / pick a scroll")
-	row([]string{"Start"}, "Pause")
-	row([]string{"B"}, "Back")
+	// named for the pad in use (padglyphs.go)
+	row([]string{padLabel(ebiten.StandardGamepadButtonRightBottom)}, "Launch / select")
+	row([]string{padLabel(ebiten.StandardGamepadButtonRightLeft), padLabel(ebiten.StandardGamepadButtonFrontTopRight)}, "Ability")
+	row([]string{padLabel(ebiten.StandardGamepadButtonRightTop), padLabel(ebiten.StandardGamepadButtonFrontTopLeft)}, "Read / pick a scroll")
+	row([]string{padLabel(ebiten.StandardGamepadButtonCenterRight)}, "Pause")
+	row([]string{padLabel(ebiten.StandardGamepadButtonRightRight)}, "Back")
 	y += 10
 	g.textBlock(s, "", "Let every orb slip past and you lose a life: the paddle shatters and reforms. You start with two lives and each act tops them back up to two. A rare falling heart restores a lost life, three times a run at most. Barriers behind the paddle catch an orb that slips past; a Guardian's falling rocks shatter one, or stun the paddle if you have none.", tx, y, 790, a)
 }

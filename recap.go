@@ -28,6 +28,12 @@ type runRecap struct {
 	LivesLost int                `json:"ll"`
 	Hearts    int                `json:"hh"`
 	Scrolls   int                `json:"sc"`
+	// the run's best combo: where it happened (ROADMAP-50 #35)
+	ComboAct   int    `json:"ca,omitempty"`
+	ComboWhere string `json:"cw,omitempty"` // the world, or the Guardian's name
+	ComboBoss  bool   `json:"cb,omitempty"`
+	// damage dealt in each chamber, in order (ROADMAP-50 #93)
+	Chambers []float64 `json:"ch,omitempty"`
 }
 
 func newRecap() *runRecap { return &runRecap{Dmg: map[string]float64{}} }
@@ -76,6 +82,7 @@ type runHistory struct {
 	Top       string   `json:"top"` // biggest damage source
 	Build     []string `json:"build"`
 	Minutes   int      `json:"min"`
+	Dmg       int      `json:"dmg,omitempty"` // total damage dealt (the history graph)
 }
 
 // recordHistory files the finished run (newest first, last 40 kept).
@@ -83,7 +90,7 @@ func (g *Game) recordHistory(r *Run, win bool) {
 	top, _ := topSource(r)
 	h := runHistory{Date: time.Now().Format("2006-01-02"), Arch: r.Arch.ID, Challenge: r.Challenge, Act: r.Act, Won: win,
 		Endless: r.Endless, Loop: r.Loop(), Score: r.FinalScore, Depth: r.Depth, Asc: r.Asc, Seed: r.SeedCode, Top: top,
-		Minutes: int(time.Since(r.Start).Minutes())}
+		Minutes: int(time.Since(r.Start).Minutes()), Dmg: int(runDamage(r))}
 	for i := len(r.Order) - 1; i >= 0 && len(h.Build) < 10; i-- {
 		if m := modByID[r.Order[i]]; m != nil && !m.Curse {
 			h.Build = append(h.Build, m.ID)
@@ -177,8 +184,11 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 		s.DrawImage(img, op)
 		fillPath(s, boxPath(u.X(-10), u.Y(py-10), 500*S, 330*S, 0, false), rgba(4, 3, 10, 235), rgba(4, 3, 10, 0), vgrad(u.Y(py-10), u.Y(py+320)), false)
 	}
+	g.summaryCompanions(s)
 	u.panel(s, 400, 40, 1490, 1000, 0.93)
+	g.summaryAsh(s)
 	u.heading(s, title, 84, 56, col, 1)
+	g.summaryCharms(s)
 
 	// ---- left column: the tally
 	lx := 790.0
@@ -302,6 +312,8 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 	u.text(s, "WHERE THE DAMAGE CAME FROM", fBold, 18, rx+rw/2, 190, lighten(u.theme().Accent, 0.3), alignCenter)
 	yy := g.drawDmgBars(s, r, rx, 226, rw, 8, ease(clamp01(g.stateT/1.4)))
 	yy = math.Max(yy+18, 500)
+	yy = g.drawBestMoments(s, r, rx, yy, rw)
+	yy = g.drawChamberChart(s, r, rx, yy, rw)
 	u.text(s, "THE RUN", fBold, 18, rx+rw/2, yy, lighten(u.theme().Accent, 0.3), alignCenter)
 	yy += 34
 	g.drawTimeline(s, r, rx, yy, rw, 900-yy)
@@ -331,6 +343,15 @@ func (g *Game) drawSummary(s *ebiten.Image) {
 		playAgain(975)
 	} else if !r.Daily {
 		playAgain(1500)
+		// the same seed again: same maps, same chambers, a second try
+		if u.button(s, "sameseed", "Same seed", 975, 960, 340, 60, cAcc, ready) {
+			arch, ch, code := r.Arch, r.Challenge, r.SeedCode
+			endless := r.EndlessStart
+			g.run, g.level = nil, nil
+			g.seedText, g.daily, g.endlessMode = code, false, endless
+			g.startRunWith(arch, ch)
+			g.seedText = ""
+		}
 	}
 	if u.button(s, "summenu", "Main menu", 450, 960, 340, 60, cAcc, ready) {
 		g.run = nil
@@ -401,17 +422,22 @@ func (g *Game) drawHistory(s *ebiten.Image, y float64) {
 	}
 	_, wy := ebiten.Wheel()
 	rowH := 66.0
-	maxScroll := math.Max(0, float64(len(g.save.History))*rowH-600)
+	top := 20.0
+	if len(g.save.History) >= 2 {
+		g.drawHistoryGraph(s, x+40, y+22, w-80, 160)
+		top = 206
+	}
+	maxScroll := math.Max(0, float64(len(g.save.History))*rowH-(680-top))
 	g.histScroll = math.Max(0, math.Min(maxScroll, g.histScroll-wy*60))
-	clip := s.SubImage(imageRect(u.X(x), u.Y(y+20), u.X(x+w), u.Y(y+700))).(*ebiten.Image)
+	clip := s.SubImage(imageRect(u.X(x), u.Y(y+top), u.X(x+w), u.Y(y+700))).(*ebiten.Image)
 	for i, h := range g.save.History {
-		ry := y + 30 + float64(i)*rowH - g.histScroll
-		if ry < y-rowH || ry > y+720 {
+		ry := y + top + 10 + float64(i)*rowH - g.histScroll
+		if ry < y+top-rowH || ry > y+720 {
 			continue
 		}
-		f, _ := u.navReg("hist"+itoa(i), x+20, math.Max(y+20, math.Min(ry, y+700-rowH)), w-40, rowH-8, false)
+		f, _ := u.navReg("hist"+itoa(i), x+20, math.Max(y+top, math.Min(ry, y+700-rowH)), w-40, rowH-8, false)
 		if f && u.nav.mode {
-			if ry < y+30 {
+			if ry < y+top+10 {
 				g.histScroll = math.Max(0, g.histScroll-rowH)
 			} else if ry > y+700-rowH {
 				g.histScroll = math.Min(maxScroll, g.histScroll+rowH)
@@ -501,4 +527,100 @@ func (g *Game) drawDmgBars(s *ebiten.Image, r *Run, rx, yy, rw float64, maxRows 
 		yy += 32
 	}
 	return yy
+}
+
+// bestMoments are the run's highlights for the summary: the biggest combo
+// and where it happened, and the damage source that carried the run.
+func bestMoments(r *Run) []string {
+	var out []string
+	rc := r.rc()
+	if r.MaxCombo >= 10 {
+		switch {
+		case rc.ComboWhere != "" && rc.ComboAct > 0 && rc.ComboBoss:
+			out = append(out, fmt.Sprintf("Best combo ×%d against %s (Act %s)", r.MaxCombo, rc.ComboWhere, roman(rc.ComboAct)))
+		case rc.ComboWhere != "" && rc.ComboAct > 0:
+			out = append(out, fmt.Sprintf("Best combo ×%d in %s (Act %s)", r.MaxCombo, rc.ComboWhere, roman(rc.ComboAct)))
+		default:
+			out = append(out, fmt.Sprintf("Best combo ×%d", r.MaxCombo))
+		}
+	}
+	if top, share := topSource(r); top != "" && share > 0 {
+		out = append(out, fmt.Sprintf("Star of the run: %s, %d%% of all damage", top, int(math.Round(share*100))))
+	}
+	return out
+}
+
+// drawBestMoments puts the highlights in a gold-trimmed band above the
+// timeline and returns the y below it.
+func (g *Game) drawBestMoments(s *ebiten.Image, r *Run, x, y, w float64) float64 {
+	lines := bestMoments(r)
+	if len(lines) == 0 {
+		return y
+	}
+	u := g.ui
+	h := 18 + float64(len(lines))*32
+	k := ease(clamp01((g.stateT - 1.2) / 0.6))
+	fillPath(s, boxPath(u.X(x), u.Y(y), w*u.S, h*u.S, 12*u.S, false), ca(rgba(60, 40, 10, 255), 0.45*k), ca(rgba(30, 20, 6, 255), 0.45*k), vgrad(u.Y(y), u.Y(y+h)), false)
+	strokePath(s, boxPath(u.X(x), u.Y(y), w*u.S, h*u.S, 12*u.S, false), 1.5*u.S, ca(cGold, 0.7*k), false)
+	ly := y + 12
+	for i, l := range lines {
+		gl := "star"
+		if i == len(lines)-1 && strings.HasPrefix(l, "Star") {
+			gl = "crown"
+		}
+		u.drawEmblem(s, glyphImage(gl, cGold), x+26, ly+12, 24, k)
+		u.text(s, l, fBold, 19, x+48, ly, ca(lighten(cGold, 0.2), k), alignLeft)
+		ly += 32
+	}
+	return y + h + 22
+}
+
+// noteChamberDamage books the damage dealt in the chamber just cleared.
+func (r *Run) noteChamberDamage() {
+	rc := r.rc()
+	total, before := 0.0, 0.0
+	for _, v := range rc.Dmg {
+		total += v
+	}
+	for _, v := range rc.Chambers {
+		before += v
+	}
+	if len(rc.Chambers) < 120 {
+		rc.Chambers = append(rc.Chambers, math.Max(0, total-before))
+	}
+}
+
+// drawChamberChart: one bar per chamber, how hard the build hit there,
+// with a gap between acts' worth of chambers, growing in as the screen
+// opens. Returns the y below it.
+func (g *Game) drawChamberChart(s *ebiten.Image, r *Run, x, y, w float64) float64 {
+	ch := r.rc().Chambers
+	if len(ch) < 2 {
+		return y
+	}
+	u := g.ui
+	u.text(s, "DAMAGE PER CHAMBER", fBold, 14, x, y, ca(cDim, 0.85), alignLeft)
+	top := 0.0
+	best := 0
+	for i, v := range ch {
+		if v > top {
+			top, best = v, i
+		}
+	}
+	h := 54.0
+	by := y + 22
+	n := len(ch)
+	bw := math.Min(26, (w-float64(n-1)*3)/float64(n))
+	grow := ease(clamp01((g.stateT - 0.6) / 1.2))
+	for i, v := range ch {
+		k := clamp01(grow*1.4 - float64(i)/float64(n)*0.4)
+		bh := math.Max(2, h*v/math.Max(1, top)*k)
+		bx := x + float64(i)*(bw+3)
+		c := rgba(170, 150, 255, 255)
+		if i == best {
+			c = cGold
+		}
+		fillPath(s, boxPath(u.X(bx), u.Y(by+h-bh), bw*u.S, bh*u.S, 3*u.S, false), c, darken(c, 0.4), vgrad(u.Y(by+h-bh), u.Y(by+h)), false)
+	}
+	return by + h + 24
 }

@@ -14,7 +14,7 @@ var backdropFS embed.FS
 
 var backdropNames = map[int]string{
 	WNeon: "neon", WMeadow: "meadow", WCaverns: "caverns",
-	WRuins: "ruins", WClouds: "clouds", WMachine: "machine",
+	WRuins: "ruins", WClouds: "clouds", WMachine: "machine", WDream: "dream_meadow",
 }
 
 var backdropCache = map[string]*ebiten.Image{}

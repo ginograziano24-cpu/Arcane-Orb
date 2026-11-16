@@ -151,6 +151,27 @@ func (g *Game) drawChamberGlyph(s *ebiten.Image, n *MapNode, x, y, rad float64, 
 	if im == nil {
 		im = uiIcon(nodeIconFile[n.Type])
 	}
+	// a little life on the map (ROADMAP-50 #94): rooms you can go to bob,
+	// the shop sign sways, the campfire flickers, treasure glints and the
+	// Guardian's room breathes
+	if (reachable || n.Type == NBoss) && !n.Visited {
+		t := g.ui.time + float64(n.Row)*1.3 + float64(n.Lane)*0.7
+		y += math.Sin(t*2.2) * 3
+		switch n.Type {
+		case NShop:
+			x += math.Sin(t*1.6) * 2.5
+		case NRest:
+			b *= 0.9 + 0.1*math.Sin(t*13)*math.Sin(t*7.3)
+		case NBoss:
+			rad *= 1 + 0.04*math.Sin(t*1.8)
+		case NTreasure:
+			if gl := math.Mod(t, 2.6); gl < 0.35 {
+				k := math.Sin(gl / 0.35 * math.Pi)
+				u := g.ui
+				drawSprite(s, sprSoft, u.X(x+rad*0.5-14), u.Y(y-rad*0.6-14), 28*u.S, 28*u.S, ca(cWhite, 0.8*k), true)
+			}
+		}
+	}
 	if im != nil {
 		g.drawUIIconTint(s, im, x, y, rad*1.8, b, b, b, 1)
 		return

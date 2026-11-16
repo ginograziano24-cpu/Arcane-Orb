@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/zlib"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -49,6 +50,7 @@ type openingFilm struct {
 	t                                float64
 	paused, captions, silent, review bool
 	err                              string
+	film                             *introFilm // the rendered 3D opening, when present
 }
 
 func loadOpening() openingLoaded {
@@ -76,7 +78,7 @@ func loadOpening() openingLoaded {
 		r.images[strings.TrimSuffix(strings.TrimSuffix(name, ".png"), ".jpg")] = im
 	}
 	for i, name := range []string{"music", "effects", "narration"} {
-		b, e := openingFS.ReadFile("assets/opening/" + name + ".wav")
+		b, e := openingStem(name)
 		if e != nil {
 			r.err = e
 			return r
@@ -114,6 +116,15 @@ func (g *Game) startOpening() {
 	o := &openingFilm{captions: true, loading: make(chan openingLoaded, 1)}
 	g.opening = o
 	g.consumeInput()
+	if d := introDir(); d != "" {
+		o.film = newIntroFilm(g, d)
+		for _, p := range []*audio.Player{g.snd.player, g.snd.old} {
+			if p != nil {
+				p.Pause()
+			}
+		}
+		return
+	}
 	for _, p := range []*audio.Player{g.snd.player, g.snd.old} {
 		if p != nil {
 			p.Pause()
@@ -127,6 +138,9 @@ func (g *Game) closeOpening() {
 	}
 	if g.opening.player != nil {
 		_ = g.opening.player.Close()
+	}
+	if g.opening.film != nil {
+		g.opening.film.close()
 	}
 	for _, im := range g.opening.images {
 		im.Deallocate()
@@ -165,6 +179,12 @@ func (g *Game) updateOpening(dt float64) {
 	o := g.opening
 	if backPressed() {
 		g.closeOpening()
+		return
+	}
+	if o.film != nil {
+		if !o.film.update(dt) {
+			g.closeOpening()
+		}
 		return
 	}
 	if o.images == nil && o.err == "" {
@@ -555,6 +575,10 @@ func (g *Game) drawOpeningScene(s *ebiten.Image) {
 
 func (g *Game) drawOpening(s *ebiten.Image) {
 	o, u := g.opening, g.ui
+	if o.film != nil {
+		o.film.draw(g, s)
+		return
+	}
 	s.Fill(rgba(9, 5, 18, 255))
 	if o.images == nil || o.err != "" {
 		label := "Preparing the story…"
@@ -618,4 +642,19 @@ func (g *Game) drawOpening(s *ebiten.Image) {
 	if u.button(s, "filmskip", "Skip", 1770, 1005, 120, 52, cGold, true) {
 		g.closeOpening()
 	}
+}
+
+// openingStem reads a stem of the opening's soundtrack. The stems ship
+// zlib-packed (name.wav.z, the narration as mono), a third of the size of
+// the plain WAVs; a plain name.wav is still read if that is what's there.
+func openingStem(name string) ([]byte, error) {
+	if z, e := openingFS.ReadFile("assets/opening/" + name + ".wav.z"); e == nil {
+		zr, e := zlib.NewReader(bytes.NewReader(z))
+		if e != nil {
+			return nil, e
+		}
+		defer zr.Close()
+		return io.ReadAll(zr)
+	}
+	return openingFS.ReadFile("assets/opening/" + name + ".wav")
 }

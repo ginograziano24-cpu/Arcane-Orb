@@ -170,6 +170,14 @@ func (s *Sounds) warmKeyed() {
 		}
 	}
 	names = append(names, "life."+k, "heartfall."+k, "cache."+k, "wave."+k)
+	// the card-pick and fusion shows (sfx_fx.go) play in the key too
+	names = append(names, "fuse."+k, "flawless."+k, "lastlife."+k)
+	for i := 0; i < 6; i++ {
+		names = append(names, "cardfly."+itoa(i)+"."+k)
+	}
+	for i := 0; i < 4; i++ {
+		names = append(names, "statup."+itoa(i)+"."+k)
+	}
 	s.warm(names...)
 }
 

@@ -34,18 +34,22 @@ func makeIcon(size int) image.Image {
 }
 
 func main() {
+	bootMark("package init")
 	benchParse()
 	if steamInit() {
 		return // Steam is relaunching the game through the client
 	}
+	bootMark("Steam init")
 	buildAtlas()
+	bootMark("UI atlas")
 	ebiten.SetWindowSize(1600, 900)
 	ebiten.SetWindowTitle("Arcane Orb")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
-	ebiten.SetWindowIcon([]image.Image{makeIcon(16), makeIcon(32), makeIcon(48), makeIcon(256)})
+	bootMark("window and icons")
 	ebiten.SetTPS(ebiten.SyncWithFPS) // one update per rendered frame: true high-refresh play
 	ebiten.SetScreenClearedEveryFrame(true)
 	g := NewGame()
+	bootMark(bootSetUp)
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}
@@ -53,3 +57,19 @@ func main() {
 
 // gameVersion is shown on the title screen.
 const gameVersion = "v1.0 RC"
+
+var windowIconSet bool
+
+// syncWindowIcon sets the window icon the first time the game is windowed.
+// Ebitengine can't set an icon in fullscreen, so it keeps the request
+// pending and re-converts every icon image pixel by pixel each frame until
+// it can (about 70,000 pixels a frame, around 18% of a fullscreen
+// benchmark's CPU time). Setting it only while windowed avoids that; in
+// fullscreen the taskbar shows the exe's own icon.
+func syncWindowIcon(fullscreen bool) {
+	if windowIconSet || fullscreen {
+		return
+	}
+	windowIconSet = true
+	ebiten.SetWindowIcon([]image.Image{makeIcon(16), makeIcon(32), makeIcon(48), makeIcon(256)})
+}

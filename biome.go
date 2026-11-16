@@ -52,19 +52,23 @@ const (
 	WRuins
 	WClouds
 	WMachine
+	WDream // Sunking's Road: the retro dreamcore world
 	NumWorlds
 )
 
 var worlds = []Biome{
 	{
-		ID: WNeon, Name: "Neon Grove", Subtitle: "a glowing garden of light",
-		Hues:  [6]color.RGBA{{255, 70, 200, 255}, {40, 230, 255, 255}, {170, 90, 255, 255}, {255, 220, 80, 255}, {255, 130, 60, 255}, {90, 255, 170, 255}},
-		Floor: color.RGBA{40, 230, 255, 255}, FloorAlt: color.RGBA{255, 70, 200, 255}, Outer: color.RGBA{14, 6, 28, 255},
-		Wall: color.RGBA{58, 44, 92, 255}, Trim: color.RGBA{255, 80, 210, 255},
-		Fog: color.RGBA{70, 18, 80, 255}, SkyTop: color.RGBA{18, 6, 44, 255}, SkyBottom: color.RGBA{255, 70, 150, 255},
-		SkyKind: WNeon, LightDir: V3{-0.35, 0.85, -0.4}, LightCol: [3]float32{0.75, 0.7, 0.85}, AmbCol: [3]float32{0.45, 0.38, 0.62},
+		// Glimmer Grove (formerly the synthwave "Neon Grove"): an enchanted
+		// wood at night. The floor painting is coloured, so Floor/FloorAlt are
+		// near-white tints; Trim is the teal of the glowing moss.
+		ID: WNeon, Name: "Glimmer Grove", Subtitle: "a garden that glows all night",
+		Hues:  [6]color.RGBA{{255, 90, 200, 255}, {60, 225, 255, 255}, {170, 100, 255, 255}, {255, 214, 90, 255}, {255, 140, 70, 255}, {100, 250, 180, 255}},
+		Floor: color.RGBA{226, 232, 255, 255}, FloorAlt: color.RGBA{204, 214, 255, 255}, Outer: color.RGBA{12, 14, 32, 255},
+		Wall: color.RGBA{56, 62, 92, 255}, Trim: color.RGBA{110, 240, 215, 255},
+		Fog: color.RGBA{26, 34, 74, 255}, SkyTop: color.RGBA{8, 9, 30, 255}, SkyBottom: color.RGBA{74, 120, 150, 255},
+		SkyKind: WNeon, LightDir: V3{-0.35, 0.85, -0.4}, LightCol: [3]float32{0.66, 0.72, 0.9}, AmbCol: [3]float32{0.42, 0.42, 0.62},
 		Neon: true, BrickMat: WNeon, FloorMat: WNeon, Taper: 1,
-		PaddleBody: color.RGBA{70, 60, 110, 255}, PaddleCap: color.RGBA{220, 180, 90, 255}, FogNear: 42, FogFar: 100,
+		PaddleBody: color.RGBA{70, 66, 110, 255}, PaddleCap: color.RGBA{220, 180, 90, 255}, FogNear: 50, FogFar: 170,
 	},
 	{
 		ID: WMeadow, Name: "Sunset Meadow", Subtitle: "warm hills at the end of the day",
@@ -74,7 +78,7 @@ var worlds = []Biome{
 		Fog: color.RGBA{134, 170, 96, 255}, SkyTop: color.RGBA{60, 90, 160, 255}, SkyBottom: color.RGBA{255, 170, 110, 255},
 		SkyKind: WMeadow, LightDir: V3{-0.7, 0.55, 0.2}, LightCol: [3]float32{0.92, 0.75, 0.52}, AmbCol: [3]float32{0.48, 0.52, 0.66},
 		BrickMat: WMeadow, FloorMat: WMeadow, Taper: 1,
-		PaddleBody: color.RGBA{120, 80, 50, 255}, PaddleCap: color.RGBA{210, 170, 90, 255}, FogNear: 45, FogFar: 150,
+		PaddleBody: color.RGBA{120, 80, 50, 255}, PaddleCap: color.RGBA{210, 170, 90, 255}, FogNear: 60, FogFar: 260,
 	},
 	{
 		ID: WCaverns, Name: "Crystal Caverns", Subtitle: "deep below, the stones are singing",
@@ -84,7 +88,7 @@ var worlds = []Biome{
 		Fog: color.RGBA{22, 36, 66, 255}, SkyTop: color.RGBA{6, 8, 18, 255}, SkyBottom: color.RGBA{30, 50, 90, 255},
 		SkyKind: WCaverns, LightDir: V3{0.3, 0.8, -0.5}, LightCol: [3]float32{0.5, 0.78, 0.9}, AmbCol: [3]float32{0.3, 0.32, 0.5},
 		BrickMat: WCaverns, FloorMat: WCaverns, Taper: 0.72,
-		PaddleBody: color.RGBA{50, 60, 90, 255}, PaddleCap: color.RGBA{140, 230, 255, 255}, FogNear: 44, FogFar: 100,
+		PaddleBody: color.RGBA{50, 60, 90, 255}, PaddleCap: color.RGBA{140, 230, 255, 255}, FogNear: 50, FogFar: 160,
 	},
 	{
 		ID: WRuins, Name: "Ancient Ruins", Subtitle: "something lived here long before you",
@@ -94,7 +98,7 @@ var worlds = []Biome{
 		Fog: color.RGBA{230, 200, 150, 255}, SkyTop: color.RGBA{70, 150, 200, 255}, SkyBottom: color.RGBA{240, 220, 180, 255},
 		SkyKind: WRuins, LightDir: V3{0.55, 0.75, -0.35}, LightCol: [3]float32{1.0, 0.9, 0.7}, AmbCol: [3]float32{0.42, 0.38, 0.4},
 		BrickMat: WRuins, FloorMat: WRuins, Taper: 1,
-		PaddleBody: color.RGBA{60, 120, 120, 255}, PaddleCap: color.RGBA{220, 180, 80, 255}, FogNear: 50, FogFar: 170,
+		PaddleBody: color.RGBA{60, 120, 120, 255}, PaddleCap: color.RGBA{220, 180, 80, 255}, FogNear: 60, FogFar: 270,
 	},
 	{
 		ID: WClouds, Name: "Cloud Kingdom", Subtitle: "castles drifting above the sky",
@@ -114,7 +118,19 @@ var worlds = []Biome{
 		Fog: color.RGBA{40, 32, 30, 255}, SkyTop: color.RGBA{18, 16, 20, 255}, SkyBottom: color.RGBA{150, 70, 30, 255},
 		SkyKind: WMachine, LightDir: V3{0.4, 0.7, -0.6}, LightCol: [3]float32{0.9, 0.6, 0.35}, AmbCol: [3]float32{0.3, 0.34, 0.44},
 		BrickMat: WMachine, FloorMat: WMachine, Taper: 1,
-		PaddleBody: color.RGBA{70, 74, 84, 255}, PaddleCap: color.RGBA{230, 140, 40, 255}, FogNear: 44, FogFar: 110,
+		PaddleBody: color.RGBA{70, 74, 84, 255}, PaddleCap: color.RGBA{230, 140, 40, 255}, FogNear: 50, FogFar: 170,
+	},
+	{
+		// Sunking's Road (dreamcore). Colours, fog and light are finished
+		// in dreamcore.go's applyDreamTheme.
+		ID: WDream, Name: "Sunking's Road", Subtitle: "the sun is watching you",
+		Hues:  [6]color.RGBA{{255, 70, 190, 255}, {255, 200, 40, 255}, {90, 230, 255, 255}, {170, 90, 255, 255}, {120, 255, 120, 255}, {255, 120, 60, 255}},
+		Floor: color.RGBA{230, 220, 255, 255}, FloorAlt: color.RGBA{210, 196, 250, 255}, Outer: color.RGBA{30, 60, 40, 255},
+		Wall: color.RGBA{120, 70, 150, 255}, Trim: color.RGBA{255, 210, 90, 255},
+		Fog: color.RGBA{18, 34, 30, 255}, SkyTop: color.RGBA{10, 6, 40, 255}, SkyBottom: color.RGBA{120, 40, 160, 255},
+		SkyKind: WDream, LightDir: V3{-0.5, 0.7, 0.2}, LightCol: [3]float32{0.8, 0.72, 1.0}, AmbCol: [3]float32{0.46, 0.38, 0.7},
+		BrickMat: WMeadow, FloorMat: WMeadow, Taper: 1,
+		PaddleBody: color.RGBA{90, 50, 150, 255}, PaddleCap: color.RGBA{255, 200, 80, 255}, FogNear: 70, FogFar: 240,
 	},
 }
 
@@ -126,9 +142,9 @@ type ActDef struct {
 }
 
 var acts = []ActDef{
-	{"The Outer Realms", "Act I", WNeon, "The Prism Colossus", []int{WNeon, WMeadow, WRuins, WClouds}},
+	{"The Outer Realms", "Act I", WNeon, "The Prism Colossus", []int{WNeon, WMeadow, WRuins, WClouds, WDream}},
 	{"The Deep Realms", "Act II", WMachine, "The Crucible Golem", []int{WMachine, WRuins, WCaverns, WMeadow}},
-	{"The High Realms", "Act III", WCaverns, "The Crystal Warden", []int{WCaverns, WClouds, WNeon, WMachine}},
+	{"The High Realms", "Act III", WCaverns, "The Crystal Warden", []int{WCaverns, WClouds, WNeon, WMachine, WDream}},
 }
 
 // biomes keeps the act-indexed signature worlds for screens outside levels.
@@ -462,7 +478,7 @@ func levelLook(base *Biome, seed int64) (*Biome, Visuals) {
 // makeSky dispatches to the world's own background painter.
 func makeSky(b *Biome, seed int64) *ebiten.Image {
 	switch b.SkyKind {
-	case WMeadow:
+	case WMeadow, WDream:
 		return paintSky(b, seed, skyMeadow)
 	case WCaverns:
 		return paintSky(b, seed, skyCaverns)

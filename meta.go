@@ -112,7 +112,7 @@ var ascensions = []struct{ Name, Desc string }{
 	{"Hardened", "Elite bricks have 25% more health."},
 	{"Frail", "Your paddle is 8% narrower."},
 	{"Inflation", "Shop prices +15%."},
-	{"Fortified", "All bricks have 15% more health."},
+	{"Thick Walls", "All bricks have 15% more health."}, // was "Fortified", the same name as an omen
 	{"Brittle Orb", "Losing a life also costs 10 gold."},
 	{"Weary", "Start every act with one life fewer (never fewer than one)."},
 	{"Titans", "Bosses have 30% more health."},
@@ -142,6 +142,16 @@ func ascHP(asc int, elite, boss bool) float64 {
 		}
 	}
 	return m
+}
+
+// bossAttackGap is the seconds between a Guardian's volleys (before its
+// rage speeds them up). Ascension 10, Final Form, promises bosses that
+// "attack faster"; until the ROADMAP-50 #21 audit only their health rose.
+func bossAttackGap(asc int) float64 {
+	if asc >= 10 {
+		return 4.8
+	}
+	return 6
 }
 
 func ascShardMult(asc int) float64 { return 1 + 0.1*float64(asc) }

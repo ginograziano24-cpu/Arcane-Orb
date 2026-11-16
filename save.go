@@ -33,11 +33,19 @@ type Settings struct {
 	TopDown    bool                 `json:"top_down"`                  // always use the steep, top-down camera
 	TextScale  float64              `json:"text_scale"`                // body text size, 1 = default (0 = default)
 	GameSpeed  float64              `json:"game_speed"`                // chamber speed assist, 0.5..1 (0 = 1)
+	DmgNums     bool                `json:"damage_numbers,omitempty"` // damage numbers coloured by source
+	BrickEmph   int                 `json:"brick_emphasis,omitempty"` // 0 subtle, 1 strong, 2 off (brickfocus.go)
+	FxLevel     int                 `json:"fx_level,omitempty"`       // 0 high, 1 medium, 2 low (fxlevel.go)
+	PadLeft     bool                `json:"pad_left_handed,omitempty"` // left-handed gamepad layout (binds.go)
+	AutoLaunch  bool                `json:"auto_launch,omitempty"`  // the orb leaves the paddle by itself (one-switch play)
+	VisualStyle int                 `json:"visual_style,omitempty"` // 0 classic, 1 high contrast, 2 calm (style.go)
+	NoDayNight  bool                `json:"no_day_night,omitempty"` // turns off the day-to-night shift across an act
 	ColorBlind int                  `json:"color_blind"`               // 0 off, 1 protanopia, 2 deuteranopia, 3 tritanopia
 	Borderless bool                 `json:"borderless"`                // windowed without a frame, filling the monitor
 	Binds      map[string]savedBind `json:"binds,omitempty"`
 	Lang       string               `json:"lang,omitempty"`       // language code; "" = pick from Steam or the system
 	FreshActs  bool                 `json:"fresh_acts,omitempty"` // every act starts the build over (the old way)
+	AimGuide   bool                 `json:"aim_guide,omitempty"`  // dotted ray showing where an incoming orb leaves the paddle
 }
 
 // EndlessEntry is one line of the local Endless leaderboard.
@@ -79,11 +87,20 @@ type SaveData struct {
 	Runs       int             `json:"runs"`
 	Wins       int             `json:"wins"`
 	BestAct    int             `json:"best_act"`
+	Letters    map[string]bool `json:"letters,omitempty"` // letters already read (letters.go)
+	Chronicle  map[string]bool `json:"chronicle,omitempty"` // Codex chronicle pages opened (chronicle.go)
+	Keepsake   string          `json:"keepsake,omitempty"`  // charm chosen for new runs (keepsakes.go)
+	KeepRanks  map[string]int  `json:"keepRanks,omitempty"` // keepsake ranks bought with shards (keepsaketree.go)
+	Trials     map[string]bool `json:"trials,omitempty"`    // trials chosen for new runs (trials.go)
+	TrialBest  int             `json:"trial_best,omitempty"` // highest trial level won
 	BestScore  int             `json:"best_score"`
 	Bosses     int             `json:"bosses"`
 	Bricks     int             `json:"bricks"`
 	MaxCombo   int             `json:"max_combo"`
 	Daily      map[string]int  `json:"daily_best"`
+	QualityAuto bool           `json:"quality_auto,omitempty"` // first-launch quality detection has run (autoquality.go)
+	OrbSkin    string          `json:"orb_skin,omitempty"`    // chosen orb skin (orbskins.go); worn only once earned
+	Weekly     map[string]int  `json:"weekly_best,omitempty"` // best act reached per ISO week ("2026-W46"); numActs+1 = won
 	Seen       map[string]bool `json:"seen_mods"`
 	XP         int             `json:"xp"`
 	AscMax     int             `json:"asc_max"` // highest ascension unlocked
@@ -152,6 +169,7 @@ func loadSave() SaveData {
 		s.Ach = map[string]bool{}
 	}
 	s.AscSel = max(0, min(s.AscSel, s.AscMax))
+	s.migrateKeepsakes()
 	return s
 }
 

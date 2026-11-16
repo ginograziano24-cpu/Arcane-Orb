@@ -235,6 +235,7 @@ func (g *Game) drawPerf(s *ebiten.Image) {
 		fmt.Sprintf("quads %.0f  3D calls %.0f  sdf %.0f  sprites %.0f  text %.0f  rects %.0f",
 			sm.quads, sm.world, sm.sdf, sm.sprite, sm.text, sm.rect),
 		fmt.Sprintf("allocs/frame %.0f (%.0f KB)  goroutines %d  %s", sm.allocs, sm.kb, runtime.NumGoroutine(), graphicsLib()),
+		gpuLine(sm),
 	}
 	sc := math.Max(1, float64(h)/1080)
 	fillRect(s, 0, 0, 760*sc, (float64(len(lines))*22+12)*sc, color.RGBA{0, 0, 0, 190})
@@ -254,7 +255,29 @@ func (g *Game) drawPerf(s *ebiten.Image) {
 		}
 		hh := math.Min(80, ms*4) * sc
 		fillRect(s, gx+float64(i)*sc, gy+80*sc-hh, sc, hh, c)
+		// the game thread's share (update + draw) as a darker base, so the
+		// part above it is the GPU, the driver and presentation
+		cpu := (f.sec[secUpdate] + f.sec[secDraw]).Seconds() * 1000
+		ch := math.Min(hh/sc, cpu*4) * sc
+		fillRect(s, gx+float64(i)*sc, gy+80*sc-ch, sc, ch, color.RGBA{40, 110, 200, 230})
 	}
+	g.ui.textPx(s, "blue: game thread   above: GPU + present", 13*sc, gx, gy+84*sc, color.RGBA{150, 190, 230, 255})
+}
+
+// gpuLine is the debug overlay's GPU line (roadmap #97). Ebitengine has no
+// GPU timestamps, so the GPU's time is what is left of the frame after the
+// game thread's update and draw: submitting to the driver, the GPU itself
+// and presentation. When that dominates, the frame is GPU-bound.
+func gpuLine(sm perfSummary) string {
+	cpu := sm.sec[secUpdate] + sm.sec[secDraw]
+	gpu := math.Max(0, sm.frameMS-cpu)
+	bound := "CPU-bound"
+	if gpu > cpu {
+		bound = "GPU/present-bound"
+	}
+	var d ebiten.DebugInfo
+	ebiten.ReadDebugInfo(&d)
+	return fmt.Sprintf("gpu+present %.2f ms  (game thread %.2f ms, %s)  GPU images %.0f MB", gpu, cpu, bound, float64(d.TotalGPUImageMemoryUsageInBytes)/(1<<20))
 }
 
 func graphicsLib() string {
@@ -269,4 +292,35 @@ func graphicsLib() string {
 		return "Metal"
 	}
 	return "?"
+}
+
+// Number formats for the in-game benchmark card (menubench.go), kept here
+// out of the translation scan.
+func fpsText(v float64) string { return fmt.Sprintf("%.0f fps", v) }
+func msText(v float64) string  { return fmt.Sprintf("%.1f ms", v) }
+
+const listSep = ", "
+
+// fmtDmg formats a damage number (one decimal below 10).
+func fmtDmg(v float64) string {
+	if v >= 10 {
+		return fmt.Sprintf("%.0f", v)
+	}
+	return fmt.Sprintf("%.1f", v)
+}
+
+// fmtBig is a large number in short form (the run history graph).
+func fmtBig(v float64) string {
+	switch {
+	case v >= 1e6:
+		return fmt.Sprintf("%.1fM", v/1e6)
+	case v >= 1e4:
+		return fmt.Sprintf("%.1fk", v/1e3)
+	}
+	return fmt.Sprintf("%.0f", v)
+}
+
+// histTip is a run history bar's tooltip line.
+func histTip(date, result, dmg, unit string) string {
+	return fmt.Sprintf("%s  ·  %s  ·  %s %s", date, result, dmg, unit)
 }

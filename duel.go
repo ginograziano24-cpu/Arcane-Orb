@@ -66,6 +66,7 @@ type duelMsg struct {
 	Wi [2]int    `json:"wi,omitempty"`
 	P  int64     `json:"p,omitempty"`
 	F  bool      `json:"f,omitempty"`
+	Sg int       `json:"sg,omitempty"` // duel stage: 0 a new world each round, else world+1
 }
 
 // ghost is what we know of the opponent's board.
@@ -107,6 +108,7 @@ type duel struct {
 	focus      int // 0 none, 1 steam code, 2 direct code
 	// lobby
 	archIdx  int
+	stage    int // 0: a different world every round; n: always world n-1 (host picks)
 	ready    bool
 	oppReady bool
 	// match
@@ -329,7 +331,7 @@ func (g *Game) updateDuel(dt float64) {
 	}
 	if d.host && d.phase == "lobby" && now.After(d.setupAt) {
 		d.setupAt = now.Add(time.Second)
-		d.send(duelMsg{T: "setup", A: archetypes[d.archIdx].ID}, true)
+		d.send(duelMsg{T: "setup", A: archetypes[d.archIdx].ID, Sg: d.stage}, true)
 	}
 	silent := time.Since(d.lastRecv).Seconds()
 	if !d.link.Alive() || (d.oppName != "" && silent > duelTimeout) {
@@ -402,6 +404,7 @@ func (g *Game) duelHandle(m duelMsg) {
 					d.archIdx = i
 				}
 			}
+			d.stage = clampStage(m.Sg)
 		}
 	case "ready":
 		d.oppReady = m.R
@@ -412,6 +415,7 @@ func (g *Game) duelHandle(m duelMsg) {
 					d.archIdx = i
 				}
 			}
+			d.stage = clampStage(m.Sg)
 			if m.Rd == 1 {
 				d.wins = [2]int{}
 			}
@@ -598,7 +602,7 @@ func (g *Game) updateDuelMatch(dt float64) {
 				d.send(duelMsg{T: "over", Wi: d.wins}, true)
 				g.duelMatchOver()
 			} else {
-				d.send(duelMsg{T: "start", Rd: d.round + 1, S: d.seed, A: archetypes[d.archIdx].ID}, true)
+				d.send(duelMsg{T: "start", Rd: d.round + 1, S: d.seed, A: archetypes[d.archIdx].ID, Sg: d.stage}, true)
 				g.duelBeginRound(d.round+1, d.seed)
 			}
 		}
@@ -608,7 +612,7 @@ func (g *Game) updateDuelMatch(dt float64) {
 			d.wins = [2]int{}
 			d.times = [duelRounds][2]float64{}
 			d.note = ""
-			d.send(duelMsg{T: "start", Rd: 1, S: seed, A: archetypes[d.archIdx].ID}, true)
+			d.send(duelMsg{T: "start", Rd: 1, S: seed, A: archetypes[d.archIdx].ID, Sg: d.stage}, true)
 			g.duelBeginRound(1, seed)
 		}
 	}
@@ -752,3 +756,19 @@ func (g *Game) duelJoinField(f int) {
 func randSeed() int64 { return rand.Int63n(1 << 40) }
 
 func duelLog(f string, a ...any) { fmt.Fprintf(os.Stderr, "duel: "+f+"\n", a...) }
+
+// clampStage keeps a stage number from the other player in range.
+func clampStage(n int) int {
+	if n < 0 || n > NumWorlds {
+		return 0
+	}
+	return n
+}
+
+// duelStageName names a stage choice for the lobby.
+func duelStageName(n int) string {
+	if n <= 0 || n > NumWorlds {
+		return "A new world every round"
+	}
+	return worlds[n-1].Name
+}

@@ -19,7 +19,7 @@ var curseList = []*Mod{
 		Apply: func(s *Stats) { s.BallLossGold += 10 }},
 	{ID: "c_dim", Icon: "moon", Name: "Dimmed Fortune", Desc: "Curse: power-ups drop 40% less often.", Curse: true, Tags: []string{"curse"},
 		Apply: func(s *Stats) { s.Luck -= 0.4 }},
-	{ID: "c_weight", Icon: "urn", Name: "Lattice's Weight", Desc: "Curse: bricks have 15% more health.", Curse: true, Tags: []string{"curse"},
+	{ID: "c_weight", Icon: "urn", Name: "Stubborn Bricks", Desc: "Curse: bricks have 15% more health.", Curse: true, Tags: []string{"curse"},
 		Apply: func(s *Stats) { s.BrickHPMult += 0.15 }},
 	{ID: "c_doubt", Icon: "mask", Name: "Shaken Resolve", Desc: "Curse: timed power-ups wear off 25% sooner.", Curse: true, Tags: []string{"curse"},
 		Apply: func(s *Stats) { s.PowerDur -= 0.25 }},

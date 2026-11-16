@@ -41,7 +41,20 @@ type navInput struct {
 
 // ---------------------------------------------------------------- pads
 
-func gamepads() []ebiten.GamepadID { return ebiten.AppendGamepadIDs(nil) }
+func gamepads() []ebiten.GamepadID {
+	ids := ebiten.AppendGamepadIDs(nil)
+	if coopPad < 0 {
+		return ids
+	}
+	// co-op: player two's pad is theirs alone (coop.go)
+	out := ids[:0]
+	for _, id := range ids {
+		if id != coopPad {
+			out = append(out, id)
+		}
+	}
+	return out
+}
 
 // padJust reports a standard-layout button press on any pad this tick.
 func padJust(b ebiten.StandardGamepadButton) bool {
