@@ -158,6 +158,8 @@ def light(name, kind, loc, energy, col, size=3.0, aim=(0, 0, 0), dist=None):
         d.size = size
     if hasattr(d, "shadow_soft_size") and kind == "POINT":
         d.shadow_soft_size = size
+    if kind == "POINT" and energy < 2000 and name not in ("roomfill",):
+        d.use_shadow = False
     if dist:
         try:
             d.use_custom_distance = True
@@ -178,6 +180,8 @@ def objs_of(o):
 def vis(o, t0, t1=None):
     """o (and its children) render only between t0 and t1 seconds."""
     for ob in objs_of(o):
+        if ob.get("helper"):
+            continue
         ob.hide_render = True
         ob.keyframe_insert("hide_render", frame=1)
         ob.hide_render = False
@@ -268,8 +272,8 @@ if os.path.exists(SKY):
     bd.data.materials.append(m)
 
 light("moon", "SUN", (-8, -6, 10), 3.2, (0.75, 0.68, 1.0))
-light("rimA", "AREA", (6, 8, 6), 2600, (1.0, 0.45, 0.9), 8, aim=(0, 0, 1))
-light("rimB", "AREA", (-7, 7, 5), 2200, (0.3, 0.7, 1.0), 8, aim=(0, 0, 1))
+light("rimA", "AREA", (6, 8, 6), 1100, (1.0, 0.45, 0.9), 8, aim=(0, 0, 1))
+light("rimB", "AREA", (-7, 7, 5), 900, (0.3, 0.7, 1.0), 8, aim=(0, 0, 1))
 moon_m = emit_mat("moonm", (1.0, 0.95, 0.85), 6)
 sphere(9, (-60, 170, 85), moon_m, 32)
 
@@ -338,12 +342,14 @@ tower = bpy.context.object
 tower.data.materials.append(stone)
 bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=3.0, depth=0.35, location=TW + Vector((0, 0, 12.2)))
 bpy.context.object.data.materials.append(stone)                       # balcony
-bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=2.9, depth=6.5, location=TW + Vector((0, 0, 16.5)))
+bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=2.2, depth=2.2, location=TW + Vector((0, 0, 14.1)))
+bpy.context.object.data.materials.append(stone)
+bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=2.55, depth=6.5, location=TW + Vector((0, 0, 18.4)))
 roof = bpy.context.object
 roof.rotation_euler = (0.12, 0, 0)
 roof.data.materials.append(roofm)
 st = text("★", 1.4, gold)
-st.location = TW + Vector((0, -2.35, 16.0))
+st.location = TW + Vector((0, -2.05, 17.6))
 st.rotation_euler = (math.pi / 2, 0, 0)
 for k in range(9):
     a = k / 9 * 2 * math.pi + 0.3
@@ -351,7 +357,8 @@ for k in range(9):
     win = cube(TW + Vector((math.cos(a) * 2.18, math.sin(a) * 2.18, z)), (0.45, 0.45, 0.8), warm)
     win.rotation_euler = (0, 0, a)
 light("towerglow", "POINT", TW + Vector((0, -3.5, 9)), 1600, (1.0, 0.7, 0.4), 2, dist=40)
-BALC = TW + Vector((0.0, -2.35, 12.38))
+BALC = TW + Vector((0.35, -2.62, 12.38))
+light("balcfill", "AREA", BALC + Vector((1.5, -3.5, 2.2)), 420, (1.0, 0.8, 0.65), 2, aim=BALC + Vector((0, 0, 0.8)), dist=20)
 
 # ------------------------------------------------------------------ room (a set far away)
 R0 = Vector((300, 0, 0))
@@ -413,13 +420,22 @@ for k in range(26):
         o = cube(R0 + Vector((x, y, 0.06)), (0.32, 0.24, 0.1 + rng.random() * 0.25), cms[rng.randrange(6)], 0.015)
         o.rotation_euler.z = rng.uniform(-1, 1)
     else:
-        bpy.ops.mesh.primitive_torus_add(major_radius=0.12, minor_radius=0.035, location=R0 + Vector((x, y, 0.04)))
+        bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=0.16, depth=0.08, location=R0 + Vector((x, y, 0.04)))
         o = bpy.context.object
-        o.rotation_euler = (math.pi / 2, 0, rng.uniform(0, 3))
-        o.scale = (1, 2.2, 1)
+        o.scale = (1.6, 0.6, 1)
+        o.rotation_euler = (0, rng.uniform(-0.2, 0.2), rng.uniform(0, 3))
     if not o.data.materials:
         o.data.materials.append(cms[rng.randrange(6)])
     mess.append(o)
+for k in range(14):  # the laundry mountain behind him
+    a = rng.uniform(0, 6.28)
+    rr_ = rng.uniform(0, 0.9)
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=rng.uniform(0.3, 0.55), location=R0 + Vector((2.2 + math.cos(a) * rr_, 1.9 + math.sin(a) * rr_ * 0.6, 0.2 + (0.9 - rr_) * 0.9)))
+    o = bpy.context.object
+    o.scale = (1.2, 1.0, 0.55)
+    o.rotation_euler = (rng.uniform(-0.4, 0.4), rng.uniform(-0.4, 0.4), a)
+    o.data.materials.append(cms[k % 6])
+    bpy.ops.object.shade_smooth()
 shelf = cube(R0 + Vector((-3.5, 1.5, 1.5)), (0.6, 2.4, 3.0), wood)
 for k in range(30):
     bk = cube(R0 + Vector((-3.25, 0.5 + (k % 10) * 0.2, 0.5 + (k // 10) * 1.0)), (0.3, 0.15, 0.6 + rng.random() * 0.2), cms[k % 6])
@@ -427,14 +443,14 @@ for k in range(30):
 
 # the Instant Tidy scroll
 parch = mat("parch", (0.95, 0.86, 0.62), rough=0.8)
-scroll = cube(R0 + Vector((1.6, 3.6, 2.6)), (0.6, 0.02, 0.8), parch)
-scroll_t = text("INSTANT\nTIDY", 0.13, mat("ink", (0.5, 0.1, 0.6), emit=2), 0.0)
+scroll = cube(R0 + Vector((1.6, 3.6, 2.6)), (0.42, 0.02, 0.56), parch)
+scroll_t = text("INSTANT\nTIDY", 0.18, mat("ink", (0.5, 0.1, 0.6), emit=2), 0.0)
 scroll_t.parent = scroll
 scroll_t.location = (0, -0.8, 0.05)
 scroll_t.rotation_euler = (math.pi / 2, 0, 0)
-scroll_t.scale = (1 / 0.6, 1 / 0.8, 1 / 0.02)
+scroll_t.scale = (1 / 0.42, 1 / 0.56, 1 / 0.02)
 SC_IN = T("m01") + 0.3
-SC_AT = R0 + Vector((0.55, -0.35, 1.2))
+SC_AT = R0 + Vector((0.72, -0.2, 0.85))
 key_loc(scroll, S3 - 0.01, R0 + Vector((1.6, 3.6, 2.6)))
 key_loc(scroll, SC_IN, R0 + Vector((1.6, 3.6, 2.6)))
 key_loc(scroll, SC_IN + 1.6, SC_AT)
@@ -443,9 +459,9 @@ scroll.rotation_euler = (0, 0, 0.6)
 scroll.keyframe_insert("rotation_euler", frame=f(SC_IN))
 scroll.rotation_euler = (0, 0, 0)
 scroll.keyframe_insert("rotation_euler", frame=f(SC_IN + 1.6))
-key_scale(scroll, SC_IN, (0.6, 0.02, 0.1))
-key_scale(scroll, SC_IN + 1.4, (0.6, 0.02, 0.8))
-key_scale(scroll, T("f03") + 1.7, (0.6, 0.02, 0.8))
+key_scale(scroll, SC_IN, (0.42, 0.02, 0.07))
+key_scale(scroll, SC_IN + 1.4, (0.42, 0.02, 0.56))
+key_scale(scroll, T("f03") + 1.7, (0.42, 0.02, 0.56))
 key_scale(scroll, T("f03") + 2.1, (0.01, 0.01, 0.01))
 flash = light("scrollflash", "POINT", SC_AT + Vector((0, -0.3, 0.2)), 0, (0.8, 0.5, 1.0), 0.3, dist=30)
 for t, e in ((T("f03") + 1.6, 0), (T("f03") + 1.9, 25000), (T("f03") + 2.6, 0)):
@@ -480,7 +496,12 @@ def import_model(path, height, name):
         bpy.ops.import_scene.gltf(filepath=path)
     new = [o for o in bpy.data.objects if o not in before]
     arm = next((o for o in new if o.type == "ARMATURE"), None)
-    mn, mx = bounds(new)
+    body = [o for o in new if o.type == "MESH" and "icosphere" not in o.name.lower() and len(o.data.polygons) >= 50]
+    if arm is not None:
+        skinned = [o for o in body if any(m.type == "ARMATURE" for m in o.modifiers)]
+        body = skinned or body
+    say("  parts", [(o.name, o.type, len(o.data.polygons) if o.type == "MESH" else 0) for o in new])
+    mn, mx = bounds(body or new)
     s = height / max(1e-6, (mx.z - mn.z))
     root = bpy.data.objects.new(name, None)
     sc.collection.objects.link(root)
@@ -489,9 +510,10 @@ def import_model(path, height, name):
             o.parent = root
     root.scale = (s, s, s)
     root["off"] = (-(mn.x + mx.x) / 2 * s, -(mn.y + mx.y) / 2 * s, -mn.z * s)
-    for o in new:  # tripo markers and helper spheres
-        if o.type == "MESH" and ("Icosphere" in o.name):
+    for o in new:  # tripo markers and helper meshes stay out of the picture
+        if o.type == "MESH" and o not in body:
             o.hide_render = True
+            o["helper"] = True
     say("model", name, os.path.basename(path), "objects", len(new), "armature", arm.name if arm else None,
         "bones", len(arm.data.bones) if arm else 0, "h", round(mx.z - mn.z, 3))
     return root, arm
@@ -508,6 +530,14 @@ def place(root, t, loc, rot_z=0.0):
 
 FAR = (0, -600, -80)
 EPS = 1.0 / FPS
+
+
+def span(root, t0, t1, loc0, rot0=0.0, loc1=None, rot1=None):
+    """on stage from t0 to t1 (moving loc0 -> loc1), parked far away otherwise"""
+    place(root, t0 - EPS, FAR)
+    place(root, t0, loc0, rot0)
+    place(root, t1 - EPS, loc1 if loc1 is not None else loc0, rot0 if rot1 is None else rot1)
+    place(root, t1, FAR)
 
 
 def hero_file(hid):
@@ -553,7 +583,7 @@ fb = find_file([os.path.join(CHARS, "fumbleton_tripo", "rigged", "**", "*.glb"),
                 os.path.join(CHARS, "fumbleton_tripo", "**", "model.glb"),
                 os.path.join(CHARS, "fumbleton_tripo", "**", "*.glb")])
 if fb:
-    r, a = import_model(fb, 1.35, "fumbleton")
+    r, a = import_model(fb, 1.5, "fumbleton")
     cast["fumbleton"] = {"root": r, "arm": a}
 else:
     say("WARNING no Fumbleton model; using a stand-in")
@@ -681,8 +711,8 @@ POSES = {   # (left upper, left fore, right upper, right fore) in character spac
     "offer":   ((0.32, 0.04, -1), (0.18, -0.25, -1), (-0.45, -0.7, -0.35), (-0.1, -1, 0.3)),
     "split":   ((0.75, -0.45, 0.6), (0.3, -0.3, 1), (-0.75, -0.45, 0.6), (-0.3, -0.3, 1)),
     "send":    ((0.32, 0.04, -1), (0.18, -0.25, -1), (-0.25, -1, 0.45), (-0.1, -1, 0.5)),
-    "catch":   ((0.35, -0.55, 0.75), (0.15, -0.35, 1), (-0.32, 0.04, -1), (-0.18, -0.25, -1)),
-    "hold":    ((0.4, -0.45, 0.45), (0.1, -0.6, 0.8), (-0.32, 0.04, -1), (-0.18, -0.25, -1)),
+    "catch":   ((0.4, -0.7, 0.4), (0.1, -0.55, 0.8), (-0.32, 0.04, -1), (-0.18, -0.25, -1)),
+    "hold":    ((0.45, -0.75, 0.05), (0.05, -0.85, 0.55), (-0.32, 0.04, -1), (-0.18, -0.25, -1)),
     "hands":   ((0.5, -0.8, -0.1), (-0.3, -0.8, 0.4), (-0.5, -0.8, -0.1), (0.3, -0.8, 0.4)),
 }
 STATES = {k: [(0.0, "rest")] for k in list(cast.keys())}
@@ -767,7 +797,7 @@ def bake_rigs():
 
 # ------------------------------------------------------------------ props
 orb_m = mat("orb", (0.22, 0.5, 1.0), emit=2.2, rough=0.1)
-gem = [mat("g%d" % i, c, emit=1.2, rough=0.25) for i, c in enumerate(
+gem = [mat("g%d" % i, c, emit=0.35, rough=0.25) for i, c in enumerate(
     [(1, 0.2, 0.6), (0.3, 0.8, 1), (1, 0.8, 0.2), (0.6, 0.3, 1), (0.3, 1, 0.5), (1, 0.45, 0.15)])]
 
 
@@ -777,6 +807,7 @@ def orb_obj(r=0.11, energy=260, col=(0.7, 0.85, 1.0), m=None):
     l.energy = energy
     l.color = col
     l.shadow_soft_size = 0.3
+    l.use_shadow = False
     lo = bpy.data.objects.new("orbL", l)
     lo.parent = o
     sc.collection.objects.link(lo)
@@ -906,18 +937,10 @@ for k in range(40):
 fum = cast["fumbleton"]["root"]
 ROOM_F = R0 + Vector((0.2, 0.4, 0))
 place(fum, 0, FAR)
-place(fum, S2 - EPS, FAR)
-place(fum, S2, ROOM_F, 0.25)
-place(fum, S3, ROOM_F, 0.15)
-place(fum, S3b - EPS, ROOM_F, -0.1)
-place(fum, S3b, FAR)
-place(fum, S4b - EPS, FAR)
-place(fum, S4b, BALC, 0.35)
-place(fum, S5 + 4.0, BALC, 0.0)
-place(fum, S6b, BALC, -0.4)
-place(fum, S6c, BALC, -0.4)
-place(fum, S12 - EPS, FAR)
-place(fum, S12, R0 + Vector((-1.4, 0.55, 0)), 0.0)
+span(fum, S2, S3b, ROOM_F, 0.25, ROOM_F, -0.1)
+span(fum, S4b, S7, BALC, 0.35, BALC, -0.4)
+DINNER = R0 + Vector((-1.05, 0.5, 0))
+span(fum, S12, DUR + 1, DINNER, 0.0)
 state("fumbleton", S2, "rest")
 state("fumbleton", T("f02") + 0.4, "worry")
 state("fumbleton", T("m01") + 1.8, "read")
@@ -974,11 +997,8 @@ for k, h in enumerate(HEROES):
         continue
     r = cast[h]["root"]
     t0 = SHOT0[h]
-    t1 = SHOT0[HEROES[k + 1]] if k + 1 < len(HEROES) else S10
-    place(r, t0 - EPS, FAR)
-    place(r, t0, (0, 0, 0), 0.0)
-    place(r, t1 - EPS, (0, 0, 0), 0.22)
-    place(r, t1, FAR)
+    t1 = SHOT0[HEROES[k + 1]] if k + 1 < len(HEROES) else S10 - 2 * EPS
+    span(r, t0, t1, (0, 0, 0), 0.0, (0, 0, 0), 0.22)
     state(h, CATCH_T[h] - 0.5, "catch")
     state(h, CATCH_T[h] + 0.6, "hold")
     state(h, t1, "rest")
@@ -987,9 +1007,7 @@ for k, h in enumerate(HEROES):
     if h not in cast:
         continue
     x, y = V[k]
-    place(cast[h]["root"], S10, (x, y, 0), -x * 0.06)
-    place(cast[h]["root"], S12 - EPS, (x, y, 0), -x * 0.06)
-    place(cast[h]["root"], S12, FAR)
+    span(cast[h]["root"], S10, S12, (x, y, 0), -x * 0.06)
     state(h, S10 + 0.2, "hold")
 
 rigs = bake_rigs()
@@ -1010,12 +1028,12 @@ key_loc(one, t_form, hand + Vector((0, 0, 0.15)))
 key_scale(one, t_form, 0.01)
 key_scale(one, t_form + 0.6, 1.0)
 key_loc(one, T("r02") + 2.6, hand + Vector((0, 0, 0.15)))
-above = MIR + Vector((0, -0.4, 2.6))
+above = MIR + Vector((0, -0.4, 2.35))
 key_loc(one, T("r02") + 3.2, above)
 vis(one, t_form, T("r02") + 3.4)
 burst(above, T("r02") + 3.35, 30, (0.6, 0.8, 1.0), 1.2, 0.7)
 for i in range(7):
-    o = orb_obj(0.09, 160, GLOW[HEROES[i]], mat("o%d" % i, GLOW[HEROES[i]], emit=3.0, rough=0.1))
+    o = orb_obj(0.09, 90, GLOW[HEROES[i]], mat("o%d" % i, GLOW[HEROES[i]], emit=0.9, rough=0.1))
     a = i / 7 * 2 * math.pi
     ring = above + Vector((math.cos(a) * 0.9, math.sin(a) * 0.4, math.sin(a) * 0.25))
     key_loc(o, T("r02") + 3.35, above)
@@ -1056,6 +1074,7 @@ for k, (b, row, col, wl) in enumerate(targets):
         fr_.keyframe_insert("rotation_euler", frame=f(tt + 0.9))
         vis(fr_, tt, tt + 0.95)
     fl = light("hitflash", "POINT", hit, 0, (0.7, 0.85, 1.0), 0.4, dist=25)
+    fl.data.use_shadow = False
     for t_, e in ((tt - 0.01, 0), (tt, 9000), (tt + 0.35, 0)):
         fl.data.energy = e
         fl.data.keyframe_insert("energy", frame=f(t_))
@@ -1067,6 +1086,7 @@ vis(demo, S8, S9)
 # S9: the flying orb meets each raised hand at its catch, then is held
 orb = orb_obj(0.11, 260)
 vis(orb, S9, S10)
+HELD = {}
 for k, h in enumerate(HEROES):
     if h not in cast:
         continue
@@ -1079,15 +1099,21 @@ for k, h in enumerate(HEROES):
     key_loc(orb, tc - 0.4, hand + Vector((0.9, 1.2, 0.9)))
     key_loc(orb, tc - 0.02, hand)
     if hb is not None:
-        held = orb_obj(0.07, 140)
-        held.parent = r.arm
-        held.parent_type = "BONE"
-        held.parent_bone = hb.name
-        sx = r.root.scale.x
-        held.scale = (1 / sx, 1 / sx, 1 / sx)
-        held.location = (0, 0.02 / sx, 0.05 / sx)
+        held = orb_obj(0.075, 140)
         vis(held, tc, S12)
+        HELD[h] = (held, hb, r)
         burst(hand, tc, 18, GLOW[h], 0.8, 0.5)
+fr = f(S9)
+while fr <= f(S12) + 1:
+    sc.frame_set(fr)
+    for h, (held, hb, r) in HELD.items():
+        if fr < f(CATCH_T[h]) - 1:
+            continue
+        p = (r.arm.matrix_world @ hb.matrix).translation
+        up = (r.arm.matrix_world.to_3x3() @ (hb.matrix.to_3x3() @ Vector((0, 1, 0)))).normalized()
+        held.location = p + up * 0.09
+        held.keyframe_insert("location", frame=fr)
+    fr += 2
 key_loc(orb, S10, Vector((0, 2.5, 4.4)))
 key_loc(orb, S12, Vector((0, 2.5, 4.0)))
 vis(orb, S10, S12)
@@ -1125,20 +1151,21 @@ def cut(t0, t1, keys):
 Fh = Vector((0, 0, 0.95))
 fum_room = ROOM_F
 cut(0, S2, [(0, TW + Vector((10, -26, 4)), TW + Vector((0, 0, 11)), 30), (1, TW + Vector((6, -16, 9)), TW + Vector((0, 0, 12)), 34)])
-cut(S2, S3, [(0, fum_room + Vector((0.8, -4.6, 1.5)), fum_room + Fh, 30), (0.55, fum_room + Vector((0.5, -3.6, 1.35)), fum_room + Fh, 34),
-             (0.6, fum_room + Vector((-2.5, -2.5, 1.4)), fum_room + Vector((0.6, 1.0, 0.5)), 26), (1, fum_room + Vector((-1.8, -3.2, 1.5)), fum_room + Vector((0.3, 1.0, 0.6)), 24)])
-cut(S3, S3b, [(0, fum_room + Vector((1.2, -3.4, 1.4)), fum_room + Vector((0.7, 1.5, 1.3)), 28), (0.4, fum_room + Vector((0.6, -2.6, 1.3)), fum_room + Vector((0.3, -0.2, 1.1)), 35),
-              (1, fum_room + Vector((0.2, -2.0, 1.25)), fum_room + Fh + Vector((0, 0, 0.1)), 40)])
+Fh = Vector((0, 0, 1.0))
+cut(S2, S3, [(0, fum_room + Vector((-0.9, -3.6, 1.35)), fum_room + Vector((-0.5, 0, 0.9)), 30), (0.48, fum_room + Vector((-0.6, -3.0, 1.25)), fum_room + Vector((-0.3, 0, 0.9)), 32),
+             (0.5, fum_room + Vector((1.6, -3.3, 1.5)), fum_room + Vector((1.2, 1.2, 0.6)), 26), (1, fum_room + Vector((0.9, -2.6, 1.2)), fum_room + Fh, 34)])
+cut(S3, S3b, [(0, fum_room + Vector((1.6, -2.8, 1.5)), fum_room + Vector((1.2, 2.0, 1.6)), 28), (0.42, fum_room + Vector((1.9, -1.9, 1.25)), fum_room + Vector((0.3, -0.2, 0.9)), 32),
+              (1, fum_room + Vector((0.4, -2.2, 1.05)), fum_room + Fh, 40)])
 cut(S3b, S4, [(0, TW + Vector((4, -34, 3)), TW + Vector((-2, -6, 7)), 24), (1, TW + Vector((6, -40, 5)), TW + Vector((-2, -6, 7)), 22)])
 cut(S4, S4b, [(0, Vector((-4, -6, 4)), Vector((0, 26, 3)), 26), (1, Vector((6, -2, 7)), Vector((-2, 26, 2)), 26)])
-cut(S4b, S5, [(0, BALC + Vector((1.4, -3.4, 0.9)), BALC + Vector((0, 0, 0.8)), 30), (0.5, BALC + Vector((2.2, -5.0, 1.6)), BALC + Vector((3, 6, 0)), 24),
+cut(S4b, S5, [(0, BALC + Vector((1.2, -3.6, 0.6)), BALC + Vector((0, 0, 0.85)), 32), (0.5, BALC + Vector((2.2, -5.0, 1.6)), BALC + Vector((3, 6, 0)), 24),
               (1, BALC + Vector((3.0, -7.0, 2.5)), BALC + Vector((10, 14, -4)), 22)])
 cut(S5, S6, [(0, Vector((0, -12, 1.6)), Vector((0, 30, 2.5)), 26), (1, Vector((0, -16, 9)), Vector((0, 30, 1.0)), 24)])
 mlook = MIR + Vector((0, 0, 1.35))
 cut(S6, S6b, [(0, MIR + Vector((2.5, -6.0, 1.2)), mlook, 30), (1, MIR + Vector((1.2, -4.0, 1.5)), mlook, 38)])
-cut(S6b, S6c, [(0, BALC + Vector((0.6, -2.6, 0.9)), BALC + Vector((0, 0, 0.75)), 40), (1, BALC + Vector((0.4, -2.3, 0.95)), BALC + Vector((0, 0, 0.75)), 42)])
-cut(S6c, S7, [(0, MIR + Vector((-1.4, -3.8, 1.4)), mlook + Vector((0, 0, 0.2)), 34), (0.55, MIR + Vector((-0.8, -3.2, 1.6)), mlook + Vector((0, 0, 0.5)), 36),
-              (1, MIR + Vector((-0.4, -4.4, 1.0)), above, 30)])
+cut(S6b, S6c, [(0, BALC + Vector((0.7, -2.9, 0.8)), BALC + Vector((0, 0, 0.85)), 40), (1, BALC + Vector((0.5, -2.6, 0.85)), BALC + Vector((0, 0, 0.85)), 42)])
+cut(S6c, S7, [(0, MIR + Vector((-1.4, -3.8, 1.4)), mlook, 34), (0.6, MIR + Vector((-0.9, -3.4, 1.5)), mlook + Vector((0, 0, 0.1)), 36),
+              (0.8, MIR + Vector((-0.6, -4.2, 1.3)), mlook + Vector((0, 0, 0.6)), 32), (1, MIR + Vector((-0.4, -4.6, 1.1)), above + Vector((0, 0, -0.4)), 30)])
 cut(S7, S8, [(0, MIR + Vector((0.5, -4.0, 0.6)), above, 22), (1, MIR + Vector((0.2, -3.0, 0.4)), MIR + Vector((5, 40, 26)), 20)])
 cut(S8, S9, [(0, Vector((2.5, 5.0, 1.4)), Vector((0, 18, 2.2)), 26), (1, Vector((-1.5, 7.5, 1.6)), Vector((0, 18, 2.0)), 30)])
 for h in HEROES:
@@ -1146,11 +1173,11 @@ for h in HEROES:
     k = HEROES.index(h)
     t1 = SHOT0[HEROES[k + 1]] if k + 1 < len(HEROES) else S10
     sgn = 1 if k % 2 == 0 else -1
-    cut(t0, t1, [(0, Vector((1.9 * sgn, -4.6, 1.35)), Vector((0, 0, 1.15)), 40), (0.35, Vector((1.0 * sgn, -3.3, 1.45)), Vector((0, 0, 1.3)), 45),
-                 (1, Vector((0.45 * sgn, -2.5, 1.55)), Vector((0, 0, 1.4)), 50)])
-cut(S10, S11, [(0, Vector((0, -4.5, 1.4)), Vector((0, 1.5, 1.5)), 28), (1, Vector((0, -9.5, 2.6)), Vector((0, 2.5, 1.6)), 30)])
-cut(S11, S12, [(0, Vector((0, -9.5, 2.6)), Vector((0, 2.5, 3.2)), 30), (1, Vector((0, -10.5, 3.0)), Vector((0, 2.5, 3.4)), 30)])
-cut(S12, DUR + 0.5, [(0, R0 + Vector((-1.4, -2.8, 1.25)), R0 + Vector((-1.4, 0.4, 0.85)), 34), (1, R0 + Vector((-1.4, -2.2, 1.2)), R0 + Vector((-1.4, 0.4, 0.85)), 38)])
+    cut(t0, t1, [(0, Vector((1.9 * sgn, -4.8, 1.35)), Vector((0, 0, 1.15)), 38), (0.35, Vector((1.0 * sgn, -3.6, 1.45)), Vector((0, 0, 1.3)), 42),
+                 (1, Vector((0.5 * sgn, -2.9, 1.5)), Vector((0, 0, 1.35)), 44)])
+cut(S10, S11, [(0, Vector((0, -5.2, 1.3)), Vector((0, 2.0, 1.2)), 36), (1, Vector((0, -7.6, 1.9)), Vector((0, 2.2, 1.3)), 34)])
+cut(S11, S12, [(0, Vector((0, -7.6, 1.9)), Vector((0, 2.2, 2.0)), 34), (1, Vector((0, -8.4, 2.2)), Vector((0, 2.2, 2.2)), 34)])
+cut(S12, DUR + 0.5, [(0, DINNER + Vector((0.25, -3.0, 1.2)), DINNER + Vector((0, 0, 0.95)), 34), (1, DINNER + Vector((0.15, -2.4, 1.15)), DINNER + Vector((0, 0, 1.0)), 38)])
 
 # ------------------------------------------------------------------ cards, title, fades
 def cam_child(o, x, y, d):
@@ -1191,7 +1218,7 @@ vis(title, S11, S12)
 key_scale(title, S11, 0.6)
 key_scale(title, S11 + 0.5, 1.0)
 key_scale(title, S12, 1.06)
-tag = text("break the walls  ·  save the land", 0.03, emit_mat("tagm", (1, 0.9, 0.7), 3), 0.0)
+tag = text("break the walls  ·  save the land", 0.042, emit_mat("tagm", (1, 0.9, 0.7), 3), 0.0)
 cam_child(tag, 0, -0.06, 1.2)
 vis(tag, S11 + 0.6, S12)
 
