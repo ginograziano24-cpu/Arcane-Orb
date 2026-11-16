@@ -13,6 +13,9 @@ Git: branch `claude/sync-2026-11-16` (pushed). Source of truth for code is that 
   - Mirabel: `tripo_convert_21334b29…zip` from Downloads (rigged).
 - Tripo balance: 5 credits.
 
+## Next overall goal
+- **Polish pass** (`docs/POLISH_PASS.md`): six phases (audit, stability/perf, game feel, character, clarity, verify), committed per phase. Starts after the models are finalized.
+
 ## In progress / next
 - Arcanist layered .blend (`heroes/arcane_layers/arcanist_layers.blend`): first pass by texture colour is ragged (hair counted as robe, gaps in skin); base form failed. Needs a better split.
 - Bell Witch files live in `~/.codex/visualizations` (Codex's folder, not accessible to Claude); copy one into Downloads to use it.
