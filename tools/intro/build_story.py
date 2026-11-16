@@ -395,7 +395,7 @@ bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=0.09, depth=0.25, locati
 bpy.context.object.data.materials.append(mat("vase", (0.5, 0.7, 0.95), rough=0.15))
 for k in range(3):
     sphere(0.07, R0 + Vector((-1.4 + (k - 1) * 0.07, -0.3, 1.18 + (k % 2) * 0.05)), rose, 12)
-light("roomkey", "AREA", R0 + Vector((-1.5, -3.5, 3.5)), 260, (1.0, 0.78, 0.6), 3, aim=R0 + Vector((0, 0, 1)), dist=20)
+light("roomkey", "AREA", R0 + Vector((-1.5, -3.5, 3.5)), 520, (1.0, 0.78, 0.6), 3, aim=R0 + Vector((0, 0, 1)), dist=20)
 light("roomfill", "POINT", R0 + Vector((2.5, 1.0, 3.0)), 120, (0.6, 0.5, 1.0), 1, dist=15)
 # the mess: laundry heaps, socks, books, scrolls
 cols = [(0.8, 0.3, 0.3), (0.3, 0.5, 0.85), (0.9, 0.8, 0.3), (0.5, 0.8, 0.5), (0.85, 0.5, 0.85), (0.95, 0.95, 0.9)]
@@ -500,6 +500,16 @@ def import_model(path, height, name):
     if arm is not None:
         skinned = [o for o in body if any(m.type == "ARMATURE" for m in o.modifiers)]
         body = skinned or body
+    for o in body:
+        if len(o.data.polygons) > 400000:
+            bpy.ops.object.select_all(action="DESELECT")
+            o.select_set(True)
+            bpy.context.view_layer.objects.active = o
+            dm = o.modifiers.new("dec", "DECIMATE")
+            dm.ratio = 400000 / len(o.data.polygons)
+            bpy.ops.object.modifier_move_to_index(modifier="dec", index=0)
+            bpy.ops.object.modifier_apply(modifier="dec")
+            say("  decimated", o.name, "->", len(o.data.polygons))
     say("  parts", [(o.name, o.type, len(o.data.polygons) if o.type == "MESH" else 0) for o in new])
     mn, mx = bounds(body or new)
     s = height / max(1e-6, (mx.z - mn.z))
@@ -521,6 +531,7 @@ def import_model(path, height, name):
 
 def place(root, t, loc, rot_z=0.0):
     off = Vector(root["off"])
+    rot_z = rot_z + root.get("yaw", 0.0)
     c, s = math.cos(rot_z), math.sin(rot_z)
     root.location = Vector(loc) + Vector((off.x * c - off.y * s, off.x * s + off.y * c, off.z))
     root.rotation_euler = (0, 0, rot_z)
@@ -671,7 +682,8 @@ class Rig:
         self.arm.animation_data_clear()
         bpy.context.view_layer.update()
         rel = self.root.matrix_world.inverted() @ self.arm.matrix_world
-        self.A = rel.to_3x3().normalized().inverted()     # character dir -> armature space
+        yaw = self.root.get("yaw", 0.0)
+        self.A = rel.to_3x3().normalized().inverted() @ Matrix.Rotation(-yaw, 3, "Z")  # character dir -> armature space
         for b in self.arm.pose.bones:
             b.rotation_mode = "QUATERNION"
         self.ok = True
@@ -700,6 +712,31 @@ class Rig:
         q = Quaternion(self.d((1, 0, 0)), math.radians(pitch)) @ Quaternion(self.d((0, 0, 1)), math.radians(yaw))
         return R.inverted() @ q @ R
 
+
+def measure_yaw(name, c):
+    arm = c["arm"]
+    la, ra = find_bone(arm, "LeftArm"), find_bone(arm, "RightArm")
+    if la is None or ra is None:
+        return
+    bpy.context.view_layer.update()
+    rel = c["root"].matrix_world.inverted() @ arm.matrix_world
+    v = rel @ la.bone.head_local - rel @ ra.bone.head_local
+    a = math.atan2(v.y, v.x)
+    yaw = round(-a / (math.pi / 2)) * (math.pi / 2)   # quarter turns only
+    c["root"]["yaw"] = yaw
+    say("facing", name, round(math.degrees(yaw), 1))
+
+
+for _n, _c in cast.items():
+    if _c["arm"] is not None:
+        measure_yaw(_n, _c)
+# Fumbleton's Tripo file faces +x and its rig has left/right swapped (checked
+# with intro/fumb_check.py renders), so his facing is set by hand and his arms
+# keep the model's own pose; he acts with his head and body.
+if "fumbleton" in cast:
+    cast["fumbleton"]["root"]["yaw"] = -math.pi / 2
+    cast["fumbleton"]["noarms"] = True
+    say("facing fumbleton fixed -90")
 
 POSES = {   # (left upper, left fore, right upper, right fore) in character space
     "rest":    ((0.32, 0.04, -1), (0.18, -0.25, -1), (-0.32, 0.04, -1), (-0.18, -0.25, -1)),
@@ -768,7 +805,20 @@ def bake_rigs():
         while fr <= f(DUR) + 1:
             t = (fr - 1) / FPS
             p, y = talk(k, t)
-            if r.ok:
+            if r.ok and cast[k].get("noarms"):
+                hq = r.head_rot(p * 1.3, y * 1.3)
+                if hq is not None:
+                    r.b["Head"].rotation_quaternion = hq
+                    r.b["Head"].keyframe_insert("rotation_quaternion", frame=fr)
+                bob = 1.0 + 0.012 * math.sin(t * 3.1)
+                for ch in root.children:
+                    if ch.type == "ARMATURE":
+                        if ch.get("s0") is None:
+                            ch["s0"] = tuple(ch.scale)
+                        s0_ = ch["s0"]
+                        ch.scale = (s0_[0] / math.sqrt(bob), s0_[1] / math.sqrt(bob), s0_[2] * bob)
+                        ch.keyframe_insert("scale", frame=fr)
+            elif r.ok:
                 lu, lf, ru, rf = pose_at(k, t)
                 br = math.sin(t * 2.1 + len(k))
                 lu = (lu + Vector((0, 0.04 * br, 0))).normalized()
@@ -939,8 +989,8 @@ ROOM_F = R0 + Vector((0.2, 0.4, 0))
 place(fum, 0, FAR)
 span(fum, S2, S3b, ROOM_F, 0.25, ROOM_F, -0.1)
 span(fum, S4b, S7, BALC, 0.35, BALC, -0.4)
-DINNER = R0 + Vector((-1.05, 0.5, 0))
-span(fum, S12, DUR + 1, DINNER, 0.0)
+DINNER = R0 + Vector((-0.15, -0.35, 0))
+span(fum, S12, DUR + 1, DINNER, -0.35)
 state("fumbleton", S2, "rest")
 state("fumbleton", T("f02") + 0.4, "worry")
 state("fumbleton", T("m01") + 1.8, "read")
@@ -1152,10 +1202,10 @@ Fh = Vector((0, 0, 0.95))
 fum_room = ROOM_F
 cut(0, S2, [(0, TW + Vector((10, -26, 4)), TW + Vector((0, 0, 11)), 30), (1, TW + Vector((6, -16, 9)), TW + Vector((0, 0, 12)), 34)])
 Fh = Vector((0, 0, 1.0))
-cut(S2, S3, [(0, fum_room + Vector((-0.9, -3.6, 1.35)), fum_room + Vector((-0.5, 0, 0.9)), 30), (0.48, fum_room + Vector((-0.6, -3.0, 1.25)), fum_room + Vector((-0.3, 0, 0.9)), 32),
-             (0.5, fum_room + Vector((1.6, -3.3, 1.5)), fum_room + Vector((1.2, 1.2, 0.6)), 26), (1, fum_room + Vector((0.9, -2.6, 1.2)), fum_room + Fh, 34)])
-cut(S3, S3b, [(0, fum_room + Vector((1.6, -2.8, 1.5)), fum_room + Vector((1.2, 2.0, 1.6)), 28), (0.42, fum_room + Vector((1.9, -1.9, 1.25)), fum_room + Vector((0.3, -0.2, 0.9)), 32),
-              (1, fum_room + Vector((0.4, -2.2, 1.05)), fum_room + Fh, 40)])
+cut(S2, S3, [(0, fum_room + Vector((-0.9, -3.6, 0.95)), fum_room + Vector((-0.5, 0, 0.75)), 30), (0.48, fum_room + Vector((-0.5, -2.8, 0.85)), fum_room + Vector((-0.2, 0, 0.72)), 34),
+             (0.5, fum_room + Vector((1.6, -3.3, 1.5)), fum_room + Vector((1.2, 1.2, 0.6)), 26), (1, fum_room + Vector((0.7, -2.4, 0.85)), fum_room + Vector((0, 0, 0.72)), 36)])
+cut(S3, S3b, [(0, fum_room + Vector((1.6, -2.8, 1.5)), fum_room + Vector((1.2, 2.0, 1.6)), 28), (0.4, fum_room + Vector((1.3, -2.4, 1.4)), fum_room + Vector((0.9, 0.5, 1.3)), 30),
+              (0.42, fum_room + Vector((-1.4, -2.3, 0.95)), fum_room + Vector((0.3, -0.1, 0.8)), 32), (1, fum_room + Vector((-0.9, -2.0, 0.85)), fum_room + Vector((0.15, 0, 0.75)), 38)])
 cut(S3b, S4, [(0, TW + Vector((4, -34, 3)), TW + Vector((-2, -6, 7)), 24), (1, TW + Vector((6, -40, 5)), TW + Vector((-2, -6, 7)), 22)])
 cut(S4, S4b, [(0, Vector((-4, -6, 4)), Vector((0, 26, 3)), 26), (1, Vector((6, -2, 7)), Vector((-2, 26, 2)), 26)])
 cut(S4b, S5, [(0, BALC + Vector((1.2, -3.6, 0.6)), BALC + Vector((0, 0, 0.85)), 32), (0.5, BALC + Vector((2.2, -5.0, 1.6)), BALC + Vector((3, 6, 0)), 24),
@@ -1163,7 +1213,7 @@ cut(S4b, S5, [(0, BALC + Vector((1.2, -3.6, 0.6)), BALC + Vector((0, 0, 0.85)), 
 cut(S5, S6, [(0, Vector((0, -12, 1.6)), Vector((0, 30, 2.5)), 26), (1, Vector((0, -16, 9)), Vector((0, 30, 1.0)), 24)])
 mlook = MIR + Vector((0, 0, 1.35))
 cut(S6, S6b, [(0, MIR + Vector((2.5, -6.0, 1.2)), mlook, 30), (1, MIR + Vector((1.2, -4.0, 1.5)), mlook, 38)])
-cut(S6b, S6c, [(0, BALC + Vector((0.7, -2.9, 0.8)), BALC + Vector((0, 0, 0.85)), 40), (1, BALC + Vector((0.5, -2.6, 0.85)), BALC + Vector((0, 0, 0.85)), 42)])
+cut(S6b, S6c, [(0, BALC + Vector((0.7, -2.9, 0.75)), BALC + Vector((0, 0, 0.75)), 40), (1, BALC + Vector((0.5, -2.6, 0.75)), BALC + Vector((0, 0, 0.75)), 42)])
 cut(S6c, S7, [(0, MIR + Vector((-1.4, -3.8, 1.4)), mlook, 34), (0.6, MIR + Vector((-0.9, -3.4, 1.5)), mlook + Vector((0, 0, 0.1)), 36),
               (0.8, MIR + Vector((-0.6, -4.2, 1.3)), mlook + Vector((0, 0, 0.6)), 32), (1, MIR + Vector((-0.4, -4.6, 1.1)), above + Vector((0, 0, -0.4)), 30)])
 cut(S7, S8, [(0, MIR + Vector((0.5, -4.0, 0.6)), above, 22), (1, MIR + Vector((0.2, -3.0, 0.4)), MIR + Vector((5, 40, 26)), 20)])
@@ -1177,7 +1227,7 @@ for h in HEROES:
                  (1, Vector((0.5 * sgn, -2.9, 1.5)), Vector((0, 0, 1.35)), 44)])
 cut(S10, S11, [(0, Vector((0, -5.2, 1.3)), Vector((0, 2.0, 1.2)), 36), (1, Vector((0, -7.6, 1.9)), Vector((0, 2.2, 1.3)), 34)])
 cut(S11, S12, [(0, Vector((0, -7.6, 1.9)), Vector((0, 2.2, 2.0)), 34), (1, Vector((0, -8.4, 2.2)), Vector((0, 2.2, 2.2)), 34)])
-cut(S12, DUR + 0.5, [(0, DINNER + Vector((0.25, -3.0, 1.2)), DINNER + Vector((0, 0, 0.95)), 34), (1, DINNER + Vector((0.15, -2.4, 1.15)), DINNER + Vector((0, 0, 1.0)), 38)])
+cut(S12, DUR + 0.5, [(0, DINNER + Vector((-0.7, -2.7, 0.95)), DINNER + Vector((-0.55, 0, 0.75)), 32), (1, DINNER + Vector((-0.55, -2.2, 0.9)), DINNER + Vector((-0.35, 0, 0.75)), 36)])
 
 # ------------------------------------------------------------------ cards, title, fades
 def cam_child(o, x, y, d):
