@@ -81,8 +81,40 @@ var letterDefs = []letterDef{
 	}, "Kisses, Mirabel"},
 }
 
+// letterWorldPS is a P.S. about the world the hero just came through, in
+// each writer's voice: the letters notice where you've been.
+var letterWorldPS = map[string]map[int]string{
+	"fumbleton": {
+		WNeon:    "P.S. Did the Glimmer Grove glow at you? It glows at me. I find it judgemental.",
+		WMeadow:  "P.S. I once napped in Sunset Meadow and woke up with a family of rabbits in my beard.",
+		WCaverns: "P.S. If the Crystal Caverns sang to you, they were singing about me. Badly.",
+		WRuins:   "P.S. Those Ancient Ruins were a tea room before my bricks got to them. Excellent scones.",
+		WClouds:  "P.S. Wave at the Cloud Kingdom for me. I'm not allowed back since the umbrella incident.",
+		WMachine: "P.S. If anything in the Machine Works asks for me, I was never there.",
+		WDream:   "P.S. Did the Sunking say anything about me? He owes me eleven gold and a sandwich.",
+	},
+	"mirabel": {
+		WNeon:    "P.S. The Glimmer Grove is where he proposed a picnic. It rained glitter. I said yes anyway.",
+		WMeadow:  "P.S. Sunset Meadow is my favourite place in the world. Thank you for saving it.",
+		WCaverns: "P.S. Bring me a singing crystal from the Caverns? A small one. For the windowsill.",
+		WRuins:   "P.S. Fumbleton swears the Ruins were \"like that already\". They were not.",
+		WClouds:  "P.S. Was the Cloud Kingdom as soft as it looks? Tell me it was.",
+		WMachine: "P.S. You came out of the Machine Works with all your fingers. I'm so proud.",
+		WDream:   "P.S. The Sunking winked at me once. Very relaxed fellow. Very warm.",
+	},
+}
+
 // letterPS is the P.S.: something the player did this run.
 func letterPS(r *Run) string {
+	return letterPSFrom(r, "")
+}
+
+func letterPSFrom(r *Run, from string) string {
+	if m := letterWorldPS[from]; m != nil && r.MaxCombo < 30 {
+		if line, ok := m[r.LastWorld]; ok && (r.SeedN+int64(r.Act))%3 != 0 {
+			return line
+		}
+	}
 	switch top, share := topSource(r); {
 	case r.MaxCombo >= 30:
 		return fmt.Sprintf("P.S. A %d-hit combo! I had to sit down.", r.MaxCombo)
@@ -169,7 +201,7 @@ func (g *Game) queueLetter() {
 	if d.From == "mirabel" {
 		art = []string{"mirabel-0", "mirabel-1"}[rng.Intn(2)]
 	}
-	g.pendingLetter = &letterAnim{def: d, hero: hero, ps: letterPS(r), photo: rng.Intn(2) == 0, art: art}
+	g.pendingLetter = &letterAnim{def: d, hero: hero, ps: letterPSFrom(r, d.From), photo: rng.Intn(2) == 0, art: art}
 }
 
 // lineCount is how many lines the letter writes out (greeting, body, P.S.,
@@ -418,8 +450,26 @@ func (g *Game) drawLetter(s *ebiten.Image) {
 		return
 	}
 	k := smootherstep((t - 0.75) / 0.4)
-	pw, ph := 820.0, 640.0
-	px, py := 960-pw/2, 190+40*(1-k)
+	// the paper fits its letter: measure the writing first, so a short note
+	// doesn't sit on a big empty sheet
+	pw := 820.0
+	tw0 := pw - 128
+	if la.photo {
+		tw0 = pw - 128 - 150
+	}
+	nl := func(txt string, f fontID, size, width float64) float64 {
+		return float64(len(u.wrap(txt, f, size, width))) * size * 1.42
+	}
+	ch := 92 + nl(fmt.Sprintf(tr(la.def.Hello), la.hero), fSerif, 30, tw0) + 14
+	for _, b := range la.def.Body {
+		ch += nl(b, fReg, 24, tw0) + 10
+	}
+	ch += 8 + nl(la.ps, fReg, 21, pw-128) + 18 + nl(la.def.Sign, fSerif, 26, pw-128) + 96
+	ph := math.Max(470, math.Min(720, ch))
+	if la.photo {
+		ph = math.Max(ph, 520)
+	}
+	px, py := 960-pw/2, 520-ph/2+40*(1-k)
 	unfold := 0.25 + 0.75*k
 	sy := py + ph*(1-unfold)/2
 	sh := ph * unfold
@@ -431,8 +481,11 @@ func (g *Game) drawLetter(s *ebiten.Image) {
 	fillPath(s, boxPath(u.X(px+10), u.Y(sy+14), pw*S, sh*S, 6*S, false), ca(cBlack, 0.4*a), ca(cBlack, 0.4*a), grad{}, false)
 	fillPath(s, boxPath(u.X(px), u.Y(sy), pw*S, sh*S, 6*S, false), ca(paper, a), ca(darken(paper, 0.08), a), vgrad(u.Y(sy), u.Y(sy+sh)), false)
 	strokePath(s, boxPath(u.X(px+14), u.Y(sy+14), (pw-28)*S, (sh-28)*S, 4*S, false), 1.2*S, ca(darken(paper, 0.22), 0.6*a), false)
-	// the fold, still pressed into the paper
-	fillRectA(s, u.X(px+10), u.Y(sy+sh/2), (pw-20)*S, 2*S, darken(paper, 0.18), 0.5*a)
+	// folded in thirds to fit the envelope; the creases still show, softly
+	for _, f := range []float64{1.0 / 3, 2.0 / 3} {
+		fillRectA(s, u.X(px+10), u.Y(sy+sh*f), (pw-20)*S, 1.5*S, darken(paper, 0.14), 0.28*a)
+		fillRectA(s, u.X(px+10), u.Y(sy+sh*f+1.5), (pw-20)*S, 1*S, lighten(paper, 0.5), 0.35*a)
+	}
 	if k < 1 {
 		return
 	}
@@ -454,7 +507,14 @@ func (g *Game) drawLetter(s *ebiten.Image) {
 	if la.photo {
 		tw = pw - 128 - 150 // leave room for the photo
 	}
-	ly := py + 70
+	// letterhead: where it's from, over a thin rule
+	head := "From the tower of Archmage Fumbleton"
+	if mir {
+		head = "From Mirabel, with love"
+	}
+	u.text(s, head, fSerif, 15, lx, py+40, ca(ink, 0.55*a), alignLeft)
+	fillRectA(s, u.X(lx), u.Y(py+56), math.Min(tw, 360)*S, 1.2*S, ink, 0.25*a)
+	ly := py + 92
 	line := 0
 	vis := func() float64 {
 		if la.full {
@@ -508,11 +568,24 @@ func (g *Game) drawLetter(s *ebiten.Image) {
 	if la.full {
 		end = 0
 	}
+	signW := u.measure(tr(sign), fSerif, 26)
 	if mir {
-		g.drawKiss(s, px+pw-170, math.Min(py+ph-80, signY+20), 130, -0.21, clamp01((t-end)/0.3))
+		// pressed on beside her name, clear of her picture
+		kx := math.Min(lx+signW+90, px+pw-260)
+		g.drawKiss(s, kx, math.Min(py+ph-70, signY+26), 120, -0.21, clamp01((t-end)/0.3))
 	} else if t >= end {
+		// a purple wax seal with his star, pressed below the signature
 		k := ease(clamp01((t - end) / 0.3))
-		u.drawEmblem(s, glyphImage("star", rgba(110, 70, 170, 255)), px+pw-110, math.Min(py+ph-80, signY+16), 46*k, a)
+		sx, sy2 := math.Min(lx+signW+70, px+pw-90), math.Min(py+ph-62, signY+40)
+		r := 34 * (0.6 + 0.4*k)
+		wax := rgba(124, 58, 168, 255)
+		for i := 0; i < 10; i++ { // the wax spreads in soft lobes
+			an := float64(i) / 10 * 2 * math.Pi
+			fillPath(s, circlePath(u.X(sx+math.Cos(an)*r*0.72), u.Y(sy2+math.Sin(an)*r*0.72), r*0.42*S), ca(darken(wax, 0.1), a*k), ca(darken(wax, 0.25), a*k), grad{}, false)
+		}
+		fillPath(s, circlePath(u.X(sx), u.Y(sy2), r*0.82*S), ca(wax, a*k), ca(darken(wax, 0.35), a*k), vgrad(u.Y(sy2-r), u.Y(sy2+r)), false)
+		strokePath(s, circlePath(u.X(sx), u.Y(sy2), r*0.62*S), 1.6*S, ca(lighten(wax, 0.35), 0.7*a*k), false)
+		u.drawEmblem(s, glyphImage("star", lighten(wax, 0.55)), sx, sy2, 34*k, a)
 	}
 	if t > letterOpen+0.5 && la.out == 0 {
 		hint := "Click to skip"

@@ -93,9 +93,13 @@ func (c *backCache) begin(g *Game, L *Level, cam *Camera) {
 	}
 	c.split = far + 5
 	now := time.Now()
+	// Any real camera move redraws it: shifting the cached picture can only
+	// match one depth, so scenery nearer or farther than that slid against
+	// the live layer and snapped back at the next refresh (the "pop" when
+	// orbs knock the camera, and the swim as it sways with the paddle).
 	c.refresh = !c.valid || now.Sub(c.at) >= backRefresh || cam.Roll != 0 ||
 		c.level != L || c.world != L.Biome.ID || c.w != cam.W || c.h != cam.H || c.fov != cam.FOV || c.aa != aaScale ||
-		cam.Eye.Sub(c.eye).Len() > 0.8 || cam.fwd.Dot(c.fwd) < 0.9995
+		cam.Eye.Sub(c.eye).Len() > 0.03 || cam.fwd.Dot(c.fwd) < 0.99999
 	if c.refresh {
 		c.eye, c.fwd, c.fov, c.w, c.h, c.aa = cam.Eye, cam.fwd, cam.FOV, cam.W, cam.H, aaScale
 		c.ref = cam.Eye.Add(cam.fwd.Mul(70))

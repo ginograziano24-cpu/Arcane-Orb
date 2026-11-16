@@ -73,6 +73,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 	// small knocks stay subtle and big ones land; smooth noise rather than
 	// per-frame jitter, with a little roll that sells it without blurring play
 	cam.Roll = 0
+	lodEye = cam.Eye // detail levels follow the steady camera, not the shake
 	if g.settings.Shake && (L.kickX != 0 || L.kickZ != 0) {
 		kv := V3{L.kickX, 0, L.kickZ}
 		cam.Eye = cam.Eye.Add(kv)
@@ -86,7 +87,7 @@ func (g *Game) drawWorld(screen *ebiten.Image, L *Level) {
 		}
 		cam.Eye = cam.Eye.Add(V3{n(0) * amt * 0.55, n(7) * amt * 0.4, 0})
 		cam.Target = cam.Target.Add(V3{n(3) * amt * 0.25, n(11) * amt * 0.2, 0})
-		cam.Roll = n(19) * amt * 0.028
+		cam.Roll = n(19) * amt * 0.008 // roll is what upsets the inner ear; keep it a whisper
 	}
 	cam.FOV = 60 * math.Pi / 180
 	aspect := sw / sh

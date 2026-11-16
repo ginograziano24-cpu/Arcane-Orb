@@ -181,8 +181,8 @@ func (g *Game) drawSunking(B *Batch, L *Level, sx, sy, px, t float64) {
 	}
 	ball(0, -0.68, 0.0, 0.2, 0.1, 0.1, identity, skin, 0.1) // chin
 
-	// stoned eyes: wide, pinkish whites half buried under heavy drooping
-	// lids, irises sunk low and drifting, puffy bags beneath
+	// stoned eyes: wide and softly pink, half buried under heavy drooping
+	// lids, irises sunk low and drifting. One calm pink family, no red.
 	drift := 0.35 * math.Sin(t*0.23)
 	if len(L.Balls) > 0 {
 		drift = 0.5*drift + 0.5*math.Max(-1, math.Min(1, L.Balls[0].X/HalfW))
@@ -190,17 +190,17 @@ func (g *Game) drawSunking(B *Batch, L *Level, sx, sy, px, t float64) {
 	droop := 0.03*math.Sin(t*0.4) - 0.03*kick // the lids sag and lift; a big hit perks him up a bit
 	for _, side := range []float64{-1, 1} {
 		ex, ey := side*0.31, 0.25
-		tilt := rotXYZ(0, 0, -side*0.12)                                                  // outer corners drooping
-		ball(ex, ey, 0.0, 0.26, 0.16, 0.08, tilt, color.RGBA{196, 56, 24, 255}, 0.08)     // socket
-		ball(ex, ey, 0.025, 0.25, 0.15, 0.04, tilt, color.RGBA{246, 226, 214, 255}, 0.22) // white, kept flat under the lid
+		tilt := rotXYZ(0, 0, -side*0.12)                                                 // outer corners drooping
+		ball(ex, ey, 0.0, 0.26, 0.16, 0.08, tilt, color.RGBA{232, 150, 170, 255}, 0.12)  // socket rim, soft rose
+		ball(ex, ey, 0.025, 0.25, 0.15, 0.04, tilt, color.RGBA{255, 214, 228, 255}, 0.3) // pink white, kept flat under the lid
 		ix, iy := ex+0.08*drift, ey-0.045
-		ball(ix, iy, 0.07, 0.095, 0.095, 0.02, identity, color.RGBA{96, 46, 22, 255}, 0.1)                       // iris
-		ball(ix, iy, 0.088, 0.05, 0.05, 0.012, identity, color.RGBA{8, 4, 4, 255}, 0)                            // pupil
+		ball(ix, iy, 0.07, 0.095, 0.095, 0.02, identity, color.RGBA{226, 112, 158, 255}, 0.2)                    // iris, rose pink
+		ball(ix, iy, 0.088, 0.05, 0.05, 0.012, identity, color.RGBA{86, 30, 60, 255}, 0)                         // pupil, deep plum
 		ball(ix-0.025, iy+0.02, 0.1, 0.016, 0.016, 0.008, identity, white, 1)                                    // glint
 		ball(ex, ey+0.12-droop, 0.14, 0.27, 0.11, 0.1, tilt, skin, 0.16)                                         // upper lid, wholly in front of the eye
 		part(unitBox(), V3{ex, ey + 0.012 - droop, surf(ex, ey) - 0.16}, V3{0.24, 0.012, 0.012}, tilt, shade, 0) // lid edge
 		ball(ex, ey+0.23, 0.04, 0.25, 0.05, 0.08, rotXYZ(0, 0, -side*0.2), color.RGBA{190, 46, 20, 255}, 0.1)    // brow, relaxed
-		ball(ex, ey-0.185, 0.1, 0.22, 0.05, 0.07, tilt, color.RGBA{200, 50, 22, 255}, 0.14)                      // bag, in front of the eye's lower rim
+		ball(ex, ey-0.185, 0.1, 0.22, 0.05, 0.07, tilt, skin, 0.16)                                              // soft lower lid, same skin as the face
 	}
 
 	// full red lips in a lazy, lopsided smirk

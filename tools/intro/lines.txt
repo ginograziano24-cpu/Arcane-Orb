@@ -1,0 +1,25 @@
+# start|end|who|text  (Arcane Orb opening, Piper voices, Nov 16)
+2.60|7.89|Fumbleton|Date night with Mirabel. Seven o'clock. Candles, roses, my good hat...
+7.84|12.73|Fumbleton|...and three hundred years of laundry. Oh dear. Oh dear, oh dear.
+12.69|17.57|Merchant|Instant Tidy! One scroll, zero scrubbing! Absolutely no refunds!
+17.51|20.50|Fumbleton|Zero scrubbing? Sold! Tidy... instantly!
+20.45|23.06|Fumbleton|Ah. That is... a lot of tidying.
+23.01|27.86|Warden|Disorder detected. Order. Must. Be. Restored.
+27.81|31.48|Fumbleton|Stop! Undo! Un-tidy! Why is there MORE of it?
+31.43|35.70|Fumbleton|Right. Right. Nobody panic. Especially not me.
+35.65|40.00|Mirabel|Fumbleton. Darling. Why is the sky made of bricks?
+39.94|41.09|Fumbleton|Funny story...
+41.04|45.37|Mirabel|Never mind. I know some people who love breaking things.
+45.32|48.25|Mirabel|Go on, little lights. Find them.
+48.21|51.97|Mirabel|One orb. One wall. One very satisfying crunch.
+55.70|58.20|Guardian|Stay behind me. All of you.
+58.15|60.76|Berserker|A wall went through my nap. Big mistake.
+60.71|63.97|Arcanist|Fire, frost, storm, void. In that order.
+63.92|67.19|Engineer|Hold still. Think. Then hit it really hard.
+67.14|70.52|Gambler|Landed on my card table. That makes it mine.
+70.47|73.42|Pyromancer|Honestly? I'm here for the explosions.
+73.37|75.49|Stormcaller|Keep moving. The storm does the rest.
+75.44|77.91|Berserker|So. Who gets to break the first wall?
+77.87|79.97|Gambler|Double or nothing says it's me.
+79.92|81.13|Mirabel|Arcane Orb.
+81.08|83.10|Fumbleton|...We're still getting dinner, right?

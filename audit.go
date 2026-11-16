@@ -46,9 +46,46 @@ func auditScenes() []benchScene {
 			}})
 		}
 	}
+	// the in-game HUD portrait of every hero (top left), in the first world
+	for i := range archetypes {
+		i := i
+		out = append(out, benchScene{name: "audit-hud-" + archetypes[i].ID, level: true, setup: func(g *Game) {
+			camHook = nil
+			heroAuditZoom = 1
+			g.run = NewRun("BENCH", &archetypes[i], &g.save, false)
+			g.run.Lives = g.run.maxLives()
+			g.settings.Classic = false
+			forceWorld = 0
+			g.level = g.newLevel(NCombat, 4242)
+			forceWorld = -1
+			g.setState(StLevel)
+			g.level.introT = 0
+		}})
+	}
+	// the letters between worlds, one from each writer, fully written out
+	for _, from := range []string{"fumbleton", "mirabel"} {
+		from := from
+		out = append(out, benchScene{name: "audit-letter-" + from, setup: func(g *Game) {
+			camHook = nil
+			benchRunFor(g)
+			g.setState(StMap)
+			for i := range letterDefs {
+				d := &letterDefs[i]
+				if d.From == from && len(d.Body) >= 2 {
+					g.letter = &letterAnim{def: d, hero: "Seraphine", ps: letterPS(g.run), photo: from == "fumbleton", art: map[string]string{"fumbleton": "fumble-1", "mirabel": "mirabel-0"}[from]}
+					g.letter.t = g.letter.doneAt() + 1
+					g.letter.full = true
+					g.letter.lines = g.letter.lineCount()
+					g.letter.kissd = true
+					break
+				}
+			}
+		}})
+	}
 	for w := 0; w < NumWorlds; w++ {
 		w := w
 		place := func(g *Game) {
+			g.letter, g.pendingLetter = nil, nil // the letter shots come first
 			benchRunFor(g)
 			g.settings.Classic = false
 			forceWorld = w

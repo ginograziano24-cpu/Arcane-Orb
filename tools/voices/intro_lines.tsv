@@ -1,0 +1,25 @@
+# id|start_s|who|model|speaker|length_scale|noise|semitones|text
+f01|2.6|Fumbleton|en_GB-alan-medium|0|1.0|0.75|3|Date night with Mirabel. Seven o'clock. Candles, roses, my good hat...
+f02|7.4|Fumbleton|en_GB-alan-medium|0|0.95|0.8|3|...and three hundred years of laundry. Oh dear. Oh dear, oh dear.
+m01|11.2|Merchant|en_GB-northern_english_male-medium|0|0.9|0.7|0|Instant Tidy! One scroll, zero scrubbing! Absolutely no refunds!
+f03|13.4|Fumbleton|en_GB-alan-medium|0|0.9|0.8|3|Zero scrubbing? Sold! Tidy... instantly!
+f04|15.6|Fumbleton|en_GB-alan-medium|0|1.05|0.85|4|Ah. That is... a lot of tidying.
+g01|18.0|Warden|en_US-libritts_r-medium|135|1.15|0.5|-5|Disorder detected. Order. Must. Be. Restored.
+f05|21.6|Fumbleton|en_GB-alan-medium|0|0.85|0.85|4|Stop! Undo! Un-tidy! Why is there MORE of it?
+f06|27.2|Fumbleton|en_GB-alan-medium|0|1.0|0.8|3|Right. Right. Nobody panic. Especially not me.
+r01|33.2|Mirabel|en_GB-cori-high|0|1.0|0.7|0|Fumbleton. Darling. Why is the sky made of bricks?
+f07|36.4|Fumbleton|en_GB-alan-medium|0|0.9|0.8|3|Funny story...
+r02|38.2|Mirabel|en_GB-cori-high|0|1.0|0.7|0|Never mind. I know some people who love breaking things.
+r03|43.6|Mirabel|en_GB-cori-high|0|0.95|0.75|0|Go on, little lights. Find them.
+r04|48.2|Mirabel|en_GB-cori-high|0|1.0|0.7|0|One orb. One wall. One very satisfying crunch.
+h01|55.7|Guardian|en_US-libritts_r-medium|285|1.0|0.7|0|Stay behind me. All of you.
+h02|57.7|Berserker|en_US-libritts_r-medium|90|0.95|0.75|-1|A wall went through my nap. Big mistake.
+h03|59.7|Arcanist|en_US-libritts_r-medium|195|1.05|0.7|0|Fire, frost, storm, void. In that order.
+h04|61.7|Engineer|en_US-libritts_r-medium|570|0.95|0.7|0|Hold still. Think. Then hit it really hard.
+h05|63.7|Gambler|en_US-libritts_r-medium|390|1.0|0.7|0|Landed on my card table. That makes it mine.
+h06|65.7|Pyromancer|en_US-libritts_r-medium|315|0.95|0.8|0|Honestly? I'm here for the explosions.
+h07|67.7|Stormcaller|en_US-libritts_r-medium|615|1.05|0.6|0|Keep moving. The storm does the rest.
+h08|70.2|Berserker|en_US-libritts_r-medium|90|0.95|0.75|-1|So. Who gets to break the first wall?
+h09|72.6|Gambler|en_US-libritts_r-medium|390|0.95|0.75|0|Double or nothing says it's me.
+r05|77.0|Mirabel|en_GB-cori-high|0|1.05|0.65|0|Arcane Orb.
+f08|79.2|Fumbleton|en_GB-alan-medium|0|0.9|0.8|3|...We're still getting dinner, right?

@@ -64,12 +64,22 @@ func floraPx(B *Batch, p V3, size float64) float64 {
 	if B == nil || B.cam == nil {
 		return 1e9
 	}
-	d := p.Sub(B.cam.Eye).Dot(B.cam.fwd)
+	eye := B.cam.Eye
+	if lodEye != (V3{}) && lodEye.Sub(eye).Len() < 3 {
+		eye = lodEye
+	}
+	d := p.Sub(eye).Dot(B.cam.fwd)
 	if d < 0.5 {
 		return 1e9
 	}
 	return size * B.cam.f / d * floraDetail
 }
+
+// lodEye is the camera's position before shake and knock-back are added
+// (set each frame by drawWorld). Detail choices measure from it, so a hit
+// that jolts the camera can't flip plants near a threshold between their
+// full, card and impostor forms (a visible pop).
+var lodEye V3
 
 // floraDetail scales how large plants count as on screen when choosing
 // their detail: High 1, Medium 0.6, Low 0.35 (set each frame by drawWorld),
