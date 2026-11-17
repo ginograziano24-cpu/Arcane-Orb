@@ -1146,20 +1146,25 @@ try:
     crz2 = crotchbox(P2)
     zone2 = A2["zone"].copy() * (~crz2)
     RS = 0.03 * ST
-    for pass_ in range(2):
+    # waist down to the boots: her real hips, butt and thighs (as in her game
+    # model) reach further from the fitted form, so the snap reaches further
+    z_waist = TJ["spine"][0][2]
+    z_kn = 0.5 * (TJ["legL.L"][0][2] + TJ["legL.R"][0][2])
+    for pass_ in range(3):
         vn2 = vnorm2(P2)
         d2 = np.zeros(len(P2)); pin2 = np.zeros(len(P2), bool)
         for i_ in np.where(zone2 > 0.5)[0]:
-            n_ = Vector(vn2[i_]); o_ = Vector(P2[i_] - vn2[i_] * RS)
+            rs_ = 0.07 * ST if z_kn - 0.03 * ST < P2[i_, 2] < z_waist else RS
+            n_ = Vector(vn2[i_]); o_ = Vector(P2[i_] - vn2[i_] * rs_)
             gone = 0.0; best = None
             tree_ = body_tree2 if crz2[i_] else skin_tree2
-            for _ in range(4):
-                hit = tree_.ray_cast(o_, n_, 2 * RS - gone)
+            for _ in range(6):
+                hit = tree_.ray_cast(o_, n_, 2 * rs_ - gone)
                 if hit[0] is None:
                     break
                 t_ = gone + hit[3]
-                if hit[1].dot(n_) > 0.7:
-                    dd = t_ - RS
+                if hit[1].dot(n_) > 0.6:
+                    dd = t_ - rs_
                     if best is None or abs(dd) < abs(best):
                         best = dd
                 gone = t_ + 1e-5 * HH; o_ = hit[0] + n_ * (1e-5 * HH)
@@ -1195,8 +1200,49 @@ try:
         for lam in (0.5, -0.52):
             P2 = P2 + lam * ank[:, None] * (navg2(P2) - P2)
     say("her skin: %d points kept on her surface after the agreement check" % int(pin2.sum()))
+    # her real crotch height and thigh gap, measured on her own body layer:
+    # straight through her centre line, front to back, the lowest height her
+    # body is met is where her thighs part; below it, her inner thighs are as
+    # far apart as rays sideways from the centre say
+    Bv_ = np.asarray(BW)
+    selm = (np.abs(Bv_[:, 0] - cxh) < 0.15 * ST) & (Bv_[:, 2] > z0 + 0.35 * ST) & (Bv_[:, 2] < z0 + 0.6 * ST)
+    ymid = float(np.median(Bv_[selm, 1])) if selm.any() else head_y
+    apex = None
+    for zz in np.arange(z0 + 0.38 * ST, z0 + 0.66 * ST, 0.004 * ST):
+        if body_tree2.ray_cast(Vector((cxh, ymid - 0.4 * ST, zz)), Vector((0, 1, 0)), 0.8 * ST)[0] is not None:
+            apex = float(zz); break
+    gz, gl, gr = [], [], []
+    if apex is not None:
+        for zz in np.arange(apex - 0.2 * ST, apex, 0.004 * ST):
+            o_ = Vector((cxh, ymid, zz))
+            hl = body_tree2.ray_cast(o_, Vector((-1, 0, 0)), 0.2 * ST); hr = body_tree2.ray_cast(o_, Vector((1, 0, 0)), 0.2 * ST)
+            if hl[0] is not None and hr[0] is not None:
+                gz.append(zz); gl.append(hl[3]); gr.append(hr[3])
+    # the thighs part higher than her model's (which touch): up to 0.555 of
+    # stature, a narrow round-topped gap that meets her own gap lower down
+    apex_t = z0 + 0.555 * ST
+    if apex is not None and len(gz) > 5:
+        gz = np.array(gz); gl = np.array(gl); gr = np.array(gr)
+        for _ in range(3):
+            gl[1:-1] = 0.25 * gl[:-2] + 0.5 * gl[1:-1] + 0.25 * gl[2:]; gr[1:-1] = 0.25 * gr[:-2] + 0.5 * gr[1:-1] + 0.25 * gr[2:]
+        say("her crotch at %.3f of stature (the base's was %.3f); thigh gap %.3f-%.3f" % ((apex - z0) / ST, (zh - 0.05 * ST - z0) / ST, float(np.min(gl + gr)) / ST, float(np.max(gl + gr)) / ST))
+        # trim: no base point may sit inside her thigh gap
+        dxg = P2[:, 0] - cxh
+        def gap_lim(Q, dxq):
+            gL_ = np.where(Q[:, 2] <= gz[-1], np.interp(Q[:, 2], gz, gl), 0.0)
+            gR_ = np.where(Q[:, 2] <= gz[-1], np.interp(Q[:, 2], gz, gr), 0.0)
+            meas = np.where(dxq >= 0, gR_, gL_) * 0.97
+            slot = 0.024 * ST * np.clip((apex_t - Q[:, 2]) / (0.03 * ST), 0, 1) ** 0.5
+            return np.where(Q[:, 2] < apex_t, np.maximum(meas, slot), 0.0)
+        below = (P2[:, 2] < apex_t) & (P2[:, 2] > gz[0]) & (P2[:, 1] < ymid + 0.03 * ST)
+        lim = gap_lim(P2, dxg)
+        inside_ = below & (np.abs(dxg) < lim)
+        sgn_ = np.where(dxg >= 0, 1.0, -1.0)
+        P2[inside_, 0] = cxh + sgn_[inside_] * lim[inside_]
+        say("thigh gap: %d base points trimmed back to her inner thighs" % int(inside_.sum()))
     # the crotch: a smooth, rounded, featureless join of the thighs
-    crw = np.clip(1 - np.abs(P2[:, 0] - cxh) / (0.9 * hwh), 0, 1) * np.clip(1 - np.abs(P2[:, 2] - (zh - 0.05 * ST)) / (0.09 * ST), 0, 1)
+    zcr_ = apex_t
+    crw = np.clip(1 - np.abs(P2[:, 0] - cxh) / (0.6 * hwh), 0, 1) * np.clip(1 - np.abs(P2[:, 2] - zcr_) / (0.05 * ST), 0, 1)
     crw = np.clip(crw * 2.5, 0, 1)
     for _ in range(20):
         for lam in (0.5, -0.52):
@@ -1206,6 +1252,7 @@ try:
     zs0, zc0 = TJ["spine"][0][2], TJ["chest"][0][2]
     znav = zs0 + 0.6 * (zc0 - zs0)
     say("belly: navel at %.3f of stature" % ((znav - z0) / ST))
+    knee_z0 = 0.5 * (TJ["legL.L"][0][2] + TJ["legL.R"][0][2])
     # ---- her real skin, verbatim. The snap above follows her surface only as
     # finely as the base's own grid, so small folds and exact contours were
     # still smoothed away. Her own skin faces now go into the base as they
@@ -1237,21 +1284,69 @@ try:
     BWa = np.asarray(BW)
     keepF = []
     BC_ = np.array([BWa[list(f)].mean(0) for f in Bpol])
-    crzF = (np.abs(BC_[:, 0] - cxh) < 1.25 * hwh) & (np.abs(BC_[:, 2] - (zh - 0.05 * ST)) < 0.11 * ST)
-    for f, sk, cz_ in zip(Bpol, skin_wide, crzF):
+    zcr_ = apex_t
+    crzF = (np.abs(BC_[:, 0] - cxh) < 0.45 * hwh) & (BC_[:, 2] > zcr_ - 0.03 * ST) & (BC_[:, 2] < zcr_ + 0.04 * ST)
+    nbv = len(P2)
+    base_tree = BVHTree.FromPolygons([tuple(p) for p in P2], [tuple(f) for f in BP2])
+    for f, sk, cz_ in zip(Bpol, skinf, crzF):
         c_ = BWa[list(f)].mean(0)
         if cz_:
             continue                                            # the crotch stays the smooth join
         if not sk:
             continue
-        zc_ = (c_[2] - z0) / ST
-        if zc_ < 0.15 or zc_ > 0.84:
+        if c_[2] < knee_z0 - 0.05 * ST or c_[2] > z_chin - 0.05 * Hhead:
             continue
-        if kd.find(Vector(c_))[2] < 0.012 * ST and (len(uidx) == 0 or kdu.find(Vector(c_))[2] > 0.025 * ST):
+        # all of her real skin that lies on her body (not flaps standing off it)
+        lim_ = 0.05 * ST if c_[2] < z_waist else 0.015 * ST
+        nb_ = base_tree.find_nearest(Vector(c_), 0.06 * ST)
+        if nb_[0] is not None and nb_[3] < lim_:
             keepF.append(f)
+    # none of her skin inside the thigh gap
+    if apex is not None and len(gz) > 5 and keepF:
+        KC_ = np.array([BWa[list(f)].mean(0) for f in keepF])
+        gl_k = gap_lim(KC_, KC_[:, 0] - cxh)
+        ing_ = (np.abs(KC_[:, 0] - cxh) < gl_k) & (KC_[:, 1] < ymid + 0.03 * ST)
+        keepF = [f for f, bad in zip(keepF, ing_) if not bad]
+    # drop slivers: pieces of under 40 faces
+    par_ = {}
+    def fnd(a_):
+        while par_.get(a_, a_) != a_:
+            par_[a_] = par_.get(par_[a_], par_[a_]); a_ = par_[a_]
+        return a_
+    for f in keepF:
+        r0_ = fnd(f[0])
+        for v in f[1:]:
+            r1_ = fnd(v)
+            if r1_ != r0_:
+                par_[r1_] = r0_
+    from collections import Counter
+    csz = Counter(fnd(f[0]) for f in keepF)
+    keepF = [f for f in keepF if csz[fnd(f[0])] >= 40]
     used = sorted({v for f in keepF for v in f})
     remap = {v: k_ + len(P2) for k_, v in enumerate(used)}
-    P2 = np.vstack([P2, BWa[used]])
+    PV_ = BWa[used].copy()
+    # tuck the edges of her skin patches down onto the filled form, so the
+    # join is smooth (no lip, no hard line where the clothes were cut out)
+    from collections import Counter as _C
+    ec_ = _C()
+    for f in keepF:
+        for q in range(len(f)):
+            a_, b_ = f[q], f[(q + 1) % len(f)]
+            ec_[(a_, b_) if a_ < b_ else (b_, a_)] += 1
+    bnd_ = {v for e, c in ec_.items() if c == 1 for v in e}
+    nbr_ = {}
+    for f in keepF:
+        for q in range(len(f)):
+            nbr_.setdefault(f[q], set()).update(f)
+    ring1 = {u for v in bnd_ for u in nbr_.get(v, ()) if u not in bnd_}
+    idx_ = {v: k_ for k_, v in enumerate(used)}
+    for set_, w_ in ((bnd_, 1.0), (ring1, 0.5)):
+        for v in set_:
+            hit = base_tree.find_nearest(Vector(BWa[v]), 0.03 * ST)
+            if hit[0] is not None:
+                PV_[idx_[v]] = (1 - w_) * PV_[idx_[v]] + w_ * np.array(hit[0])
+    say("her skin: %d patch edge points tucked onto the filled form" % len(bnd_))
+    P2 = np.vstack([P2, PV_])
     # her own head (face, eyes, hair) goes in as its own textured piece, so
     # the base's plain head comes out above the chin
     z_cut = z_chin - 0.05 * Hhead
@@ -1289,6 +1384,16 @@ try:
     lineA = 0.002 * ST * np.exp(-(dx_ / (0.007 * ST)) ** 2) * np.clip((dz_ + 0.03 * ST) / (0.02 * ST), 0, 1) * np.clip((0.11 * ST - dz_) / (0.03 * ST), 0, 1)
     sideL = 0.0014 * ST * np.exp(-((np.abs(dx_) - 0.05 * ST) / (0.008 * ST)) ** 2) * np.clip((dz_ + 0.04 * ST) / (0.02 * ST), 0, 1) * np.clip((0.08 * ST - dz_) / (0.03 * ST), 0, 1)
     P2[:, 1] += (dent + lineA + sideL) * front_
+    # hip dips: a soft inward curve on each side where the hip meets the thigh
+    zdip = (apex if apex is not None else zh - 0.05 * ST) + 0.07 * ST
+    band_ = np.abs(P2[:, 2] - zdip) < 0.02 * ST
+    for sg_ in (1.0, -1.0):
+        lat_ = sg_ * (P2[:, 0] - cxh)
+        W_ = float(np.percentile(lat_[band_ & (lat_ > 0)], 98)) if (band_ & (lat_ > 0)).any() else 0.2 * ST
+        wl_ = np.clip((lat_ - 0.6 * W_) / (0.3 * W_), 0, 1)
+        dd_ = 0.009 * ST * np.exp(-((P2[:, 2] - zdip) / (0.035 * ST)) ** 2) * wl_
+        P2[:, 0] -= sg_ * dd_
+    say("hip dips at %.3f of stature" % ((zdip - z0) / ST))
     say("belly: navel pressed on %d points (front centre y %.3f), tone lines on %d" % (int((dent * front_ > 0.003 * ST).sum()), cyb, int(((lineA + sideL) * front_ > 0.0008 * ST).sum())))
     P, BP = P2, BP2
     tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
@@ -1399,8 +1504,11 @@ try:
                 mx_ = rc_.max(1); mn_ = rc_.min(1); sat_ = np.where(mx_ > 1e-4, (mx_ - mn_) / np.maximum(mx_, 1e-4), 0)
                 RVa_ = np.asarray(RV)
                 rc3_ = np.array([RVa_[list(f)].mean(0) for f in RP])
-                hair_ = (mx_ < 0.22) & (sat_ < 0.45) & (rc3_[:, 2] > z0 + 0.5 * HH) & near_head(rc3_, True)
+                hair_ = (((mx_ < 0.22) & (sat_ < 0.45)) | ((mx_ < 0.62) & (sat_ < 0.3))) & (rc3_[:, 2] > z0 + 0.5 * HH) & near_head(rc3_, True)
                 extras.append(extract(ro, hair_, "Arcanist_BaseHair"))
+        # her hat, as in her model
+        if lay.get("Hat") is not None:
+            extras.append(extract(lay["Hat"], np.ones(len(lay["Hat"].data.polygons), bool), "Arcanist_BaseHat"))
         # her boots, as in her model: what lies along her lower legs and feet
         def seg_dist(Cs, a_, b_):
             ab = b_ - a_; t_ = np.clip(((Cs - a_) @ ab) / max(ab @ ab, 1e-12), 0, 1)
@@ -1424,7 +1532,10 @@ try:
         say("head and hair skipped", e)
     clay = bpy.data.materials.new("Arcanist_Clay"); clay.use_nodes = True
     bs = next(n for n in clay.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
-    bs.inputs["Base Color"].default_value = (0.62, 0.6, 0.58, 1); bs.inputs["Roughness"].default_value = 0.55
+    bs.inputs["Base Color"].default_value = (0.62, 0.6, 0.58, 1); bs.inputs["Roughness"].default_value = 0.28
+    for nm_, v_ in (("Specular IOR Level", 0.65), ("Coat Weight", 0.25), ("Coat Roughness", 0.15)):
+        if nm_ in bs.inputs:
+            bs.inputs[nm_].default_value = v_
     if tmp.color_attributes.get("SkinCol"):
         an_ = clay.node_tree.nodes.new("ShaderNodeVertexColor"); an_.layer_name = "SkinCol"
         clay.node_tree.links.new(an_.outputs["Color"], bs.inputs["Base Color"])
@@ -1455,6 +1566,14 @@ try:
             so.rotation_euler = (math.radians(55), 0, a + math.radians(60))
             sc.render.filepath = os.path.join(L2, "base_%s_%d.png" % (tag, k))
             bpy.ops.render.render(write_still=True)
+        if tag in ("base", "all"):
+            # from under her, between the knees, looking straight up (as in the game model view)
+            cd.type = "PERSP"; cd.angle = math.radians(80)
+            cam.location = Vector((ctr.x, ctr.y + 0.02 * HH, z0 + 0.12 * HH))
+            cam.rotation_euler = (math.pi, 0.0, 0.0)          # looking straight up
+            sc.render.filepath = os.path.join(L2, "base_%s_under.png" % tag)
+            bpy.ops.render.render(write_still=True)
+            cd.type = "ORTHO"
     try:
         jc = bpy.data.collections.new("Joints"); sc.collection.children.link(jc)
         red = bpy.data.materials.new("jred"); red.use_nodes = True
