@@ -127,13 +127,15 @@ if os.path.exists(os.path.join(GLB, NEWER_ARCANE)):
 def main():
     files = sorted(f for f in os.listdir(GLB) if f.startswith("hero_") and f.endswith(".glb"))
     # a newer model the user picked wins (same rule as export_hq.py)
-    if os.path.exists(os.path.join(GLB, NEWER_ARCANE)):
-        files = [NEWER_ARCANE if f == "hero_arcane.glb" else f for f in files]
+    for cand in ("arcane_eyes.glb", NEWER_ARCANE):
+        if os.path.exists(os.path.join(GLB, cand)):
+            files = [cand if f == "hero_arcane.glb" else f for f in files]
+            break
     args = [a for a in sys.argv[sys.argv.index("--") + 1:]] if "--" in sys.argv else []
     busts_only = "busts" in args
     only = [a for a in args if a != "busts"]
     for fn in files:
-        hid = "arcane" if fn == NEWER_ARCANE else fn[:-4].replace("hero_", "")
+        hid = "arcane" if fn in (NEWER_ARCANE, "arcane_eyes.glb") else fn[:-4].replace("hero_", "")
         if only and hid not in only:
             continue
         for pose in (["rest", "look", "fierce", "hurt"] if busts_only else ["full", "rest", "look", "fierce", "hurt"]):

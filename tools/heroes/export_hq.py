@@ -30,7 +30,7 @@ TEX = 4096
 HEAD_Z = 0.80         # islands above this fraction of the height count as head
 HEAD_K = 2.6          # how much bigger the head's UV islands get before packing
 FRAMES, FPS = 72, 24.0
-NEWER = {"arcane": ["fantasy witch 3d model.glb", "arcane_new.glb"]}
+NEWER = {"arcane": ["arcane_eyes.glb", "fantasy witch 3d model.glb", "arcane_new.glb"]}
 log = open(os.path.join(HERE, "hq-log.txt"), "a")
 
 
