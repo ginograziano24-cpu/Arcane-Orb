@@ -12,7 +12,7 @@
 # Result: heroes/arcane_layers2/arcanist_layers.blend gets a new "Base Form"
 # (smooth clay mannequin, no anatomical detail) next to Body / Robe / Armor / Hat,
 # plus check renders base_*.png.
-import bpy, os, math, shutil, time
+import bpy, bmesh, os, math, shutil, time
 import numpy as np
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
@@ -380,7 +380,9 @@ try:
     # her two sides read differently through the sleeves (a puffed sleeve
     # widens one side): both shoulders take the narrower, so the base is
     # symmetric and doesn't inherit the sleeve
-    hwm = min(hw[1], hw[-1])
+    # (the narrower side read 0.072 of stature, far under a real shoulder
+    # line of about 0.10: take the wider, kept within a natural range)
+    hwm = float(np.clip(max(hw[1], hw[-1]), 0.095 * ST, 0.11 * ST))
     for sd, sgn in ((".L", +1), (".R", -1)):
         TJ["armU" + sd] = [np.array([cxt + sgn * 0.8 * hwm, Nk[1], zs]), None]
     say("shoulder half widths", round(hw[1] / ST, 3), round(hw[-1] / ST, 3))
@@ -1103,7 +1105,7 @@ try:
         return P2, faces, A2
     zfv = (P[:, 2] - z0) / ST
     bodyzone = np.clip(np.minimum((zfv - 0.15) / 0.04, (0.84 - zfv) / 0.03), 0, 1) * (1 - keepw) * np.clip(1 - 2 * armw, 0, 1)
-    P2, BP2, A2 = subdivide(P, BP, {"zone": bodyzone})
+    P2, BP2, A2 = subdivide(P, BP, {"zone": bodyzone, "head": Wt[:, SI["head"]]})
     E2 = set()
     for f in BP2:
         for q in range(4):
@@ -1128,6 +1130,13 @@ try:
             vn = -vn
         return vn
     skin_tree2 = BVHTree.FromPolygons([tuple(p) for p in BW], [p for p, sk in zip(Bpol, skin_wide) if sk])
+    # between her thighs her own model already has her skin: there the base
+    # snaps to every face of her body layer (whatever its colour) and keeps
+    # her geometry, instead of inventing a join of its own
+    body_tree2 = BVHTree.FromPolygons([tuple(p) for p in BW], Bpol)
+    def crotchbox(Q):
+        return (np.abs(Q[:, 0] - cxh) < 0.9 * hwh) & (np.abs(Q[:, 2] - (zh - 0.05 * ST)) < 0.08 * ST)
+    crz2 = crotchbox(P2)
     zone2 = A2["zone"]
     RS = 0.03 * ST
     for pass_ in range(2):
@@ -1136,8 +1145,9 @@ try:
         for i_ in np.where(zone2 > 0.5)[0]:
             n_ = Vector(vn2[i_]); o_ = Vector(P2[i_] - vn2[i_] * RS)
             gone = 0.0; best = None
+            tree_ = body_tree2 if crz2[i_] else skin_tree2
             for _ in range(4):
-                hit = skin_tree2.ray_cast(o_, n_, 2 * RS - gone)
+                hit = tree_.ray_cast(o_, n_, 2 * RS - gone)
                 if hit[0] is None:
                     break
                 t_ = gone + hit[3]
@@ -1208,10 +1218,14 @@ try:
     kdu.balance()
     BWa = np.asarray(BW)
     keepF = []
-    for f, sk in zip(Bpol, skin_wide):
+    crzF = crotchbox(np.array([BWa[list(f)].mean(0) for f in Bpol]))
+    for f, sk, cz_ in zip(Bpol, skin_wide, crzF):
+        c_ = BWa[list(f)].mean(0)
+        if cz_ and kd.find(Vector(c_))[2] < 0.012 * ST:
+            keepF.append(f)                                     # her own crotch, verbatim
+            continue
         if not sk:
             continue
-        c_ = BWa[list(f)].mean(0)
         zc_ = (c_[2] - z0) / ST
         if zc_ < 0.15 or zc_ > 0.84:
             continue
@@ -1220,12 +1234,46 @@ try:
     used = sorted({v for f in keepF for v in f})
     remap = {v: k_ + len(P2) for k_, v in enumerate(used)}
     P2 = np.vstack([P2, BWa[used]])
+    # her own head (face, eyes, hair) goes in as its own textured piece, so
+    # the base's plain head comes out above the chin
+    z_cut = z_chin - 0.05 * Hhead
+    BP2 = [f for f in BP2 if not (all(A2["head"][v] > 0.6 for v in f) and min(P2[v, 2] for v in f) > z_cut)]
     BP2 = list(BP2) + [tuple(remap[v] for v in f) for f in keepF]
     say("her skin, verbatim: %d of her own faces carried into the base" % len(keepF))
     P, BP = P2, BP2
     tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
     for p_ in tmp.polygons:
         p_.use_smooth = True
+    # ---- her colour: each point takes the colour of her skin right there
+    # (sampled from her texture); where clothes covered her, her average tone
+    try:
+        bc_ = obj_face_colours(bodyo)
+        # only her true skin (the strict rule): the wide rule also takes in the
+        # gold-brown corset and the boots, which mottled the base
+        sk_ids = [i for i, sk in enumerate(skinf) if sk]
+        col_tree = BVHTree.FromPolygons([tuple(p) for p in BW], [Bpol[i] for i in sk_ids])
+        # her lit skin tone: her texture has light and shade painted in, so the
+        # tone comes from her well-lit skin, and the whole base wears it evenly
+        # (sampled patches carried that painted shading and looked mottled)
+        if bc_ is not None:
+            sc_ = bc_[np.where(skinf)[0]]
+            lum_ = sc_ @ np.array([0.299, 0.587, 0.114])
+            base_tone = np.median(sc_[lum_ >= np.percentile(lum_, 70)], axis=0)
+        else:
+            base_tone = np.array([0.85, 0.66, 0.55])
+        cols = np.tile(base_tone, (len(P), 1))
+        if False:
+            for i_ in range(len(P)):
+                hit = col_tree.find_nearest(Vector(P[i_]), 0.015 * ST)
+                if hit[0] is not None:
+                    w_ = float(np.clip(1 - hit[3] / (0.012 * ST), 0, 1))
+                    cols[i_] = w_ * bc_[sk_ids[hit[2]]] + (1 - w_) * base_tone
+        ca = tmp.color_attributes.new("SkinCol", "BYTE_COLOR", "POINT")
+        for i_, c_ in enumerate(cols):
+            ca.data[i_].color_srgb = (float(c_[0]), float(c_[1]), float(c_[2]), 1.0)
+        say("colour: her skin tone %s, sampled onto the base" % np.round(base_tone, 3))
+    except Exception as e:
+        say("colour failed", e)
     # ---- measurements: the same cross-sections the fit used
     say("measurements (girth, % of her stature), her (smoothed target) vs base form:")
     for s in FIT:
@@ -1243,9 +1291,44 @@ try:
     if col is None:
         col = bpy.data.collections.new("Base Form"); sc.collection.children.link(col)
     col.objects.link(bf)
+    # ---- her face, eyes and hair, exactly as in her model (with her texture)
+    def extract(o, keep, name):
+        old_ = bpy.data.objects.get(name)
+        if old_:
+            bpy.data.objects.remove(old_, do_unlink=True)
+        me_ = o.data.copy(); ob_ = bpy.data.objects.new(name, me_); ob_.matrix_world = o.matrix_world.copy()
+        bm_ = bmesh.new(); bm_.from_mesh(me_); bm_.faces.ensure_lookup_table()
+        bmesh.ops.delete(bm_, geom=[f for f in bm_.faces if not keep[f.index]], context="FACES")
+        bm_.to_mesh(me_); bm_.free(); col.objects.link(ob_)
+        return ob_
+    extras = []
+    try:
+        BWa_ = np.asarray(BW)
+        # around her head only (her layers also hold the hat brim's rim and
+        # the staff's orb ring at that height)
+        def near_head(Cs, wide):
+            rr = np.hypot(Cs[:, 0] - fx, Cs[:, 1] - head_y) / Hhead
+            above = Cs[:, 2] > z_eye
+            return np.where(above, rr < 0.75, rr < (2.3 if wide else 0.75)) & (Cs[:, 2] < z_chin + 1.15 * Hhead)
+        hc_ = np.array([BWa_[list(f)].mean(0) for f in Bpol])
+        extras.append(extract(bodyo, (hc_[:, 2] > z_cut) & near_head(hc_, False), "Arcanist_BaseHead"))
+        if ro is not None:
+            rc_ = obj_face_colours(ro)
+            if rc_ is not None:
+                mx_ = rc_.max(1); mn_ = rc_.min(1); sat_ = np.where(mx_ > 1e-4, (mx_ - mn_) / np.maximum(mx_, 1e-4), 0)
+                RVa_ = np.asarray(RV)
+                rc3_ = np.array([RVa_[list(f)].mean(0) for f in RP])
+                hair_ = (mx_ < 0.22) & (sat_ < 0.45) & (rc3_[:, 2] > z0 + 0.5 * HH) & near_head(rc3_, True)
+                extras.append(extract(ro, hair_, "Arcanist_BaseHair"))
+        say("her head and hair added: %s" % ", ".join("%s %d faces" % (e.name, len(e.data.polygons)) for e in extras))
+    except Exception as e:
+        say("head and hair skipped", e)
     clay = bpy.data.materials.new("Arcanist_Clay"); clay.use_nodes = True
     bs = next(n for n in clay.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
-    bs.inputs["Base Color"].default_value = (0.62, 0.6, 0.58, 1); bs.inputs["Roughness"].default_value = 0.7
+    bs.inputs["Base Color"].default_value = (0.62, 0.6, 0.58, 1); bs.inputs["Roughness"].default_value = 0.55
+    if tmp.color_attributes.get("SkinCol"):
+        an_ = clay.node_tree.nodes.new("ShaderNodeVertexColor"); an_.layer_name = "SkinCol"
+        clay.node_tree.links.new(an_.outputs["Color"], bs.inputs["Base Color"])
     tmp.materials.clear(); tmp.materials.append(clay)
     # ------------------------------------------------------------ G. check renders
     for eng in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"):
@@ -1312,7 +1395,7 @@ try:
             if c.name in lcs:
                 lcs[c.name].hide_viewport = c.name != "Base Form"
         for o in bpy.context.view_layer.objects:
-            o.select_set(o == bf)
+            o.select_set(o == bf or o in extras)
         bpy.context.view_layer.objects.active = bf
         say("viewport: only the Base Form is shown")
     except Exception as e:
