@@ -231,6 +231,8 @@ type Level struct {
 	timeWarp, midasT      float64 // scroll effects
 	omen                  *omen
 	peakCombo             int
+	brokenHere            int // bricks broken this chamber (the cleared card's tally)
+	comboPaid             int // highest combo milestone paid out this chamber (comboStakes)
 	titanT, magnetT       float64
 	cls                   classState
 	lastPadX              float64
@@ -1494,6 +1496,7 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 		}
 	}
 	L.peakCombo = max(L.peakCombo, L.Combo)
+	L.comboStakes(bx, bz)
 	if L.Combo%10 == 0 {
 		L.text(V3{bx, 2.2, bz}, fmt.Sprintf("COMBO ×%d", L.Combo), color.RGBA{255, 230, 120, 255}, true)
 		L.g.snd.ComboMilestone(L.Combo)
@@ -1595,6 +1598,7 @@ func (L *Level) destroy(b *Brick, h Hit) {
 		L.Crystals--
 	}
 	r.Bricks++
+	L.brokenHere++
 	x, z := b.X(), b.Z()
 	pts := int(10 * b.MaxHP)
 	if L.Frenzy > 0 {
@@ -2067,6 +2071,7 @@ func (L *Level) loseBall() {
 	L.tempSize = 0
 	L.Drops = nil
 	L.Bolts = nil
+	L.comboBroken()
 	L.Combo = 0
 	L.passiveOnLoss()
 	L.spawnServe()

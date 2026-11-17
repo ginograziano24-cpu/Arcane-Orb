@@ -2,6 +2,7 @@ package main
 
 import (
 	"image/color"
+	"math/rand"
 	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -141,4 +142,53 @@ func (L *Level) srcNumber(b *Brick, h Hit) {
 	}
 	rng := L.fxr()
 	L.Floats = append(L.Floats, &FloatText{P: V3{b.X() + (rng.Float64()-0.5)*0.8, 1.8, b.Z()}, S: s, Col: c, Life: 0.9, Scale: size})
+}
+
+// seedBuildAround makes the run's first upgrade reward hold at least one
+// card that starts a fusion (its partner can still be offered), so a plan
+// can take shape from the second chamber; the pick's "pairs well with"
+// toast then names the partner. Roguelites feel best when the player has a
+// direction early. If the offer already has one, it is left alone.
+func (r *Run) seedBuildAround(offers []*Mod, minR int, rng *rand.Rand) []*Mod {
+	starts := func(m *Mod) bool {
+		for _, f := range fusions {
+			var partner string
+			switch m.ID {
+			case f.A:
+				partner = f.B
+			case f.B:
+				partner = f.A
+			default:
+				continue
+			}
+			if p := modByID[partner]; p != nil && !p.Retired && r.canTake(p) && r.offerAllowed(p) && (p.Origin == "" || r.Arch != nil && p.Origin == r.Arch.ID) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, m := range offers {
+		if starts(m) {
+			return offers
+		}
+	}
+	if len(offers) == 0 {
+		return offers
+	}
+	// draw a bigger offer and take its first fusion starter
+	for _, m := range r.Offer(12, false, minR, rng) {
+		if !starts(m) {
+			continue
+		}
+		dup := false
+		for _, o := range offers {
+			dup = dup || o.ID == m.ID
+		}
+		if !dup {
+			out := append([]*Mod(nil), offers...)
+			out[len(out)-1] = m
+			return out
+		}
+	}
+	return offers
 }

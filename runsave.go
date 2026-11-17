@@ -33,7 +33,7 @@ type savedReward struct {
 
 type savedRun struct {
 	Version   int
-	Phase     string // "map", "node", "reward" or "chamber" (mid-play, chambersave.go)
+	Phase     string        // "map", "node", "reward" or "chamber" (mid-play, chambersave.go)
 	Chamber   *savedChamber `json:",omitempty"`
 	Node      int
 	Rewards   []savedReward
@@ -55,7 +55,7 @@ type savedRun struct {
 	PhoenixUsed                             bool
 	Lives, LifeFinds                        int
 	Challenge                               string
-	Weekly                                  []string `json:",omitempty"`
+	Weekly                                  []string        `json:",omitempty"`
 	Keepsake                                string          `json:",omitempty"`
 	Trials                                  []string        `json:",omitempty"`
 	Coop, KeepUsed                          bool            `json:",omitempty"`
@@ -66,6 +66,7 @@ type savedRun struct {
 	LastWorld                               int
 	Element                                 string
 	Rerolls                                 int
+	PaidRerolls                             int `json:",omitempty"`
 	Fused, Scrolls                          []string
 	Rank, Asc                               int
 	RunEndless, EndlessStart                bool
@@ -120,7 +121,7 @@ func (g *Game) snapRun(phase string, node int) []byte {
 		SeedCode: r.SeedCode, SeedN: r.SeedN, Daily: r.Daily, Arch: r.Arch.ID, Act: r.Act, Cur: r.Cur, Depth: r.Depth, ActDepth: r.ActDepth,
 		MapRows: r.Map.Rows, Gold: r.Gold, Mods: r.Mods, Order: r.Order, PhoenixUsed: r.PhoenixUsed,
 		Lives: r.Lives, LifeFinds: r.LifeFinds, Challenge: r.Challenge, Weekly: r.Weekly, Keepsake: r.Keepsake, KeepRank: r.KeepRank, Trials: r.Trials, Coop: r.Coop, KeepUsed: r.KeepUsed, Banished: r.Banished, BanishUsed: r.BanishUsed, Cursed: r.Cursed, LastWorld: r.LastWorld,
-		Element: r.Element, Rerolls: r.Rerolls, Fused: r.Fused, Scrolls: r.Scrolls, Rank: r.Rank, Asc: r.Asc,
+		Element: r.Element, Rerolls: r.Rerolls, PaidRerolls: r.PaidRerolls, Fused: r.Fused, Scrolls: r.Scrolls, Rank: r.Rank, Asc: r.Asc,
 		RunEndless: r.Endless, EndlessStart: r.EndlessStart, XPPaid: r.xpPaid, ShardsPaid: r.shardsPaid,
 		StatsPaid: r.statsPaid, MetaLuck: r.metaLuck, Bricks: r.Bricks, Bosses: r.Bosses, Elites: r.Elites,
 		MaxCombo: r.MaxCombo, Score: r.Score, Elapsed: time.Since(r.Start).Seconds(), Recap: r.recap, Assisted: r.Assisted,
@@ -195,7 +196,7 @@ func (g *Game) continueRun(s *savedRun) {
 	arch := archByIDOK(s.Arch)
 	r := &Run{SeedCode: s.SeedCode, SeedN: s.SeedN, Daily: s.Daily, Arch: arch, Act: s.Act, Cur: s.Cur, Depth: s.Depth, ActDepth: s.ActDepth,
 		Gold: s.Gold, Mods: s.Mods, Order: s.Order, PhoenixUsed: s.PhoenixUsed, Lives: s.Lives, LifeFinds: s.LifeFinds,
-		Challenge: s.Challenge, Weekly: s.Weekly, Keepsake: s.Keepsake, KeepRank: s.KeepRank, Trials: s.Trials, Coop: s.Coop, KeepUsed: s.KeepUsed, Banished: s.Banished, BanishUsed: s.BanishUsed, Cursed: s.Cursed, LastWorld: s.LastWorld, Element: s.Element, Rerolls: s.Rerolls,
+		Challenge: s.Challenge, Weekly: s.Weekly, Keepsake: s.Keepsake, KeepRank: s.KeepRank, Trials: s.Trials, Coop: s.Coop, KeepUsed: s.KeepUsed, Banished: s.Banished, BanishUsed: s.BanishUsed, Cursed: s.Cursed, LastWorld: s.LastWorld, Element: s.Element, Rerolls: s.Rerolls, PaidRerolls: s.PaidRerolls,
 		Fused: s.Fused, Scrolls: s.Scrolls, Rank: s.Rank, Asc: s.Asc, Endless: s.RunEndless, EndlessStart: s.EndlessStart,
 		xpPaid: s.XPPaid, shardsPaid: s.ShardsPaid, statsPaid: s.StatsPaid, metaLuck: s.MetaLuck,
 		Bricks: s.Bricks, Bosses: s.Bosses, Elites: s.Elites, MaxCombo: s.MaxCombo, Score: s.Score,

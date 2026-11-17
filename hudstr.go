@@ -20,5 +20,5 @@ func (c *hudNum) get(pre string, v int, post string) string {
 }
 
 var (
-	hudCrystals, hudFrenzy, hudGold, hudAbil hudNum
+	hudCrystals, hudFrenzy, hudGold, hudAbil, hudComboNext hudNum
 )

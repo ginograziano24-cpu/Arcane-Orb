@@ -195,6 +195,9 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		x := 1898 - w + (1-ck)*80
 		u.frame(screen, x, 18, w, 104, 0.92*ck)
 		u.text(screen, "COMBO", fBold, 17, x+28, 34, ca(lighten(th.Accent, 0.2), ck), alignLeft)
+		if next := L.nextComboStake(); next > 0 {
+			u.text(screen, hudComboNext.get(tr("reward at ×"), next, ""), fReg, 15, x+28, 58, ca(cDim, 0.9*ck), alignLeft)
+		}
 		pulse := 1 + 0.07*math.Sin(L.T*14)*heat
 		size := 56 * (pulse + 0.22*g.comboPop*g.comboPop)
 		num := itoa(g.comboShown)
@@ -339,13 +342,19 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 	// ---- chamber cleared
 	if L.Cleared && L.clearShown() > 0 {
 		k := ease(L.clearShown() * 2.5)
-		w, h := 760.0, 236.0
-		y := 372 + (1-k)*36
+		w, h := 760.0, 262.0
+		y := 360 + (1-k)*36
 		u.frame(screen, 960-w/2, y, w, h, 0.95*k)
 		u.headingW(screen, "CHAMBER CLEARED", 58, y+28, rgba(255, 222, 128, 255), k, w/2-24)
-		u.iconLabel(screen, icCoin, hudGold.get("+", L.GoldEarned, " gold"), fBold, 28, 960, y+116, ca(cGold, k), alignCenter)
+		// the tally counts up while the card settles: a small reward beat at
+		// the end of every chamber
+		c := clamp01((L.clearShown() - 0.15) / 0.8)
+		c = 1 - (1-c)*(1-c)
+		gold := int(math.Round(float64(L.GoldEarned) * c))
+		u.iconLabel(screen, icCoin, hudGold.get("+", gold, " gold"), fBold, 28, 960, y+104, ca(cGold, k), alignCenter)
+		g.drawClearTally(screen, L, y+150, k, c)
 		if L.clearShown() > 1.2 {
-			u.text(screen, "Click to continue", fReg, 20, 960, y+176, ca(cDim, k*(0.6+0.4*math.Sin(L.T*4))), alignCenter)
+			u.text(screen, "Click to continue", fReg, 20, 960, y+204, ca(cDim, k*(0.6+0.4*math.Sin(L.T*4))), alignCenter)
 		}
 	}
 	if g.settings.ShowFPS {
@@ -535,5 +544,36 @@ func (g *Game) drawAbilityAura(screen *ebiten.Image, L *Level) {
 	}
 	if c.overloadN > 0 {
 		edge(color.RGBA{255, 150, 50, 255}, 0.25, true)
+	}
+}
+
+// drawClearTally is the cleared card's second line: bricks broken, the
+// chamber's best combo and its time, counting up with c (0..1), then a
+// FLAWLESS tag for a chamber without a dropped orb, and NEW BEST COMBO when
+// the chamber beat the lifetime record.
+func (g *Game) drawClearTally(screen *ebiten.Image, L *Level, y, k, c float64) {
+	u := g.ui
+	bricks := int(math.Round(float64(L.brokenHere) * c))
+	combo := int(math.Round(float64(L.peakCombo) * c))
+	secs := int(L.T * c)
+	line := fmt.Sprintf(tr("%d bricks  ·  best combo ×%d  ·  %d:%02d"), bricks, combo, secs/60, secs%60)
+	u.text(screen, line, fBold, 22, 960, y, ca(cWhite, 0.9*k), alignCenter)
+	if c < 1 {
+		return
+	}
+	pop := clamp01((L.clearShown() - 0.95) * 4)
+	var tags []string
+	if L.lostOrbs == 0 {
+		tags = append(tags, tr("FLAWLESS"))
+	}
+	if L.peakCombo >= 10 && L.peakCombo > g.save.MaxCombo {
+		tags = append(tags, tr("NEW BEST COMBO!"))
+	}
+	if len(tags) > 0 && pop > 0 {
+		s := tags[0]
+		for _, t := range tags[1:] {
+			s += "   ·   " + t
+		}
+		u.text(screen, s, fBold, 20+4*(1-pop), 960, y+28, ca(rgba(255, 214, 110, 255), k*pop), alignCenter)
 	}
 }

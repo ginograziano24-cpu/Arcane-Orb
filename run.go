@@ -227,10 +227,10 @@ type Run struct {
 	Stats        Stats
 	Active       []string // active synergy names
 	PhoenixUsed  bool
-	NextBarrier  int    // barrier charges waiting for the next chamber (events, rests)
-	Lives        int    // lives left (lives.go)
-	Challenge    string // challenge run id (challenges.go), "" for none
-	Weekly       []string // the weekly run's mutators (weekly.go)
+	NextBarrier  int             // barrier charges waiting for the next chamber (events, rests)
+	Lives        int             // lives left (lives.go)
+	Challenge    string          // challenge run id (challenges.go), "" for none
+	Weekly       []string        // the weekly run's mutators (weekly.go)
 	Keepsake     string          // the charm carried into this run (keepsakes.go)
 	Trials       []string        // custom difficulty modifiers (trials.go)
 	Coop         bool            // couch co-op: a second paddle (coop.go)
@@ -238,11 +238,12 @@ type Run struct {
 	BanishUsed   int             // banishes spent
 	KeepUsed     bool            // a once-per-run keepsake was spent
 	KeepRank     int             // the carried keepsake's rank
-	LifeFinds    int    // hearts caught this run
+	LifeFinds    int             // hearts caught this run
 	Cursed       bool
 	LastWorld    int
 	Element      string
 	Rerolls      int
+	PaidRerolls  int      // reward rerolls bought with gold this run (each costs more)
 	Fused        []string // fusions formed this run
 	Scrolls      []string // carried scrolls (scrolls.go)
 	NewFusions   []string // formed since last announced
@@ -447,6 +448,10 @@ func (r *Run) Loop() int { return max(0, r.Act-numActs) }
 
 // choices is how many cards a reward offers.
 func (r *Run) choices() int { return max(2, 3+r.Stats.ExtraChoices) }
+
+// rewardRerollCost is the gold price of rerolling a reward: 15, then 10
+// more for each one already bought this run (shop discounts apply).
+func (r *Run) rewardRerollCost() int { return r.price(15 + 10*r.PaidRerolls) }
 
 // freeRerolls left this run.
 func (r *Run) freeRerolls() int { return r.Stats.FreeRerolls - r.Rerolls }

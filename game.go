@@ -231,7 +231,7 @@ type Game struct {
 	achScroll      float64
 	scrollSel      int // pad: selected scroll slot
 	hero           heroPortrait
-	quips          quipState     // the hero speech bubble (quips.go)
+	quips          quipState           // the hero speech bubble (quips.go)
 	quipLast       [numQuipMoments]int // last quip line said per moment, kept across runs (quips_more.go)
 	pickLast       [numQuipMoments]int
 	bgMuted        bool          // sound is silenced while the window is in the background
@@ -837,7 +837,11 @@ func (g *Game) afterLevel() {
 		if L.hasOmen("vault") {
 			g.rewards = append(g.rewards, rewardSet{Title: "Secret vault — choose a relic", Mods: r.Offer(r.choices(), true, Rare, rng), Skip: 45})
 		}
-		g.rewards = append(g.rewards, rewardSet{Title: "Choose an upgrade", Mods: r.Offer(r.choices(), false, minR, rng), Skip: 15})
+		offers := r.Offer(r.choices(), false, minR, rng)
+		if r.Depth <= 1 {
+			offers = r.seedBuildAround(offers, minR, rng)
+		}
+		g.rewards = append(g.rewards, rewardSet{Title: "Choose an upgrade", Mods: offers, Skip: 15})
 	}
 	if g.maybeSecretDoor(rng) {
 		g.announceVault()
@@ -2018,9 +2022,23 @@ func (g *Game) drawReward(s *ebiten.Image) {
 		g.rewards = g.rewards[1:]
 		g.stateT = 0
 	}
-	if g.run.freeRerolls() > 0 && !rs.isRerolled() {
-		if u.button(s, "rr", "Reroll (free)", 1180, 900, 260, 60, cGold, true) {
-			g.run.Rerolls++
+	if !rs.isRerolled() {
+		// one reroll per reward: free with the Gambler's rerolls, otherwise
+		// for gold that rises each time (docs/ENJOYMENT_1_5X.md, Tier 1 #2)
+		free := g.run.freeRerolls() > 0
+		cost := g.run.rewardRerollCost()
+		label := fmt.Sprintf(tr("Reroll  ·  %d gold"), cost)
+		if free {
+			label = tr("Reroll (free)")
+		}
+		if u.button(s, "rr", label, 1180, 900, 300, 60, cGold, (free || g.run.Gold >= cost) && !g.banishing) && g.stateT > 0.3 {
+			if free {
+				g.run.Rerolls++
+			} else {
+				g.run.Gold -= cost
+				g.run.PaidRerolls++
+				g.uiBurst(1330, 930, 10, cGold, false)
+			}
 			rng := rand.New(rand.NewSource(g.rng.Int63()))
 			relic := len(rs.Mods) > 0 && rs.Mods[0].Relic
 			g.rewards[0].Mods = g.run.Offer(len(rs.Mods), relic, Common, rng)
