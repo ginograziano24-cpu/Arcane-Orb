@@ -21,6 +21,22 @@ mat = ob.data.materials[0]
 bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
 texn = next(l.from_node for l in bsdf.inputs["Base Color"].links)
 say("texture", texn.image.name, texn.image.size[0], "faces", len(ob.data.polygons))
+# her right eye: rebuild the face the hair lock hides, then keep or trim the lock
+MODE = os.environ.get("LOCK_MODE", "").strip().lower()
+_mf = os.path.join(eyeproj.L2, "lock_mode.txt")
+if not MODE and os.path.exists(_mf):
+    MODE = open(_mf).read().strip().lower()
+MODE = MODE or "keep"
+say("lock mode", MODE)
+try:
+    bpy.context.view_layer.update()
+    eyeproj.build_face_patch(ob, say)
+    if MODE == "trim":
+        eyeproj.trim_lock(ob, say)
+    say("faces now", len(ob.data.polygons))
+except Exception as e:
+    import traceback
+    say("face rebuild failed", e, traceback.format_exc())
 fixed = eyeproj.project_bake(ob, texn.image, ob.data.uv_layers.active.name, say)
 fixed.filepath_raw = os.path.join(eyeproj.L2, "base_texture_fixed.png")
 fixed.file_format = "PNG"

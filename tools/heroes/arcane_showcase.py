@@ -20,7 +20,7 @@ except Exception:
     pass
 try:
     sc.view_settings.view_transform = "AgX"
-    sc.view_settings.look = "AgX - Medium High Contrast"
+    sc.view_settings.look = "AgX - Base Contrast"
 except Exception:
     pass
 w = bpy.data.worlds.new("w"); sc.world = w; w.use_nodes = True
@@ -53,9 +53,9 @@ def light(name, kind, loc, energy, col, size):
     sc.collection.objects.link(o)
 
 
-light("key", "AREA", ctr + Vector((-1.2, -2.2, 1.4)) * h, 900 * h * h, (1.0, 0.9, 0.82), 1.2 * h)
-light("fill", "AREA", ctr + Vector((1.6, -1.6, 0.4)) * h, 300 * h * h, (0.7, 0.75, 1.0), 1.5 * h)
-light("rim", "AREA", ctr + Vector((0.6, 2.0, 1.2)) * h, 700 * h * h, (0.8, 0.6, 1.0), 1.0 * h)
+light("key", "AREA", ctr + Vector((-1.2, -2.2, 1.4)) * h, 520 * h * h, (1.0, 0.9, 0.82), 1.2 * h)
+light("fill", "AREA", ctr + Vector((1.6, -1.6, 0.4)) * h, 210 * h * h, (0.7, 0.75, 1.0), 1.5 * h)
+light("rim", "AREA", ctr + Vector((0.6, 2.0, 1.2)) * h, 380 * h * h, (0.8, 0.6, 1.0), 1.0 * h)
 cd = bpy.data.cameras.new("c"); cam = bpy.data.objects.new("c", cd); sc.collection.objects.link(cam); sc.camera = cam
 import json
 _c = json.load(open(os.path.join(OUT, "eyes_cam.json")))
@@ -68,6 +68,7 @@ shots = [
     ("face_34", -62, 0.855, 0.42, 85, (1200, 1000)),
     ("eyes", -90, None, 0.26, 85, (1600, 800)),
     ("eyes_34", -66, None, 0.26, 85, (1600, 800)),
+    ("eyes_r34", -114, None, 0.26, 85, (1600, 800)),
 ]
 for name, ang, zf, dist, lens, res in shots:
     a = math.radians(ang)
@@ -76,6 +77,6 @@ for name, ang, zf, dist, lens, res in shots:
     cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
     cd.lens = lens
     sc.render.resolution_x, sc.render.resolution_y = res
-    sc.render.filepath = os.path.join(OUT, "show_%s.png" % name)
+    sc.render.filepath = os.path.join(OUT, "show_%s%s.png" % (name, os.environ.get("SHOW_TAG", "")))
     bpy.ops.render.render(write_still=True)
 open(os.path.join(OUT, "show_done.txt"), "w").write("ok")
