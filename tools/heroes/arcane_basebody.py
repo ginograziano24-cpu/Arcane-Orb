@@ -900,8 +900,8 @@ try:
     armw = Wt[:, [SI[x] for x in SEG if x.split(".")[0] in ("armU", "armL")]].sum(1)
     P0 = P.copy()
     zfrac = (P[:, 2] - z0) / ST
-    region = (zfrac > 0.03) & (zfrac < 0.82) & (keepw < 0.5) & (armw < 0.5)
-    wreg = np.clip(np.minimum((zfrac - 0.03) / 0.03, (0.82 - zfrac) / 0.04), 0, 1) * (1 - keepw) * np.clip(1 - 2 * armw, 0, 1)
+    region = (zfrac > 0.07) & (zfrac < 0.82) & (keepw < 0.5) & (armw < 0.5)
+    wreg = np.clip(np.minimum((zfrac - 0.07) / 0.04, (0.82 - zfrac) / 0.04), 0, 1) * (1 - keepw) * np.clip(1 - 2 * armw, 0, 1)
     R_IN, R_OUT, R_TOT = 0.08 * ST, 0.08 * ST, 0.16 * ST
     for it_ in range(6):
         vn = vnormals(P)
