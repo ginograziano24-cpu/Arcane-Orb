@@ -114,3 +114,19 @@ Written 2026-11-17 for docs/POLISH_PASS.md. This phase made no code changes.
 | 6: verify | Re-run this audit, `go vet`, `-race` build, soak test, bench |
 
 **Taste calls for Gino:** combo pitch curve, rumble strength, chamber length targets (item 7), and the new quip lines (you'll get them to read before they ship).
+
+---
+
+## Progress (updated 2026-11-17, overnight)
+
+Every change below passed `go vet`, `go test ./...` and `go build` on the PC (Go 1.26.8).
+
+| Item | Status |
+|---|---|
+| 1 Quips | Done: 3 more lines per moment per hero, no-repeat picking, and a new **near-miss** moment (the barrier saves the orb; 30 s cooldown, 3 lines per hero). First-chamber greeting and idle line are still open. |
+| 2 Feel config | Done: `feelcfg.go` holds hit-stop, shake and kick values, with `feel.json` overrides beside the exe. |
+| 3 Juice | Rumble done (paddle, elite/heavy breaks, boss hit/kill, life lost) with a Settings toggle. **Corrections to this audit:** the combo pitch already climbs (`sfx.go`), and debris per world already exists. Per-origin trail colour is still open. |
+| 4 Per-frame garbage | Done: brick collision uses stack buffers; `near()` reuses pooled buffers (safe for chained blasts); HUD numbers are cached strings. |
+| 5 Stability | Saves verified fine. Dead `lostReal` code removed. Fixed-timestep check still needs a 60 vs 240 Hz bench run. |
+| 6 UX | Settings now has separate **Effects** and **Gameplay** tabs (translated into all 6 languages), so neither crowds Back. Text size at 1280×800 is still open. |
+| Bench | `Shots-Bench.cmd` on the PC runs the screenshot tour and the benchmark together on the Go-Check build. |
