@@ -174,6 +174,7 @@ func soakUpdate(g *Game) bool {
 		g.setState(StMenu)
 		s.step = 5
 	case 5: // after a menu frame has drawn, measure
+		soakAgeCaches()
 		s.samples = append(s.samples, soakSnapshot(g))
 		if n := len(s.samples); n == 2 || n == soakRuns-1 {
 			// heap profiles after run 2 and near the end: diff them
@@ -184,6 +185,20 @@ func soakUpdate(g *Game) bool {
 		s.step = 0
 	}
 	return false
+}
+
+// soakAgeCaches lets the frame-aged caches (baked placements, text) expire
+// what a real player's next few seconds of frames would expire. The soak
+// draws one frame per screen, so without this those caches never age and
+// the heap looks like it leaks when it doesn't.
+func soakAgeCaches() {
+	for i := 0; i < 3; i++ {
+		bakeFrame.Add(120 - bakeFrame.Load()%120 - 1)
+		bakeTick()
+	}
+	for i := 0; i < textKeepFrames+120; i++ {
+		textFrameEnd()
+	}
 }
 
 func soakHeapProfile(tag string) {
