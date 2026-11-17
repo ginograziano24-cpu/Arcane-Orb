@@ -69,6 +69,8 @@ shots = [
     ("eyes", -90, None, 0.26, 85, (1600, 800)),
     ("eyes_34", -66, None, 0.26, 85, (1600, 800)),
     ("eyes_r34", -114, None, 0.26, 85, (1600, 800)),
+    ("side_left", -24, None, 0.30, 85, (1200, 900)),
+    ("side_right", -156, None, 0.30, 85, (1200, 900)),
 ]
 for name, ang, zf, dist, lens, res in shots:
     a = math.radians(ang)

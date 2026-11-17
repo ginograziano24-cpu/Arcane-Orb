@@ -30,6 +30,14 @@ MODE = MODE or "keep"
 say("lock mode", MODE)
 try:
     bpy.context.view_layer.update()
+    eyeproj.flatten_lids(ob, say)
+    try:                                   # shading must follow the reshaped lids, not the old stored normals
+        bpy.ops.object.select_all(action="DESELECT")
+        ob.select_set(True); bpy.context.view_layer.objects.active = ob
+        bpy.ops.mesh.customdata_custom_splitnormals_clear()
+        bpy.ops.object.shade_smooth()
+    except Exception as e:
+        say("normals reset skipped", e)
     eyeproj.build_face_patch(ob, say)
     if MODE == "trim":
         eyeproj.trim_lock(ob, say)

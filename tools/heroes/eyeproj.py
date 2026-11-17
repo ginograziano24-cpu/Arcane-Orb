@@ -18,6 +18,7 @@ LOCK_WIN = (1330, 1700, 520, 790)        # x0, x1, y0, y1
 FACE_MID_X = 1767                        # image column of the face's centre line
 EYE_DROP = 8                             # her right eye sits this many pixels lower than her left
 LOCK_GAP = 0.0035                        # hair counts as "in front" when this far (x height) off the face
+PATCH_WIN = (1336, 1700, 430, 800)       # where the face is rebuilt (x0, x1, y0, y1)
 PATCH_X0 = 1386                          # the rebuilt face piece reaches this far toward her temple
 
 
@@ -63,15 +64,18 @@ class _Geo:
     def to_local(self, p):
         return self.Ai @ (np.asarray(p, dtype=np.float64) - self.t)
 
-    def hits(self, x, z, n=1):
-        """Depths (camera space) of the first n surfaces met going into the face at (x, z)."""
+    def hits(self, x, z, n=1, facing=False):
+        """Depths (camera space) of the first n surfaces met going into the face at (x, z).
+        With facing=True returns (depth, faces_the_camera) pairs: the back side
+        of a hair strand is a surface too, but it is not her face."""
         out = []
         o = self.Vector(self.to_local((x, self.y_far, z)).tolist())
         for _ in range(n):
-            h = self.bvh.ray_cast(o, self.dback, 1e6)[0]
+            h, nrm, _i, _d = self.bvh.ray_cast(o, self.dback, 1e6)
             if h is None:
                 break
-            out.append(float((self.A @ np.array(h) + self.t)[1]))
+            yv = float((self.A @ np.array(h) + self.t)[1])
+            out.append((yv, nrm.dot(self.dv) > 0.1) if facing else yv)
             o = h + self.dback * self.eps
         return out
 
@@ -127,8 +131,12 @@ def _classify(g, say=print):
         idx = np.where(lockwin)[0]
         for i in idx:
             yf = g.face_depth(g.wco[i, 0], g.wco[i, 2])
-            if yf is not None and g.wco[i, 1] < yf - LOCK_GAP * g.hgt:
+            if yf is None:
+                continue
+            if g.wco[i, 1] < yf - LOCK_GAP * g.hgt:
                 infront[i] = True
+            elif g.wno[i, 1] > -0.05 and g.wco[i, 1] < yf - 0.0004 * g.hgt:
+                infront[i] = True          # underside of the hair lock lying close against her face
         ok[infront] = 0.0
         cand = np.where((ok > 0) & (g.u > 0) & (g.u < 1) & (g.v > 0) & (g.v < 1) & ~lockwin)[0]
         for i in cand:
@@ -152,6 +160,61 @@ def _proj_data(ob, cam, src_from_world=None, say=print):
     return g.u, g.v, ok, infront, hairw.astype(np.float32)
 
 
+EYES_PX = ((1530, 698, -1), (2004, 690, 1))     # her right / left eye centres in the face image, outer-corner direction
+LOCK_EDGE_X = [1380, 1400, 1420, 1445, 1470, 1492, 1530, 1580, 1630, 1680, 1720]
+LOCK_EDGE_Y = [745, 722, 700, 678, 658, 640, 628, 614, 600, 585, 574]
+
+
+def flatten_lids(ob, say=print, k=0.7, iters=3):
+    """Her eyelids are sculpted as thick shelves that stick out of her face.
+    Pulls whatever stands proud of the locally smoothed surface around each
+    eye back toward it (the eyeball and sockets, which sit behind it, stay)."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    me = ob.data
+    moved_tot = 0.0
+    for it in range(iters):
+        g = _Geo(ob, cam, None)
+        y = g.wco[:, 1].copy()
+        front = (g.wco[:, 1] < g.depth_lim) & (g.wno[:, 1] < -0.05)
+        dy = np.zeros(len(y))
+        for (ex, ey, f) in EYES_PX:
+            e = ((g.pxu - (ex + f * 12)) / 205.0) ** 2 + ((g.pxv - (ey - 22)) / 135.0) ** 2
+            sel = front & (e < 1.0)
+            if f < 0:                                           # leave the hair lock over her right eye alone
+                sel &= g.pxv > np.interp(g.pxu, LOCK_EDGE_X, LOCK_EDGE_Y) + 4
+            idx = np.where(sel)[0]
+            if len(idx) < 50:
+                continue
+            # depth of the surface, splatted to a grid and blurred
+            cell = 4.0
+            x0 = ex - 230; y0 = ey - 170; gw = int(460 / cell) + 1; gh = int(330 / cell) + 1
+            gx = np.clip(((g.pxu[idx] - x0) / cell).astype(int), 0, gw - 1)
+            gy = np.clip(((g.pxv[idx] - y0) / cell).astype(int), 0, gh - 1)
+            num = np.zeros((gh, gw)); den = np.zeros((gh, gw))
+            np.add.at(num, (gy, gx), y[idx]); np.add.at(den, (gy, gx), 1.0)
+
+            def box(a, r):
+                c = np.cumsum(np.pad(a, ((r + 1, r), (0, 0)), mode="edge"), axis=0); a = c[2 * r + 1:] - c[:-2 * r - 1]
+                c = np.cumsum(np.pad(a, ((0, 0), (r + 1, r)), mode="edge"), axis=1); return c[:, 2 * r + 1:] - c[:, :-2 * r - 1]
+            for _ in range(3):
+                num = box(num, 4); den = box(den, 4)
+            ys = num / np.maximum(den, 1e-9)
+            proud = np.clip(ys[gy, gx] - y[idx], 0, None)          # how far each vertex stands in front of it
+            w = np.clip((1.0 - e[idx]) / 0.35, 0, 1)
+            w = w * w * (3 - 2 * w)
+            dy[idx] = k * proud * w
+        if not dy.any():
+            break
+        moved_tot += float(dy.max())
+        newsrc = g.wco.copy(); newsrc[:, 1] += dy
+        co = (newsrc - g.t) @ g.Ai.T
+        me.vertices.foreach_set("co", co.astype(np.float32).ravel())
+        me.update()
+        bpy.context.view_layer.update()
+        say("lids: pass", it + 1, "moved", int((dy > 0).sum()), "verts, most", round(float(dy.max()) / g.hgt * 100, 3), "% of her height")
+    return moved_tot
+
+
 def build_face_patch(ob, say=print):
     """Her model is one fused shell: where the hair lock crosses her right eye
     there is no face underneath. This copies the matching piece of the left
@@ -162,8 +225,9 @@ def build_face_patch(ob, say=print):
     g = _Geo(ob, cam, None)
     g.mirror_fit(say)
     mid_px = FACE_MID_X
-    lx0, lx1 = 2 * mid_px - LOCK_WIN[1], 2 * mid_px - PATCH_X0
-    ly0, ly1 = LOCK_WIN[2] - EYE_DROP, LOCK_WIN[3] - EYE_DROP
+    # wider than the cut itself: the lock stands off her face, so from an angle you see past its edge
+    lx0, lx1 = 2 * mid_px - PATCH_WIN[1], 2 * mid_px - PATCH_WIN[0]
+    ly0, ly1 = PATCH_WIN[2] - EYE_DROP, PATCH_WIN[3] - EYE_DROP
     inwin = (g.pxu > lx0) & (g.pxu < lx1) & (g.pxv > ly0) & (g.pxv < ly1) & (g.wco[:, 1] < g.depth_lim)
     npoly = len(me.polygons)
     tot = np.empty(npoly, dtype=np.int32); me.polygons.foreach_get("loop_total", tot)
@@ -181,9 +245,9 @@ def build_face_patch(ob, say=print):
         xl, yl, zl = g.wco[i]
         x = 2 * g.xmid - xl; z = zl - g.drop
         y = yl + g.fit[0] + g.fit[1] * (x - g.xmid) + g.fit[2] * z
-        hs = g.hits(x, z, 6)
+        hs = [hh for hh, fc in g.hits(x, z, 6, facing=True) if fc]
         near = min(hs, key=lambda hh: abs(hh - y)) if hs else None
-        exists[i] = near is not None and abs(near - y) < 0.003 * g.hgt
+        exists[i] = near is not None and abs(near - y) < 0.0015 * g.hgt
         delta[i] = (near - y) if exists[i] else 0.0
         newpos[i] = [x, y, z]
     # carry the small depth mismatch at the join smoothly across the piece
@@ -280,7 +344,7 @@ def trim_lock(ob, say=print, mask="eyes_mask.png", level=0.3):
         return mv
 
     # 1) finer triangles along the cut line, so the cut edge is smooth
-    for cuts, lo, hi in ((3, 0.3, 2.4), (2, 0.6, 1.6)):
+    for cuts, lo, hi in ((3, 0.12, 3.3), (2, 0.4, 2.2)):
         try:
             g = _Geo(ob, cam, None)
             ok, infront = _classify(g, lambda *a: None)
@@ -309,8 +373,8 @@ def trim_lock(ob, say=print, mask="eyes_mask.png", level=0.3):
     def is_backed(i):
         if i not in backed:
             y = g.wco[i, 1]
-            hs = g.hits(g.wco[i, 0], g.wco[i, 2], 6)
-            backed[i] = any((hh > y + 0.4 * LOCK_GAP * g.hgt) and (hh < y + 0.03 * g.hgt) for hh in hs)
+            hs = g.hits(g.wco[i, 0], g.wco[i, 2], 6, facing=True)
+            backed[i] = any(fc and (hh > y + 0.4 * LOCK_GAP * g.hgt) and (hh < y + 0.03 * g.hgt) for hh, fc in hs)
         return backed[i]
     sel = np.zeros(len(tri), dtype=bool)
     for f in np.where(cand)[0]:
@@ -320,6 +384,35 @@ def trim_lock(ob, say=print, mask="eyes_mask.png", level=0.3):
         say("trim: nothing to remove"); return 0
     _edit_faces(ob, sel, lambda: bpy.ops.mesh.delete(type="FACE"))
     say("trim: removed", k, "hair faces over her right eye (", int(cand.sum()) - k, "kept because nothing is behind them)")
+    # relax the cut edge of the hair so it is not saw-toothed
+    try:
+        bpy.ops.object.select_all(action="DESELECT")
+        ob.select_set(True); bpy.context.view_layer.objects.active = ob
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_mode(type="VERT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        bpy.ops.mesh.select_non_manifold(extend=False, use_wire=False, use_boundary=True, use_multi_face=False, use_non_contiguous=False, use_verts=False)
+        bpy.ops.object.mode_set(mode="OBJECT")
+        g = _Geo(ob, cam, None)
+        ok, infront = _classify(g, lambda *a: None)
+        vs = np.zeros(len(me.vertices), dtype=bool); me.vertices.foreach_get("select", vs)
+        vs &= infront & g.lockwin()
+        me.vertices.foreach_set("select", vs)
+        me.edges.foreach_set("select", np.zeros(len(me.edges), dtype=bool))
+        me.polygons.foreach_set("select", np.zeros(len(me.polygons), dtype=bool))
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_more()
+        bpy.ops.mesh.vertices_smooth(factor=0.5, repeat=4)
+        bpy.ops.object.mode_set(mode="OBJECT")
+        bpy.context.view_layer.update()
+        say("trim: relaxed the cut edge around", int(vs.sum()), "edge verts")
+    except Exception as e:
+        import traceback
+        try:
+            bpy.ops.object.mode_set(mode="OBJECT")
+        except Exception:
+            pass
+        say("trim: edge relax skipped", e, traceback.format_exc())
     return k
 
 

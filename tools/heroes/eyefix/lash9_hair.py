@@ -13,7 +13,8 @@ FY=[840,745,722,700,678,658,640,628,614,600,585,574,565,525,480,430,380,310,250,
 edge=np.interp(xx,FX,FY)
 poly=(yy<edge)&(xx>1180)&(xx<1906)
 r,g,b=src[...,0],src[...,1],src[...,2]; mx=src.max(2); st=(mx-src.min(2))/np.maximum(mx,1e-3)
-gold=(r>b*1.4)&(g>b*1.25)&(st>0.31)
+mn=src.min(2); hue=np.degrees(np.arctan2(np.sqrt(3)*(g-b),2*r-g-b))
+gold=(hue>30)&(hue<72)&(st>0.2)&(r>0.5)
 purple=(b>r*1.02)&(b>g*1.12)&(st>0.28)
 other=ndimage.binary_dilation(ndimage.binary_opening(gold|purple,iterations=1),iterations=3)
 hair=poly&~other
