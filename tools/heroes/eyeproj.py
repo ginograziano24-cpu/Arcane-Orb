@@ -148,7 +148,8 @@ def _proj_data(ob, cam, src_from_world=None, say=print):
     it around her right eye); the lock itself is flagged and never painted."""
     g = _Geo(ob, cam, src_from_world)
     ok, infront = _classify(g, say)
-    return g.u, g.v, ok, infront
+    hairw = infront.astype(np.float32) * (g.wco[:, 1] < g.depth_lim) * np.clip(-3.0 * g.wno[:, 1], 0, 1)
+    return g.u, g.v, ok, infront, hairw.astype(np.float32)
 
 
 def build_face_patch(ob, say=print):
@@ -174,15 +175,30 @@ def build_face_patch(ob, say=print):
     tri = li[loops]
     fsel = np.where(inwin[tri].all(1) & (g.wno[tri, 1].mean(1) < 0.3))[0]
     used = np.unique(tri[fsel])
-    vis = {}; newpos = {}; exists = {}
+    vis = {}; newpos = {}; exists = {}; delta = {}
     for i in used:
         vis[i] = not g.hidden(i)
         xl, yl, zl = g.wco[i]
         x = 2 * g.xmid - xl; z = zl - g.drop
         y = yl + g.fit[0] + g.fit[1] * (x - g.xmid) + g.fit[2] * z
         hs = g.hits(x, z, 6)
-        exists[i] = any(abs(h - y) < 0.003 * g.hgt for h in hs)
-        newpos[i] = (x, y + 0.0003 * g.hgt, z)
+        near = min(hs, key=lambda hh: abs(hh - y)) if hs else None
+        exists[i] = near is not None and abs(near - y) < 0.003 * g.hgt
+        delta[i] = (near - y) if exists[i] else 0.0
+        newpos[i] = [x, y, z]
+    # carry the small depth mismatch at the join smoothly across the piece
+    nbr = {int(i): set() for i in used}
+    for f in fsel:
+        a_, b_, c_ = (int(q) for q in tri[f])
+        nbr[a_] |= {b_, c_}; nbr[b_] |= {a_, c_}; nbr[c_] |= {a_, b_}
+    free = [int(i) for i in used if not exists[i]]
+    if any(exists.values()):
+        for _ in range(80):
+            for i in free:
+                if nbr[i]:
+                    delta[i] = sum(delta[j] for j in nbr[i]) / len(nbr[i])
+    for i in used:
+        newpos[i][1] += delta[i] + 0.00015 * g.hgt
     keepf = [f for f in fsel if any(vis[i] for i in tri[f]) and not all(exists[i] for i in tri[f])]
     if not keepf:
         say("patch: nothing to add"); return 0
@@ -253,7 +269,10 @@ def trim_lock(ob, say=print, mask="eyes_mask.png", level=0.3):
     img = bpy.data.images.load(os.path.join(L2, mask), check_existing=True)
     w, h = img.size
     pix = np.empty(w * h * 4, dtype=np.float32); img.pixels.foreach_get(pix)
-    m = pix.reshape(h, w, 4)[:, :, 0]
+    m = pix.reshape(h, w, 4)[:, :, 0].astype(np.float64)
+    R = 10                                                   # soften the cut line (box blur)
+    cs = np.cumsum(np.pad(m, ((R + 1, R), (0, 0)), mode="edge"), axis=0); m = (cs[2 * R + 1:] - cs[:-2 * R - 1]) / (2 * R + 1)
+    cs = np.cumsum(np.pad(m, ((0, 0), (R + 1, R)), mode="edge"), axis=1); m = (cs[:, 2 * R + 1:] - cs[:, :-2 * R - 1]) / (2 * R + 1)
 
     def maskv(g):
         mv = m[np.clip((g.v * h).astype(int), 0, h - 1), np.clip((g.u * w).astype(int), 0, w - 1)]
@@ -261,22 +280,23 @@ def trim_lock(ob, say=print, mask="eyes_mask.png", level=0.3):
         return mv
 
     # 1) finer triangles along the cut line, so the cut edge is smooth
-    try:
-        g = _Geo(ob, cam, None)
-        ok, infront = _classify(g, say)
-        tri = _tris(me)
-        mv = maskv(g)
-        band = infront[tri].any(1) & (mv[tri] > level * 0.35).any(1) & (mv[tri] < min(1.0, level * 2.2)).any(1)
-        if tri is not None and band.any():
-            def sub():
-                bpy.ops.mesh.subdivide(number_cuts=3)
-                bpy.ops.mesh.select_all(action="SELECT")
-                bpy.ops.mesh.quads_convert_to_tris()
-            _edit_faces(ob, band, sub)
-            say("trim: refined", int(band.sum()), "faces along the cut line; faces now", len(me.polygons))
-    except Exception as e:
-        import traceback
-        say("trim: refine skipped", e, traceback.format_exc())
+    for cuts, lo, hi in ((3, 0.3, 2.4), (2, 0.6, 1.6)):
+        try:
+            g = _Geo(ob, cam, None)
+            ok, infront = _classify(g, lambda *a: None)
+            tri = _tris(me)
+            mv = maskv(g)
+            band = infront[tri].any(1) & (mv[tri] > level * lo).any(1) & (mv[tri] < min(1.0, level * hi)).any(1)
+            if band.any():
+                def sub():
+                    bpy.ops.mesh.subdivide(number_cuts=cuts)
+                    bpy.ops.mesh.select_all(action="SELECT")
+                    bpy.ops.mesh.quads_convert_to_tris()
+                _edit_faces(ob, band, sub)
+                say("trim: refined", int(band.sum()), "faces along the cut line; faces now", len(me.polygons))
+        except Exception as e:
+            import traceback
+            say("trim: refine skipped", e, traceback.format_exc())
     # 2) the cut
     g = _Geo(ob, cam, None)
     ok, infront = _classify(g, say)
@@ -284,7 +304,7 @@ def trim_lock(ob, say=print, mask="eyes_mask.png", level=0.3):
     if tri is None:
         say("trim: mesh is not all triangles, skipped"); return 0
     mv = maskv(g)
-    cand = (infront[tri].sum(1) >= 2) & (mv[tri].mean(1) > level)
+    cand = (infront[tri].sum(1) >= 2) & (mv[tri].mean(1) > level) & (g.pxu[tri] > PATCH_X0 + 14).all(1)
     backed = {}
     def is_backed(i):
         if i not in backed:
@@ -311,11 +331,16 @@ def attach_overlay(ob, say=print, src_from_world=None, fixed="eyes_fixed.png", m
     before it is moved (or pass src_from_world)."""
     cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
     me = ob.data
-    u, v, ok, _inf = _proj_data(ob, cam, src_from_world, say)
+    u, v, ok, _inf, hairw = _proj_data(ob, cam, src_from_world, say)
     if "eyeok" in me.color_attributes:
         me.color_attributes.remove(me.color_attributes["eyeok"])
     at = me.color_attributes.new(name="eyeok", type="FLOAT_COLOR", domain="POINT")
     at.data.foreach_set("color", np.repeat(ok, 4).astype(np.float32))
+    if "eyehair" in me.color_attributes:
+        me.color_attributes.remove(me.color_attributes["eyehair"])
+    at2 = me.color_attributes.new(name="eyehair", type="FLOAT_COLOR", domain="POINT")
+    at2.data.foreach_set("color", np.repeat(hairw, 4).astype(np.float32))
+    hair_files = all(os.path.exists(os.path.join(L2, f)) for f in ("eyes_hair.png", "eyes_hairmask.png"))
     keep_active = me.uv_layers.active.name if me.uv_layers.active else None
     keep_render = next((l.name for l in me.uv_layers if l.active_render), keep_active)
     if "proj" in me.uv_layers:
@@ -353,7 +378,21 @@ def attach_overlay(ob, say=print, src_from_world=None, fixed="eyes_fixed.png", m
         else:
             mix.inputs[6].default_value = bc.default_value
         nt.links.new(tf.outputs["Color"], mix.inputs[7])
-        nt.links.new(mix.outputs[2], bc)
+        last = mix.outputs[2]
+        if hair_files:
+            # the hair lock in front of her right eye takes the clean hair colours, never the eye
+            th = nt.nodes.new("ShaderNodeTexImage"); th.image = bpy.data.images.load(os.path.join(L2, "eyes_hair.png"), check_existing=True); th.extension = "CLIP"; th.interpolation = "Cubic"
+            thm = nt.nodes.new("ShaderNodeTexImage"); thm.image = bpy.data.images.load(os.path.join(L2, "eyes_hairmask.png"), check_existing=True); thm.extension = "CLIP"
+            thm.image.colorspace_settings.name = "Non-Color"
+            nt.links.new(uvp.outputs[0], th.inputs[0]); nt.links.new(uvp.outputs[0], thm.inputs[0])
+            ha = nt.nodes.new("ShaderNodeAttribute"); ha.attribute_name = "eyehair"
+            hm = nt.nodes.new("ShaderNodeMath"); hm.operation = "MULTIPLY"; hm.use_clamp = True
+            nt.links.new(thm.outputs["Color"], hm.inputs[0]); nt.links.new(ha.outputs["Fac"], hm.inputs[1])
+            mixh = nt.nodes.new("ShaderNodeMix"); mixh.data_type = "RGBA"
+            nt.links.new(hm.outputs[0], mixh.inputs["Factor"])
+            nt.links.new(last, mixh.inputs[6]); nt.links.new(th.outputs["Color"], mixh.inputs[7])
+            last = mixh.outputs[2]
+        nt.links.new(last, bc)
         # the painted lashes and the cleaned lids stay matte: no shine, clear
         # coat or old lash bumps from the normal map on top of them
         try:
@@ -412,7 +451,7 @@ def project_bake(ob, base_img, base_uv_name, say=print, src_from_world=None, fix
         pass
     sc.cycles.samples = 1
     me = ob.data
-    u, v, ok, _inf = _proj_data(ob, cam, src_from_world, say)
+    u, v, ok, _inf, _hw = _proj_data(ob, cam, src_from_world, say)
     at = me.color_attributes.new(name="eyeok", type="FLOAT_COLOR", domain="POINT")
     at.data.foreach_set("color", np.repeat(ok, 4).astype(np.float32))
     puv = me.uv_layers.new(name="proj")
