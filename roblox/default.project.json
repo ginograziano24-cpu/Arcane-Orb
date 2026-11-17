@@ -1,0 +1,35 @@
+{
+  "name": "ArcaneOrb",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "ArcaneOrb": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "ArcaneOrbServer": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "ArcaneOrbClient": {
+          "$path": "src/client"
+        }
+      }
+    },
+    "Workspace": {
+      "$properties": {
+        "Gravity": 196.2
+      }
+    },
+    "Lighting": {
+      "$properties": {
+        "ClockTime": 0,
+        "Brightness": 2,
+        "Ambient": [0.3, 0.3, 0.45]
+      }
+    }
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"strconv"
 	"strings"
 	"time"
 
@@ -101,6 +102,10 @@ func benchParse() {
 			benchTraceScene = strings.TrimPrefix(a, "-benchtrace=")
 		case a == "-benchtrace":
 			benchTrace = true
+		case strings.HasPrefix(a, "-soakruns="):
+			if n, err := strconv.Atoi(strings.TrimPrefix(a, "-soakruns=")); err == nil && n > 0 && n <= 200 {
+				soakRuns = n
+			}
 		case a == "-soak":
 			soakOn, noPersist = true, true
 		case a == "-boottrace":

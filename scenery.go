@@ -297,6 +297,12 @@ func (g *Game) drawScenery(B *Batch, L *Level) {
 	// the dressing (drawDressing) follows, on its own goroutine (drawWorld)
 }
 
+// quantCol snaps a colour to steps of 32 per channel (cache keys).
+func quantCol(c color.RGBA) color.RGBA {
+	q := func(v uint8) uint8 { return uint8(min(255, int(math.Round(float64(v)/32))*32)) }
+	return color.RGBA{q(c.R), q(c.G), q(c.B), c.A}
+}
+
 func colKey(c color.RGBA) string { return itoa(int(c.R)) + "-" + itoa(int(c.G)) + "-" + itoa(int(c.B)) }
 
 // cloudCluster is a low-poly cumulus: several faceted puffs merged, bright
@@ -473,6 +479,10 @@ func shrubPal(B *Batch, x, z float64, bloom color.RGBA, seed int64, pal leafPal)
 	defer B.objEnd()
 	// a grown shrub: woody stems forking into leaf sprays, with blossoms
 	far := floraFar(B, V3{x, 0, z})
+	// chambers tint their blossoms a little differently every time; snap
+	// the tint to a coarse step so the grown shrubs are shared instead of a
+	// new one being grown (and kept) for every chamber
+	bloom = quantCol(bloom)
 	key := "bush" + colKey(bloom) + colKey(pal.dark) + itoa(int(seed%3))
 	if far {
 		key += "L"

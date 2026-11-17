@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
+	"sort"
 	"strings"
 	"time"
 )
@@ -19,8 +21,10 @@ import (
 
 var soakOn bool
 
+// soakRuns is how many runs the soak plays (-soakruns=N, default 10).
+var soakRuns = 10
+
 const (
-	soakRuns     = 10
 	soakChambers = 8  // per run; the last is the act's Guardian
 	soakSimSecs  = 25 // simulated seconds per chamber at most
 )
@@ -53,8 +57,28 @@ func soakSnapshot(g *Game) soakSample {
 		objects:    m.HeapObjects,
 		goroutines: runtime.NumGoroutine(),
 		gcs:        m.NumGC,
-		caches:     fmt.Sprintf("titles %d, sounds %d", len(g.titleCache), soundCacheLen(g.snd)),
+		caches:     soakCaches(g),
 	}
+}
+
+// soakCaches counts every cache that can grow with play, so a growing heap
+// can be pinned on one of them.
+func soakCaches(g *Game) string {
+	assetMu.RLock()
+	meshes, models, tex := len(meshCache), len(modelCache), len(bakedTexCache)
+	assetMu.RUnlock()
+	floraMu.Lock()
+	flora := len(floraSets)
+	floraMu.Unlock()
+	impMu.Lock()
+	imp := len(impDone)
+	impMu.Unlock()
+	mergeMu.Lock()
+	merged := len(mergeGroups)
+	mergeMu.Unlock()
+	return fmt.Sprintf("titles %d, sounds %d, meshes %d, models %d, tex %d, text %d, flora %d, impostors %d, merged %d, sky %d, scenes %d, backdrops %d, letters %d",
+		len(g.titleCache), soundCacheLen(g.snd), meshes, models, tex, len(textCache),
+		flora, imp, merged, len(skyFootCache), len(sceneCache), len(backdropCache), len(letterArtCache))
 }
 
 func soundCacheLen(s *Sounds) int {
@@ -151,10 +175,28 @@ func soakUpdate(g *Game) bool {
 		s.step = 5
 	case 5: // after a menu frame has drawn, measure
 		s.samples = append(s.samples, soakSnapshot(g))
+		if n := len(s.samples); n == 2 || n == soakRuns-1 {
+			// heap profiles after run 2 and near the end: diff them
+			// (go tool pprof -diff_base) to see what keeps growing
+			soakHeapProfile(fmt.Sprintf("run%d", n))
+		}
 		s.run++
 		s.step = 0
 	}
 	return false
+}
+
+func soakHeapProfile(tag string) {
+	runtime.GC()
+	exe, _ := os.Executable()
+	name := "bench_heap_" + tag
+	if benchTag != "" {
+		name += "_" + benchTag
+	}
+	if f, err := os.Create(filepath.Join(filepath.Dir(exe), name+".pprof")); err == nil {
+		_ = pprof.WriteHeapProfile(f)
+		f.Close()
+	}
 }
 
 func soakFinish(g *Game) {
@@ -180,6 +222,27 @@ func soakFinish(g *Game) {
 		}
 		fmt.Fprintf(&sb, "\nheap change per run after run 2: %+.2f MB (%s)\n", d, verdict)
 	}
+	// the flora variants grown so far, with their triangle counts: a key that
+	// keeps changing (a colour or seed that isn't bounded) shows up here
+	floraMu.Lock()
+	keys := make([]string, 0, len(floraSets))
+	for k := range floraSets {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	sb.WriteString("\nflora variants (key: wood+leaf triangles):\n")
+	for _, k := range keys {
+		f := floraSets[k]
+		n := 0
+		if f.wood != nil {
+			n += len(f.wood.Tris)
+		}
+		if f.leaf != nil {
+			n += len(f.leaf.Tris)
+		}
+		fmt.Fprintf(&sb, "  %s: %d\n", k, n)
+	}
+	floraMu.Unlock()
 	exe, _ := os.Executable()
 	name := "bench_soak"
 	if benchTag != "" {
