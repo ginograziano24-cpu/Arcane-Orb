@@ -74,6 +74,9 @@ shots = [
     ("side_left", -24, None, 0.30, 85, (1200, 900)),
     ("side_right", -156, None, 0.30, 85, (1200, 900)),
 ]
+_only = [x for x in os.environ.get("SHOW_ONLY", "").split(",") if x]
+if _only:
+    shots = [sh for sh in shots if sh[0] in _only]
 for name, ang, zf, dist, lens, res in shots:
     a = math.radians(ang)
     tgt = Vector((ctr.x, ctr.y, mn.z + zf * h)) if zf is not None else EYES

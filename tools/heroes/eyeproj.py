@@ -95,16 +95,16 @@ class _Geo:
             o = h + self.dback * self.eps
         return out
 
-    def hidden(self, i):
+    def hidden(self, i, strict=False):
         """True when something other than rebuilt skin covers vertex i from the camera.
         Rebuilt skin (forehead, mirrored patch) lying just in front does not count, so
         the original skin under it is still painted and never shows dark through a gap."""
-        o = self.Vector(self.co[i].tolist()) + self.dv * max(self.eps, self.near)
+        o = self.Vector(self.co[i].tolist()) + self.dv * (self.eps if strict else max(self.eps, self.near))
         for _ in range(6):
             h, _n, fi, dist = self.bvh.ray_cast(o, self.dv, 1e6)
             if h is None:
                 return False
-            thin = _n is not None and _n.dot(self.dv) > 0.1 and dist < self.skin_reach      # another skin layer lying on it
+            thin = (not strict) and _n is not None and _n.dot(self.dv) > 0.1 and dist < self.skin_reach      # another skin layer lying on it
             reb = self.reb_face is not None and fi is not None and fi < len(self.reb_face) and self.reb_face[fi] and dist < self.reb_reach
             if thin or reb:
                 o = h + self.dv * self.eps
@@ -152,7 +152,7 @@ def _classify(g, say=print):
     """Paint weight and "in front" (hair lock) flag for every vertex of a _Geo."""
     n = len(g.co)
     infront = np.zeros(n, dtype=bool)
-    ok = (g.wco[:, 1] < g.depth_lim).astype(np.float32) * np.clip(-3.0 * g.wno[:, 1], 0, 1)
+    ok = (g.wco[:, 1] < g.depth_lim).astype(np.float32) * np.clip(-6.0 * g.wno[:, 1], 0, 1)
     lockwin = g.lockwin()
     hidden = 0
     try:
@@ -273,6 +273,28 @@ def build_face_patch(ob, say=print, win=None, smooth=True, overlap=False):
     loops = st[:, None] + np.arange(3)[None, :]
     tri = li[loops]
     fsel = np.where(inwin[tri].all(1) & (g.wno[tri, 1].mean(1) < 0.3))[0]
+    # her left cheek has a second skin layer a few thousandths behind the
+    # first in places; copying both left a crack from the side. Keep only the
+    # front-most layer: per 5 px cell, faces within 0.0015 of the nearest.
+    if len(fsel):
+        cu = g.pxu[tri[fsel]].mean(1); cv = g.pxv[tri[fsel]].mean(1); cd = g.wco[tri[fsel], 1].mean(1)
+        thin_ = np.zeros(len(fsel), bool)
+        try:                                           # lashes and brows lie on top: they don't hide the skin under them
+            mi_ = np.empty(npoly, dtype=np.int32); me.polygons.foreach_get("material_index", mi_)
+            badm = np.array([any(k in (m.name.lower() if m else "") for k in ("lash", "brow", "fringe")) for m in me.materials], dtype=bool)
+            if len(badm):
+                thin_ = badm[np.clip(mi_[fsel], 0, len(badm) - 1)]
+        except Exception:
+            pass
+        cd = np.where(thin_, 1e9, cd)
+        key = (np.floor(cu / 5).astype(np.int64) * 100003 + np.floor(cv / 5).astype(np.int64))
+        order = np.argsort(key); ks = key[order]
+        first = np.r_[0, np.where(np.diff(ks))[0] + 1]
+        mind = np.minimum.reduceat(cd[order], first)
+        cellmin = np.empty(len(fsel)); cellmin[order] = np.repeat(mind, np.diff(np.r_[first, len(ks)]))
+        front = (cd <= cellmin + 0.0015 * g.hgt) | thin_
+        say("patch: kept the front layer,", int(front.sum()), "of", len(fsel), "candidate faces")
+        fsel = fsel[front]
     used = np.unique(tri[fsel])
     vis = {}; newpos = {}; exists = {}; delta = {}
     for i in used:
@@ -296,9 +318,64 @@ def build_face_patch(ob, say=print, win=None, smooth=True, overlap=False):
             for i in free:
                 if nbr[i]:
                     delta[i] = sum(delta[j] for j in nbr[i]) / len(nbr[i])
-    for i in used:
-        newpos[i][1] += delta[i] + (0.0004 if overlap else 0.00015) * g.hgt
     keepf = [f for f in fsel if any(vis[i] for i in tri[f]) and (overlap or not all(exists[i] for i in tri[f]))]
+    # strands of her hair lying on her left cheek must not be copied onto the
+    # right cheek as skin (they showed as a ridge and a crack from the side):
+    # away from the eye and brow, only skin-coloured faces are copied
+    try:
+        timg = None
+        for m in me.materials:
+            if m and m.node_tree:
+                bs = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+                if bs and bs.inputs["Base Color"].links and bs.inputs["Base Color"].links[0].from_node.type == "TEX_IMAGE":
+                    timg = bs.inputs["Base Color"].links[0].from_node.image; break
+        if timg is not None and keepf:
+            TW, TH = timg.size
+            tpx = np.empty(TW * TH * 4, dtype=np.float32); timg.pixels.foreach_get(tpx); tpx = tpx.reshape(TH, TW, 4)
+            uvl_ = me.uv_layers.active
+            uvs = np.empty(len(me.loops) * 2, dtype=np.float32); uvl_.data.foreach_get("uv", uvs); uvs = uvs.reshape(-1, 2)
+            kept = []; dropped = 0
+            for f in keepf:
+                uc = uvs[loops[f]].mean(0)
+                c_ = tpx[int(np.clip((uc[1] % 1) * (TH - 1), 0, TH - 1)), int(np.clip((uc[0] % 1) * (TW - 1), 0, TW - 1)), :3]
+                mx_, mn_ = float(c_.max()), float(c_.min())
+                sat = (mx_ - mn_) / max(mx_, 1e-4)
+                warm = c_[0] >= c_[2] * 1.04
+                # destination pixel of the face centre (mirrored)
+                dx = 2 * mid_px - float(np.mean(g.pxu[tri[f]])); dy = float(np.mean(g.pxv[tri[f]])) + EYE_DROP
+                near_eye = ((dx - 1530) / 175.0) ** 2 + ((dy - 698) / 100.0) ** 2 < 1.0 or dy < 640
+                if near_eye or (warm and sat > 0.08):
+                    kept.append(f)
+                else:
+                    dropped += 1
+            keepf = kept
+            say("patch: left out", dropped, "hair-coloured faces")
+    except Exception as e:
+        say("patch: hair filter skipped", e)
+    # depth grows away from the camera. The inside of the piece sits a hair in
+    # front of her skin, covering the jagged edge where the old face was cut
+    # away; its rim lies on intact skin and tucks just under it, so no lip or
+    # crack shows from the side
+    from collections import Counter
+    ec = Counter()
+    for f in keepf:
+        a_, b_, c_ = (int(q) for q in tri[f])
+        for e in ((a_, b_), (b_, c_), (c_, a_)):
+            ec[tuple(sorted(e))] += 1
+    rim = set(v for e, n_ in ec.items() if n_ == 1 for v in e)
+    ring2 = set()
+    for f in keepf:
+        vs = [int(q) for q in tri[f]]
+        if any(v in rim for v in vs):
+            ring2.update(v for v in vs if v not in rim)
+    for i in used:
+        ii = int(i)
+        off = (-0.0005 if overlap else 0.00015)
+        if ii in rim and exists.get(ii):
+            off = 0.0004
+        elif ii in ring2 and exists.get(ii):
+            off = 0.0
+        newpos[i][1] += delta[i] + off * g.hgt
     if not keepf:
         say("patch: nothing to add"); return 0
     uvl = me.uv_layers.active
@@ -343,7 +420,7 @@ def build_face_patch(ob, say=print, win=None, smooth=True, overlap=False):
         pm.materials.append(m)
     try:
         _ra = pm.attributes.new("rebuilt", "FLOAT", "POINT")
-        _ra.data.foreach_set("value", np.ones(len(pm.vertices), dtype=np.float32))
+        _ra.data.foreach_set("value", np.full(len(pm.vertices), 1.0, dtype=np.float32))
     except Exception:
         pass
     po = bpy.data.objects.new("face_patch", pm)
@@ -830,7 +907,7 @@ def _fh_region(px, py):
     mx = np.where(left, 2 * PART_X - px, px)
     my = np.where(left, py + EYE_DROP, py)
     r = (mx > FH_X0) & (mx <= PART_X + 0.5) & (my > FH_Y0) & (my < FH_Y1)
-    r |= (mx > 1714) & (mx <= PART_X + 0.5) & (my >= FH_Y1 - 4) & (my < 622)       # nose bridge between the brows
+    r |= (mx > 1714) & (mx <= PART_X + 0.5) & (my >= FH_Y1 - 4) & (my < 646)       # nose bridge between the brows
     r &= ~((mx < 1494) & (my < 324))                     # corner under the hat brim
     return r
 
@@ -847,12 +924,16 @@ def rebuild_forehead(ob, say=print):
     g.mirror_fit(say)
     hgt = g.hgt
 
-    def depth(px, py):
+    def depth(px, py, ref=None):
+        """Depth of her face at a face-image pixel. With ref, the facing surface
+        nearest that depth (so hair or old pieces in front are skipped)."""
         wx, wz = _px_world(cam, px, py)
-        for hh, fc in g.hits(wx, wz, 3, facing=True):
-            if fc:
-                return hh if hh < g.depth_lim else None
-        return None
+        hs = [hh for hh, fc in g.hits(wx, wz, 4, facing=True) if fc and hh < g.depth_lim]
+        if not hs:
+            return None
+        if ref is None:
+            return hs[0]
+        return min(hs, key=lambda hh: abs(hh - ref))
 
     def basis(px, py):
         u = (np.abs(np.asarray(px, float) - PART_X) / 370.0) ** 2
@@ -881,7 +962,7 @@ def rebuild_forehead(ob, say=print):
         w = np.clip((PART_X - px) / 150.0, 0, 1)
         return w * (g.fit[0] + g.fit[1] * (wx - g.xmid) + g.fit[2] * wz)
     step = 6.0
-    xs = np.arange(FH_X0 - 22, FH_X1 + 24, step); ys = np.arange(FH_Y0 - 26, 650, step)        # down past the nose bridge
+    xs = np.arange(FH_X0 - 22, FH_X1 + 24, step); ys = np.arange(FH_Y0 - 26, 692, step)        # down past the nose bridge
     GX, GY = np.meshgrid(xs, ys)
     core = _fh_region(GX, GY)
     inside = core.copy()
@@ -891,11 +972,18 @@ def rebuild_forehead(ob, say=print):
     inside &= ~((np.where(GX > PART_X, 2 * PART_X - GX, GX) < 1494) & (np.where(GX > PART_X, GY + EYE_DROP, GY) < 318))
     DY = basis(GX, np.where(GX > PART_X, GY, GY - EYE_DROP)) @ c
     nyy, nxx = GX.shape
+    nyy0 = nyy
     WX = np.zeros_like(GX); WZ = np.zeros_like(GX)
     for j in range(nyy):
         for i in range(nxx):
             WX[j, i], WZ[j, i] = _px_world(cam, GX[j, i], GY[j, i])
     DY = DY + right_shift(GX, WX, WZ) - 0.0004 * hgt
+    # over the nose bridge the forehead fit is extrapolating (it overshot by
+    # ~0.1 of her height there): carry the depth of the brow line straight
+    # down instead, and let her own face pull it into shape below
+    BR = (np.abs(GX - PART_X) < 95) & (GY > 548)
+    jr = int(np.argmin(np.abs(ys - 548)))
+    DY = np.where(BR, DY[jr][None, :].repeat(nyy0, 0), DY)
     # near its edges the surface settles exactly onto the face around it
     dist = np.where(inside, 99, 0)
     for _ in range(7):
@@ -907,15 +995,16 @@ def rebuild_forehead(ob, say=print):
         for i in range(nxx):
             if inside[j, i] and (dist[j, i] <= 6 or (abs(GX[j, i] - PART_X) < 95 and GY[j, i] > 556)):
                 px, py = GX[j, i], GY[j, i]
+                bridge = abs(px - PART_X) < 95 and py > 556          # over the nose bridge: follow her face closely
+                ref = DY[j, i] if bridge else None
                 if px > PART_X:
-                    h = depth(px, py)
+                    h = depth(px, py, ref)
                 else:                                     # her right side takes the mirrored left
-                    h = depth(2 * PART_X - px, py - EYE_DROP)
+                    h = depth(2 * PART_X - px, py - EYE_DROP, ref)
                     if h is not None:
                         h += right_shift(px, WX[j, i], WZ[j, i])
-                bridge = abs(px - PART_X) < 95 and py > 556          # over the nose bridge: follow her face closely
                 if h is not None and abs(h - DY[j, i]) < (0.012 if bridge else 0.004) * hgt:
-                    w = (1 - (dist[j, i] - 1) / 6.0) ** 2
+                    w = float(np.clip(1 - (dist[j, i] - 1) / 6.0, 0, 1)) ** 2       # (clipped: deep inside the weight must stay 0..1)
                     if bridge:
                         w = max(w, float(np.clip((py - 556) / 48.0, 0, 1)))
                     DY[j, i] = DY[j, i] * (1 - w) + (h - 0.0004 * hgt) * w
@@ -971,7 +1060,7 @@ def rebuild_forehead(ob, say=print):
             pm.materials.append(m)
         try:
             _ra = pm.attributes.new("rebuilt", "FLOAT", "POINT")
-            _ra.data.foreach_set("value", np.ones(len(pm.vertices), dtype=np.float32))
+            _ra.data.foreach_set("value", np.full(len(pm.vertices), 2.0, dtype=np.float32))
         except Exception:
             pass
         po = bpy.data.objects.new("forehead_fill", pm)
@@ -995,7 +1084,7 @@ def add_backing(ob, say=print):
     g = _Geo(ob, cam, None)
     g.mirror_fit(lambda *a: None)
     step = 8.0
-    xs = np.arange(1282, 1430, step); ys = np.arange(200, 830, step)
+    xs = np.arange(1282, 1430, step); ys = np.arange(200, 930, step)
     GX, GY = np.meshgrid(xs, ys)
     D = np.full(GX.shape, np.nan)
     WX = np.zeros_like(GX); WZ = np.zeros_like(GX)
@@ -1050,7 +1139,7 @@ def add_backing(ob, say=print):
         pm.materials.append(m)
     try:
         _ra = pm.attributes.new("rebuilt", "FLOAT", "POINT")
-        _ra.data.foreach_set("value", np.ones(len(pm.vertices), dtype=np.float32))
+        _ra.data.foreach_set("value", np.full(len(pm.vertices), 3.0, dtype=np.float32))
     except Exception:
         pass
     po = bpy.data.objects.new("backing", pm)
@@ -1106,7 +1195,7 @@ def add_fringe(ob, mode, say=print):
         for (x, y) in pts:
             wx, wz = _px_world(cam, x, y)
             hs = g.hits(wx, wz, 4, facing=True)
-            fy = next((hh for hh, fc in hs if fc), None)
+            fy = next((hh for hh, fc in hs if fc and hh > g.face_y - 0.002 * hgt), None)     # never the hat brim in front
             P.append([wx, fy if fy is not None else np.nan, wz])
         P = np.array(P)
         bad = np.isnan(P[:, 1])
@@ -1283,7 +1372,7 @@ def seal_face(ob, say=print, step=2, passes=2):
             pm.materials.append(m)
         try:
             _ra = pm.attributes.new("rebuilt", "FLOAT", "POINT")
-            _ra.data.foreach_set("value", np.ones(len(pm.vertices), dtype=np.float32))
+            _ra.data.foreach_set("value", np.full(len(pm.vertices), 4.0, dtype=np.float32))
         except Exception:
             pass
         po = bpy.data.objects.new("face_seal", pm)
@@ -1297,3 +1386,131 @@ def seal_face(ob, say=print, step=2, passes=2):
         total += len(Fc)
         say("seal: closed", int(hole.sum()), "hole samples with", len(Fc), "faces")
     return total
+
+
+def probe_bridge(ob, say=print):
+    """Diagnostic: the surface layers met along lines through the nose bridge."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    g = _Geo(ob, cam, None)
+    k = 1000.0 / g.hgt
+    for px in (1730, 1752, 1767, 1782, 1804):
+        rows = []
+        for py in range(520, 712, 8):
+            wx, wz = _px_world(cam, px, py)
+            o = g.Vector(g.to_local((wx, g.y_far, wz)).tolist()); hs = []
+            for _ in range(4):
+                h, nrm, fi, _d = g.bvh.ray_cast(o, g.dback, 1e6)
+                if h is None:
+                    break
+                yv = float((g.A @ np.array(h) + g.t)[1])
+                rb = "r" if (g.reb_face is not None and fi is not None and fi < len(g.reb_face) and g.reb_face[fi]) else "o"
+                hs.append("%+.2f%s%s" % ((yv - g.face_y) * k, rb, "" if nrm.dot(g.dv) > 0.1 else "B"))
+                o = h + g.dback * g.eps
+            rows.append("%d:%s" % (py, ",".join(hs)))
+        say("probe x", px, " ".join(rows))
+
+
+
+def probe_pieces(ob, say=print):
+    """Diagnostic: for each rebuilt piece (1 patch, 2 forehead, 3 backing, 4 seal),
+    its vertex nearest the camera, in permille of height in front of the face."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    g = _Geo(ob, cam, None)
+    me = ob.data
+    at = me.attributes.get("rebuilt")
+    if at is None:
+        say("pieces: no rebuilt attribute"); return
+    rv = np.empty(len(me.vertices), dtype=np.float32); at.data.foreach_get("value", rv)
+    for v in (1.0, 2.0, 3.0, 4.0):
+        m = np.abs(rv - v) < 0.25
+        if not m.any():
+            continue
+        idx = np.where(m)[0]
+        d = (g.wco[idx, 1] - g.face_y) * 1000.0 / g.hgt
+        order = np.argsort(d)[:6]
+        say("piece", v, "verts", int(m.sum()), "most forward:", ["%.1f@(%d,%d)" % (d[k], g.pxu[idx[k]], g.pxv[idx[k]]) for k in order])
+
+
+def trim_under_patch(ob, say=print, cell=6.0, margin=3):
+    """Removes her original skin lying just under the inside of the mirrored
+    face patch (the jagged edge left where the old face was cut away showed
+    as thin cracks from the side). The patch's outer rim keeps overlapping
+    her own skin, so nothing opens."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    me = ob.data
+    at = me.attributes.get("rebuilt")
+    if at is None:
+        say("patch trim: no rebuilt tag"); return 0
+    g = _Geo(ob, cam, None)
+    rv = np.empty(len(me.vertices), dtype=np.float32); at.data.foreach_get("value", rv)
+    pv = np.abs(rv - 1.0) < 0.25                          # the mirrored patch
+    if not pv.any():
+        return 0
+    gx = np.floor(g.pxu / cell).astype(int); gy = np.floor(g.pxv / cell).astype(int)
+    x0, y0 = gx[pv].min() - 2, gy[pv].min() - 2
+    W_, H_ = gx[pv].max() - x0 + 3, gy[pv].max() - y0 + 3
+    occ = np.zeros((H_, W_), bool)
+    tri = _tris(me)
+    if tri is None:
+        say("patch trim: mesh not all triangles"); return 0
+    pf = pv[tri].all(1)
+    dep = np.full((H_, W_), np.nan)
+    for f in np.where(pf)[0]:                             # rasterise the patch faces coarsely
+        xs_ = gx[tri[f]] - x0; ys_ = gy[tri[f]] - y0
+        occ[ys_.min():ys_.max() + 1, xs_.min():xs_.max() + 1] = True
+        dep[ys_.min():ys_.max() + 1, xs_.min():xs_.max() + 1] = g.wco[tri[f], 1].mean()
+    inner = occ.copy()
+    for _ in range(margin):                               # keep a rim of overlap
+        p = np.pad(inner, 1, constant_values=False)
+        inner = inner & p[:-2, 1:-1] & p[2:, 1:-1] & p[1:-1, :-2] & p[1:-1, 2:]
+    cx = gx - x0; cy = gy - y0
+    okc = (cx >= 0) & (cx < W_) & (cy >= 0) & (cy < H_)
+    inside_v = np.zeros(len(g.co), bool)
+    inside_v[okc] = inner[cy[okc], cx[okc]]
+    vd = np.full(len(g.co), np.nan)
+    vd[okc] = dep[cy[okc], cx[okc]]
+    near = np.isfinite(vd) & (np.abs(g.wco[:, 1] - vd) < 0.0025 * g.hgt)   # right at the patch's depth: her old skin, not lashes or hair
+    orig = (rv < 0.5) & inside_v & near & (g.wco[:, 1] < g.depth_lim) & (g.wno[:, 1] < 0.3)
+    sel = orig[tri].all(1)
+    try:                                                   # never touch lashes, brows or eyes
+        mi = np.empty(len(me.polygons), dtype=np.int32); me.polygons.foreach_get("material_index", mi)
+        bad = np.array([any(k in (m.name.lower() if m else "") for k in ("lash", "brow", "fringe", "iris", "eye")) for m in me.materials], dtype=bool)
+        if len(bad):
+            sel &= ~bad[np.clip(mi, 0, len(bad) - 1)]
+    except Exception:
+        pass
+    k = int(sel.sum())
+    if k:
+        _edit_faces(ob, sel, lambda: bpy.ops.mesh.delete(type="FACE"))
+    say("patch trim: removed", k, "faces of old skin under the patch")
+    return k
+
+
+def probe_cheek(ob, say=print):
+    """Diagnostic: surface layers across her right cheek (piece tag per hit)."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    g = _Geo(ob, cam, None)
+    me = ob.data
+    at = me.attributes.get("rebuilt")
+    rvf = None
+    if at is not None:
+        rv = np.empty(len(me.vertices), dtype=np.float32); at.data.foreach_get("value", rv)
+        st_ = np.empty(len(me.polygons), dtype=np.int32); me.polygons.foreach_get("loop_start", st_)
+        li_ = np.empty(len(me.loops), dtype=np.int32); me.loops.foreach_get("vertex_index", li_)
+        rvf = rv[li_[st_]]
+    k = 1000.0 / g.hgt
+    for py in (700, 740, 780, 820, 860, 900):
+        row = []
+        for px in range(1340, 1560, 8):
+            wx, wz = _px_world(cam, px, py)
+            o = g.Vector(g.to_local((wx, g.y_far, wz)).tolist()); hs = []
+            for _ in range(3):
+                h, nrm, fi, _d = g.bvh.ray_cast(o, g.dback, 1e6)
+                if h is None:
+                    break
+                yv = float((g.A @ np.array(h) + g.t)[1])
+                tag = "%d" % int(round(rvf[fi])) if (rvf is not None and fi is not None and fi < len(rvf)) else "?"
+                hs.append("%+.2f%s%s" % ((yv - g.face_y) * k, tag, "" if nrm.dot(g.dv) > 0.1 else "B"))
+                o = h + g.dback * g.eps
+            row.append("%d:%s" % (px, ",".join(hs)))
+        say("cheek y", py, " ".join(row))

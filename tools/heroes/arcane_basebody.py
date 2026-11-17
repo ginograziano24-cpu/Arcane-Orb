@@ -384,7 +384,7 @@ try:
         Lh = np.linalg.norm(BJ["hand" + sd][1] - BJ["hand" + sd][0]) * G
         best_ = None
         for cid, n_, c_, el_, ok in comps:
-            if not ok or (c_[0] - cx0) * sgn < 0.13 * ST or c_[2] < z0 + 0.5 * ST:     # hands are out beside her, not on her body
+            if not ok or (c_[0] - cx0) * sgn < 0.15 * ST or c_[2] < z0 + 0.5 * ST or c_[1] > head_y + 0.03 * ST:     # hands are out beside her, not on her body
                 continue
             if np.linalg.norm(c_ - head_c) < 0.12 * ST or np.linalg.norm(c_ - sh) > LA + LB + Lh:
                 continue
@@ -446,11 +446,14 @@ try:
     # (under the skirt) are interpolated and logged as estimates. The fit is
     # repeated with a girth correction until the base matches her.
     THK = np.array([0.0, 0.003 * HH, 0.009 * HH])           # skin, robe, armour thickness taken off
-    NA = 64; NS = 12
+    NA = 64; NS = 14
+    # the torso is fitted as one piece, hip joints to neck, so the hips, belly
+    # and chest don't fight each other where their weights overlap
+    TJ["torso"] = (TJ["hips"][0], TJ["chest"][1])
     TH = np.linspace(0, 2 * math.pi, NA, endpoint=False)
     US = np.linspace(0.1, 0.9, NS)
-    FIT = [s for s in SEG if s.split(".")[0] not in ("hand", "head")]
-    TORSO = ("hips", "spine", "chest")
+    FIT = ["torso"] + [s for s in SEG if s.split(".")[0] not in ("hand", "head", "hips", "spine", "chest")]
+    TORSO = ("torso",)
 
     def frame(s):
         h, t = TJ[s]; d = t - h; L_ = np.linalg.norm(d); d = d / L_
@@ -482,66 +485,129 @@ try:
         pts = c + r[:, None] * (np.cos(TH)[:, None] * e1 + np.sin(TH)[:, None] * e2)
         return float(np.linalg.norm(np.roll(pts, -1, 0) - pts, axis=1).sum())
 
+    # each cross-section is measured against its own body part only, so an arm
+    # crossing in front of the waist (or a leg beside a leg) isn't counted
+    GROUP = {}
+    for s_ in SEG:
+        b_ = s_.split(".")[0]; sd_ = s_[-2:] if "." in s_ else ""
+        GROUP[s_] = "torso" if b_ in ("hips", "spine", "chest", "neck") else "head" if b_ == "head" else ("arm" if b_ in ("armU", "armL", "hand") else "leg") + sd_
+    GROUP["torso"] = "torso"
+    fdom = np.array([int(np.argmax(Wt[list(f)].mean(0))) for f in BP])
+    FG = {}
+    for gname in set(GROUP.values()):
+        FG[gname] = [f for f, d_ in zip(BP, fdom) if GROUP[SEG[d_]] == gname]
+
     def mtree(P):
-        return BVHTree.FromPolygons([tuple(p) for p in P], BP)
+        return {gname: BVHTree.FromPolygons([tuple(p) for p in P], fl) for gname, fl in FG.items() if fl}
     mt0 = mtree(Pn)
-    # her side, measured once
+    # her side, measured once per cross-section (re-measured if recentred)
+    def measure_her(s, c, e1, e2, u):
+        rm, _ = rays(mt0[GROUP[s]], c, e1, e2, 0.6 * HH)
+        cap = (1.35 if s in TORSO else 1.5) * rm           # her rays stop short of loose sleeves and cloth
+        rh, ly = rays(itree, c, e1, e2, cap, ILAY)
+        rh = rh - THK[ly]
+        ok = np.isfinite(rh) & (rh > 0.004 * HH)
+        if s not in TORSO and ok.sum() > 8:
+            skin_ok = ok & (ly == 0)
+            ref = np.median(rh[skin_ok]) if skin_ok.sum() >= 8 else np.percentile(rh[ok], 40)
+            ok &= rh < 1.3 * ref
+        skip = (s == "torso" and (u < 0.14 or u > 0.8)) or (s.startswith("legU") and u < 0.18) or (s.startswith("armU") and u < 0.2)
+        return dict(c=c, rm=rm, rh=np.where(ok, rh, np.nan), ly=ly, n=int(ok.sum()), nb=int(np.isfinite(rm).sum()),
+                    robe=float((ly[ok] > 0).mean()) if ok.any() else 1.0, skip=skip)
     HER = {}
     for s in FIT:
         h, d, L_, e1, e2 = frame(s)
         st = []
         for u in US:
-            c = h + d * L_ * u
-            rm, _ = rays(mt0, c, e1, e2, 0.6 * HH)
-            cap = 1.6 * rm
-            rh, ly = rays(itree, c, e1, e2, cap, ILAY)
-            rh = rh - THK[ly]
-            ok = np.isfinite(rh) & (rh > 0.004 * HH)
-            if s not in TORSO and ok.sum() > 8:
-                skin_ok = ok & (ly == 0)
-                ref = np.median(rh[skin_ok]) if skin_ok.sum() >= 8 else np.percentile(rh[ok], 40)
-                ok &= rh < 1.3 * ref
-            st.append(dict(c=c, rm=rm, rh=np.where(ok, rh, np.nan), ly=ly, n=int(ok.sum()), robe=float((ly[ok] > 0).mean()) if ok.any() else 1.0, skip=(s == "hips" and u < 0.5) or (s.startswith("legU") and u < 0.18)))
+            c0 = h + d * L_ * u
+            m_ = measure_her(s, c0, e1, e2, u)
+            # recentre on her own cross-section (the bone may sit off-centre in her limb)
+            for _ in range(2):
+                okr = np.isfinite(m_["rh"])
+                if okr.sum() < 16:
+                    break
+                pts = m_["c"] + m_["rh"][:, None] * (np.cos(TH)[:, None] * e1 + np.sin(TH)[:, None] * e2)
+                cn = pts[okr].mean(0)
+                cn = cn - d * ((cn - c0) @ d)                    # stay in the cross-section's plane
+                r0 = float(np.nanmedian(m_["rh"]))
+                if np.linalg.norm(cn - c0) > 0.5 * r0 or inside(cn) > 0:
+                    break
+                m_ = measure_her(s, cn, e1, e2, u)
+            st.append(m_)
         HER[s] = st
 
     def harm(n):
         return np.stack([np.ones(NA)] + [f(k * TH) for k in range(1, n + 1) for f in (np.cos, np.sin)], 1)
-    B0, B2 = harm(0), harm(2)
-
-    def station_coef(s, stt):
-        ok = np.isfinite(stt["rh"]) & np.isfinite(stt["rm"]) & (stt["rm"] > 1e-6)
-        if ok.sum() < 16 or stt.get("skip"):
-            return None
-        q = stt["rh"][ok] / stt["rm"][ok]
-        if s in TORSO and ok.sum() >= 32:
-            # robust low-order fit; loose cloth handled by trimming the high side
-            keep = np.ones(ok.sum(), bool)
-            for _ in range(3):
-                c_ = np.linalg.lstsq(B2[ok][keep], q[keep], rcond=None)[0]
-                res = q - B2[ok] @ c_
-                keep = res < np.percentile(res, 75) + 0.02
-            return c_
-        a0 = np.percentile(q, 30) if stt["robe"] > 0.3 else np.median(q)
-        return np.r_[a0, np.zeros(4)]
-    COEF = {}; EST = {}
+    B2 = harm(2)
+    # ---- targets: her girth at each trustworthy cross-section, cleaned
+    TG = {}; EST = {}
     for s in FIT:
-        cs = [station_coef(s, stt) for stt in HER[s]]
-        okk = [c_ is not None for c_ in cs]
-        EST[s] = [not k for k in okk]
-        if not any(okk):
-            cs = [np.r_[1.0, np.zeros(4)]] * NS
-        else:
-            iu = np.array([i for i, k in enumerate(okk) if k])
-            M_ = np.array([cs[i] for i in iu])
-            cs = [np.array([np.interp(i, iu, M_[:, j]) for j in range(5)]) for i in range(NS)]
-        C_ = np.array(cs)
-        for _ in range(2):                                      # smooth along the bone
-            C_[1:-1] = 0.25 * C_[:-2] + 0.5 * C_[1:-1] + 0.25 * C_[2:]
-        C_[:, 0] = np.clip(C_[:, 0], 0.55, 2.4)
-        COEF[s] = C_
-    say("fit: stations measured / estimated", {s: "%d/%d" % (NS - sum(EST[s]), sum(EST[s])) for s in FIT})
+        h, d, L_, e1, e2 = frame(s)
+        g_ = np.full(NS, np.nan)
+        for i, stt in enumerate(HER[s]):
+            if stt["skip"] or stt["n"] < 40 or stt["nb"] < 60:
+                continue
+            rh = fill_periodic(stt["rh"])
+            if rh is not None:
+                g_[i] = perim(stt["c"], e1, e2, rh)
+        tol = 0.35 if s in TORSO else 0.25
+        okk = np.isfinite(g_)
+        for i in np.where(okk)[0]:                              # drop cross-sections far off their neighbours
+            nbv = [g_[j] for j in range(max(0, i - 2), min(NS, i + 3)) if j != i and okk[j]]
+            if len(nbv) >= 2 and abs(g_[i] / np.median(nbv) - 1) > tol:
+                g_[i] = np.nan
+        okk = np.isfinite(g_)
+        lg = np.log(np.where(okk, g_, 1.0)); sm = lg.copy()
+        for i in np.where(okk)[0]:                              # smooth the target the way the model is smooth
+            w_ = [0.5] + [0.25 for j in (i - 1, i + 1) if 0 <= j < NS and okk[j]]
+            v_ = [lg[i]] + [lg[j] for j in (i - 1, i + 1) if 0 <= j < NS and okk[j]]
+            sm[i] = np.dot(w_, v_) / sum(w_)
+        TG[s] = np.where(okk, np.exp(sm), np.nan)
+    for a_, b_ in (("armU.L", "armU.R"), ("armL.L", "armL.R")):  # an arm hidden in its sleeve borrows the other arm's profile
+        for x_, y_ in ((a_, b_), (b_, a_)):
+            if np.isfinite(TG[x_]).sum() < 3 and np.isfinite(TG[y_]).sum() >= 3:
+                TG[x_] = TG[y_].copy()
+                say("fit:", x_, "borrows the profile of", y_)
+    for s in FIT:
+        EST[s] = list(~np.isfinite(TG[s]))
+    say("fit: trusted cross-sections", {s: int(np.isfinite(TG[s]).sum()) for s in FIT})
+    # ---- fixed shape terms for the torso (front/back, side-to-side), from her rays
+    HARM = {s: np.zeros((NS, 4)) for s in FIT}
+    A0 = {}
+    for s in FIT:
+        a0 = np.full(NS, np.nan)
+        for i, stt in enumerate(HER[s]):
+            ok = np.isfinite(stt["rh"]) & np.isfinite(stt["rm"]) & (stt["rm"] > 1e-6)
+            if ok.sum() < 16 or stt["skip"]:
+                continue
+            q = stt["rh"][ok] / stt["rm"][ok]
+            if s in TORSO and ok.sum() >= 32:
+                keep = np.ones(ok.sum(), bool)
+                for _ in range(3):
+                    c_ = np.linalg.lstsq(B2[ok][keep], q[keep], rcond=None)[0]
+                    res = q - B2[ok] @ c_
+                    keep = res < np.percentile(res, 75) + 0.02
+                a0[i] = c_[0]; HARM[s][i] = 0.6 * c_[1:] / max(c_[0], 0.3)
+            else:
+                a0[i] = np.percentile(q, 30) if stt["robe"] > 0.3 else np.median(q)
+        ok = np.isfinite(a0)
+        A0[s] = np.interp(np.arange(NS), np.where(ok)[0], a0[ok]) if ok.any() else np.ones(NS)
+        for _ in range(3):
+            HARM[s][1:-1] = 0.25 * HARM[s][:-2] + 0.5 * HARM[s][1:-1] + 0.25 * HARM[s][2:]
+    # ---- the parameters: a few knots of log-size per bone, smooth by construction
+    NK = {s: (6 if s in TORSO else 3) for s in FIT}
+    KPOS = {s: np.linspace(0, NS - 1, NK[s]) for s in FIT}
+    X = {s: np.log(np.clip(np.interp(KPOS[s], np.arange(NS), A0[s]), 0.5, 2.2)) for s in FIT}
+    if "neck" in X and np.isfinite(TG["neck"]).sum() < 3:
+        X["neck"][:] = 0.0                                      # hidden neck: the mannequin's own
+    COEF = {}
+
+    def coef_from_X(XX):
+        for s in FIT:
+            a0 = np.exp(np.interp(np.arange(NS), KPOS[s], XX[s]))
+            COEF[s] = np.c_[a0, HARM[s] * a0[:, None]]
     # vertex -> (segment, u, theta) once
-    FR = {s: frame(s) for s in SEG}
+    FR = {s: frame(s) for s in list(SEG) + ["torso"]}
     UTH = {}
     for s in FIT:
         h, d, L_, e1, e2 = FR[s]
@@ -560,7 +626,7 @@ try:
     def qfield():
         num = keepw * 1.0; den = keepw.copy()
         for s in FIT:
-            w_ = Wt[:, SI[s]]
+            w_ = Wt[:, SI[s]] if s in SI else Wt[:, [SI["hips"], SI["spine"], SI["chest"]]].sum(1)
             sel = w_ > 1e-3
             u, th = UTH[s]
             pos = np.clip((u[sel] - US[0]) / (US[1] - US[0]), 0, NS - 1)
@@ -579,51 +645,93 @@ try:
                 P = P + lam * (dlt if mask is None else mask[:, None] * dlt)
         return P
     tw = Wt[:, [SI["hips"], SI["spine"], SI["chest"]]].sum(1)
-    NR = 5
-    for rnd in range(NR):
+
+    def forward(XX):
+        coef_from_X(XX)
         q = qfield()
-        for _ in range(6):
+        for _ in range(5):
             q = 0.5 * q + 0.5 * navg(q)
         P = Pn + (q - 1.0)[:, None] * Vbar
-        P = taubin(P, 6)
-        P = taubin(P, 10, tw)                                   # the torso stays smooth and featureless
-        if rnd == NR - 1:
-            break
-        bt = mtree(P)
-        corr = []
-        for s in FIT:                                           # girth correction per station
+        P = taubin(P, 4)
+        return taubin(P, 4, tw)                                 # the torso stays smooth and featureless
+    KEYS = [(s, i) for s in FIT for i in range(NS) if np.isfinite(TG[s][i])]
+    GT = np.array([TG[s][i] for s, i in KEYS])
+
+    def girths(P):
+        bt = mtree(P); out = []
+        for s, i in KEYS:
             h, d, L_, e1, e2 = FR[s]
-            for i, stt in enumerate(HER[s]):
-                if EST[s][i]:
-                    continue
-                rh = fill_periodic(stt["rh"])
-                rb, _ = rays(bt, stt["c"], e1, e2, 0.6 * HH)
-                rb = fill_periodic(rb)
-                if rh is None or rb is None:
-                    continue
-                k = float(np.clip(perim(stt["c"], e1, e2, rh) / perim(stt["c"], e1, e2, rb), 0.8, 1.3))
-                COEF[s][i] *= k; corr.append(k)
-        say("fit round", rnd + 1, "girth corrections: median %.3f, range %.3f..%.3f" % (np.median(corr), min(corr), max(corr)) if corr else "none")
+            rb = fill_periodic(rays(bt[GROUP[s]], HER[s][i]["c"], e1, e2, 0.6 * HH)[0])
+            out.append(perim(HER[s][i]["c"], e1, e2, rb) if rb is not None else np.nan)
+        return np.array(out)
+    # ---- solve all knots together (least squares with a measured Jacobian)
+    BODYGROUP = {"torso": "T", "neck": "T"}
+    for s in FIT:
+        if s not in BODYGROUP:
+            BODYGROUP[s] = ("A" if s.startswith("arm") else "L") + s[-2:]
+    PAR = [(s, k) for s in FIT for k in range(NK[s])]
+    PI = {p: j for j, p in enumerate(PAR)}
+    KG = {}
+    for s, k in PAR:
+        KG.setdefault(BODYGROUP[s], []).append((s, k))
+    nmax = max(len(v) for v in KG.values())
+    KEYG = np.array([BODYGROUP[s] for s, i in KEYS])
+
+    def jacobian(XX, g0):
+        J = np.zeros((len(KEYS), len(PAR)))
+        for j in range(nmax):
+            X2 = {s: v.copy() for s, v in XX.items()}
+            moved = []
+            for gname, plist in KG.items():
+                if j < len(plist):
+                    s, k = plist[j]; X2[s][k] += 0.1; moved.append((gname, s, k))
+            g1 = girths(forward(X2))
+            for gname, s, k in moved:
+                rows = KEYG == gname
+                J[rows, PI[(s, k)]] = (np.log(g1[rows]) - np.log(g0[rows])) / 0.1
+        return np.nan_to_num(J)
+
+    def D2rows():
+        R_ = []
+        for s in FIT:
+            for k in range(1, NK[s] - 1):
+                r_ = np.zeros(len(PAR)); r_[PI[(s, k - 1)]] = 1; r_[PI[(s, k)]] = -2; r_[PI[(s, k + 1)]] = 1
+                R_.append(r_)
+        return np.array(R_) if R_ else np.zeros((0, len(PAR)))
+    D2 = D2rows()
+    P = forward(X); g = girths(P)
+    for outer in range(2):
+        J = jacobian(X, g)
+        live = np.linalg.norm(J, axis=0) >= 0.05
+        say("fit: Jacobian built; %d of %d knots move a measured girth" % (int(live.sum()), len(PAR)))
+        for it in range(4):
+            okr = np.isfinite(g)
+            r = np.where(okr, np.log(GT / np.where(okr, g, 1.0)), 0.0)
+            rms = float(np.sqrt(np.mean(r[okr] ** 2)))
+            say("fit: outer %d step %d  RMS girth error %.1f%%" % (outer + 1, it + 1, rms * 100))
+            if rms < 0.03:
+                break
+            A_ = np.vstack([J[:, live] * okr[:, None], math.sqrt(0.3) * D2[:, live], math.sqrt(0.05) * np.eye(int(live.sum()))])
+            b_ = np.r_[r, np.zeros(len(D2)), np.zeros(int(live.sum()))]
+            dx = np.linalg.lstsq(A_, b_, rcond=None)[0]
+            full = np.zeros(len(PAR)); full[live] = dx
+            for (s, k), j in PI.items():
+                X[s][k] = float(np.clip(X[s][k] + full[j], math.log(0.5), math.log(2.2)))
+            P = forward(X); g = girths(P)
+    okr = np.isfinite(g)
+    r = np.log(GT[okr] / g[okr])
+    say("fit: final RMS girth error %.1f%% over %d cross-sections" % (float(np.sqrt(np.mean(r ** 2))) * 100, int(okr.sum())))
     tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
     for p_ in tmp.polygons:
         p_.use_smooth = True
-    # ---- measurements: her vs the base, at named cross-sections
-    bt = mtree(P)
-    say("measurements (girth, % of her stature): her innermost surface vs base form")
-    for nm_, s, u in (("neck", "neck", 0.5), ("chest", "chest", 0.35), ("under chest", "chest", 0.12), ("waist", "spine", 0.5),
-                      ("hips", "hips", 0.75), ("thigh L", "legU.L", 0.25), ("thigh R", "legU.R", 0.25), ("knee L", "legU.L", 0.9),
-                      ("calf L", "legL.L", 0.35), ("calf R", "legL.R", 0.35), ("upper arm L", "armU.L", 0.5), ("upper arm R", "armU.R", 0.5),
-                      ("forearm L", "armL.L", 0.4), ("forearm R", "armL.R", 0.4)):
-        h, d, L_, e1, e2 = FR[s]
-        i = int(np.argmin(np.abs(US - u))); stt = HER[s][i] if s in HER else None
-        c = h + d * L_ * US[i]
-        rb = fill_periodic(rays(bt, c, e1, e2, 0.6 * HH)[0])
-        rh = fill_periodic(stt["rh"]) if stt else None
-        gb = perim(c, e1, e2, rb) if rb is not None else None
-        gh = perim(c, e1, e2, rh) if rh is not None else None
-        tag = "estimate (hidden)" if (s in EST and EST[s][i]) else "%d rays" % (stt["n"] if stt else 0)
-        say("  %-12s her %6s  base %6s  %s  [%s]" % (nm_, "-" if gh is None else "%.1f" % (gh / ST * 100), "-" if gb is None else "%.1f" % (gb / ST * 100),
-            "" if (gh is None or gb is None) else "diff %+.1f%%" % ((gb - gh) / gh * 100), tag))
+    # ---- measurements: the same cross-sections the fit used
+    say("measurements (girth, % of her stature), her (smoothed target) vs base form:")
+    for s in FIT:
+        rows = [(i, TG[s][i], g[KEYS.index((s, i))]) for i in range(NS) if (s, i) in KEYS]
+        if rows:
+            say("  %-7s " % s + "  ".join("u%.2f %.1f/%.1f(%+.0f%%)" % (US[i], a / ST * 100, b / ST * 100, (b / a - 1) * 100) for i, a, b in rows if np.isfinite(b)))
+        else:
+            say("  %-7s all hidden: estimated from its neighbours" % s)
     # ------------------------------------------------------------ F. into the layered file
     old = bpy.data.objects.get("Arcanist_BaseForm")
     if old:

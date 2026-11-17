@@ -167,7 +167,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		ty = g.drawWaveStrip(screen, L, ty)
 	}
 	if L.Data.Objective == levelgen.ObjCrystals && L.Boss == nil {
-		s := fmt.Sprintf("Shatter the crystals   ·   %d left", L.Crystals)
+		s := hudCrystals.get("Shatter the crystals   ·   ", L.Crystals, " left")
 		w := u.measure(s, fBold, 18) + 72
 		u.frame(screen, 960-w/2, ty, w, 42, 0.88)
 		u.icon(screen, icShard, 960-w/2+28, ty+21, 24, 1)
@@ -210,7 +210,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		}
 	}
 	if L.Frenzy > 0 {
-		s := fmt.Sprintf("FRENZY ×2   %.0fs", L.Frenzy)
+		s := hudFrenzy.get("FRENZY ×2   ", int(math.RoundToEven(L.Frenzy)), "s")
 		w := u.measure(s, fBold, 20) + 74
 		y := 18.0
 		if ck > 0.01 {
@@ -343,7 +343,7 @@ func (g *Game) drawHUD(screen *ebiten.Image, L *Level) {
 		y := 372 + (1-k)*36
 		u.frame(screen, 960-w/2, y, w, h, 0.95*k)
 		u.headingW(screen, "CHAMBER CLEARED", 58, y+28, rgba(255, 222, 128, 255), k, w/2-24)
-		u.iconLabel(screen, icCoin, fmt.Sprintf("+%d gold", L.GoldEarned), fBold, 28, 960, y+116, ca(cGold, k), alignCenter)
+		u.iconLabel(screen, icCoin, hudGold.get("+", L.GoldEarned, " gold"), fBold, 28, 960, y+116, ca(cGold, k), alignCenter)
 		if L.clearShown() > 1.2 {
 			u.text(screen, "Click to continue", fReg, 20, 960, y+176, ca(cDim, k*(0.6+0.4*math.Sin(L.T*4))), alignCenter)
 		}
@@ -393,7 +393,7 @@ func (g *Game) drawAbility(screen *ebiten.Image, L *Level) {
 	}
 	u.drawEmblem(screen, glyphImage(gl, col), cx, cy, 52, ea)
 	if !ready {
-		u.textOutlined(screen, fmt.Sprintf("%.0f", math.Ceil(r.AbilT)), fTitle, 30, cx, cy-20, cWhite, alignCenter)
+		u.textOutlined(screen, hudAbil.get("", int(math.Ceil(r.AbilT)), ""), fTitle, 30, cx, cy-20, cWhite, alignCenter)
 	}
 	tx := cx + rad + 16
 	u.text(screen, strings.ToUpper(a.Ability), fBold, 18, tx, cy-30, lighten(col, 0.4), alignLeft)

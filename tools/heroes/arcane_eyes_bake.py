@@ -48,6 +48,8 @@ try:
         bpy.context.view_layer.update()
         eyeproj.build_face_patch(ob, say, win=[(1330, 1740, 584, 932), (1330, 1412, 318, 600), (1330, 1740, 500, 612)], smooth=False, overlap=True)
         bpy.context.view_layer.update()
+        eyeproj.trim_under_patch(ob, say)
+        bpy.context.view_layer.update()
         if add_forehead:
             add_forehead()
         eyeproj.remove_fringe(ob, say, ymax=590)        # leftovers that only now have face behind them
@@ -57,6 +59,12 @@ try:
         eyeproj.remove_fringe(ob, say, ymax=340)        # old pieces under the hat brim, now in front of the backing
         bpy.context.view_layer.update()
         eyeproj.add_fringe(ob, FRINGE, say)
+        try:
+            eyeproj.probe_bridge(ob, say)
+            eyeproj.probe_pieces(ob, say)
+            eyeproj.probe_cheek(ob, say)
+        except Exception as e:
+            say("probe failed", e)
     else:
         eyeproj.build_face_patch(ob, say)
         if MODE == "trim":
