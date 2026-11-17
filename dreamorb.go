@@ -109,10 +109,10 @@ func drawDreamOrb(B *Batch, p V3, s float64, col color.RGBA, t, ph float64, cup,
 	}
 	bob := math.Sin(t*1.3+ph) * 0.05 * s
 	c := p.Add(V3{0, bob, 0})
-	B.Draw(orbCrystal(), c, v3(0.3*s), rotXYZ(0, t*0.6+ph, 0), lighten(col, 0.45), 0.6)
-	B.Draw(orbRing("a", 0.55), c, v3(s), rotXYZ(1.05, t*0.5+ph, 0.2), color.RGBA{}, 0)
+	B.DrawLive(orbCrystal(), c, v3(0.3*s), rotXYZ(0, t*0.6+ph, 0), lighten(col, 0.45), 0.6)
+	B.DrawLive(orbRing("a", 0.55), c, v3(s), rotXYZ(1.05, t*0.5+ph, 0.2), color.RGBA{}, 0)
 	if both {
-		B.Draw(orbRing("b", 0.47), c, v3(s), rotXYZ(-0.5, -t*0.8+ph*1.7, 1.25), color.RGBA{}, 0)
+		B.DrawLive(orbRing("b", 0.47), c, v3(s), rotXYZ(-0.5, -t*0.8+ph*1.7, 1.25), color.RGBA{}, 0)
 	}
 }
 

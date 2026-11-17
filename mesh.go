@@ -121,7 +121,7 @@ func (b *Batch) Draw(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emiss
 		defer func() { b.cut = cut }()
 	}
 	if t := m.topo; t != nil && t.n == len(m.Tris) {
-		if !b.drawCached(m, pos, scale, rot, tint, emissive) {
+		if b.live || !b.drawCached(m, pos, scale, rot, tint, emissive) {
 			b.drawShared(m, pos, scale, rot, tint, emissive)
 		}
 		return
@@ -150,6 +150,17 @@ func (b *Batch) Draw(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emiss
 		e := 1 + t.Emi + emissive
 		b.Quad([4]V3{p[0], p[1], p[2], p[2]}, sprWhite, b.lit(col, n), [4]float32{e, e, e, e}, false)
 	}
+}
+
+// DrawLive is Draw for a mesh whose placement changes every frame (it
+// spins, bobs or sways). It produces exactly what Draw does, but skips the
+// placement bake cache: a placement seen once would only add a one-frame
+// entry there (an allocation and a map store per draw, every frame) and
+// never be reused.
+func (b *Batch) DrawLive(m *Mesh, pos V3, scale V3, rot Mat3, tint color.RGBA, emissive float32) {
+	b.live = true
+	b.Draw(m, pos, scale, rot, tint, emissive)
+	b.live = false
 }
 
 // drawShared is Draw with each distinct corner transformed and projected

@@ -769,6 +769,13 @@ try:
                 if s == "torso" and k in HIGHK:
                     X[s][k] = min(X[s][k], 0.05)
             P = forward(X); g = girths(P)
+    # her arms are all sleeve: what was measured there is cloth, so the base
+    # keeps slim arms (no thicker than the mannequin's own) instead
+    for sd_ in (".L", ".R"):
+        for s_ in ("armU", "armL"):
+            if s_ + sd_ in X:
+                X[s_ + sd_] = np.minimum(X[s_ + sd_], 0.0)
+    P = forward(X); g = girths(P)
     okr = np.isfinite(g)
     r = np.log(GT[okr] / g[okr])
     say("fit: final RMS girth error %.1f%% over %d cross-sections" % (float(np.sqrt(np.mean(r ** 2))) * 100, int(okr.sum())))
@@ -823,31 +830,121 @@ try:
         say("using the vertex fit")
     else:
         say("using the knot fit")
-    # ---- final pass: wherever her bare skin can be seen just outside the base
-    # (thighs, hips, chest, arms), the base is pushed out onto it, outward
-    # only, and the push fades smoothly into the surface around
-    TRI_ = np.array([(f[0], f[i], f[i + 1]) for f in BP for i in range(1, len(f) - 1)], dtype=np.int64)
-    fn_ = np.cross(P[TRI_[:, 1]] - P[TRI_[:, 0]], P[TRI_[:, 2]] - P[TRI_[:, 0]])
-    vn_ = np.zeros_like(P)
-    for j in range(3):
-        np.add.at(vn_, TRI_[:, j], fn_)
-    vn_ /= np.maximum(np.linalg.norm(vn_, axis=1, keepdims=True), 1e-12)
-    if np.mean(np.einsum("ij,ij->i", vn_, P - P.mean(0))) < 0:
-        vn_ = -vn_
-    skin_tree = BVHTree.FromPolygons([tuple(p) for p in BW], [p for p, sk in zip(Bpol, skinf) if sk])
-    band = (P[:, 2] > z0 + 0.20 * ST) & (P[:, 2] < z0 + 0.80 * ST) & (keepw < 0.5)
-    disp = np.zeros(len(P)); pin = np.zeros(len(P), bool)
-    for i_ in np.where(band)[0]:
-        hit = skin_tree.ray_cast(Vector(P[i_]), Vector(vn_[i_]), 0.07 * ST)
-        if hit[0] is not None and hit[1].dot(Vector(vn_[i_])) > 0.5:
-            disp[i_] = hit[3]; pin[i_] = True
-    dfield = disp.copy()
-    for _ in range(80):
-        dfield = navg(dfield); dfield[pin] = disp[pin]
-    for _ in range(12):                                          # then soften it all, so patches of skin don't leave ridges
-        dfield = 0.5 * dfield + 0.5 * navg(dfield)
-    fade = np.clip(np.minimum((P[:, 2] - (z0 + 0.16 * ST)) / (0.04 * ST), ((z0 + 0.90 * ST) - P[:, 2]) / (0.04 * ST)), 0, 1) * (1 - keepw)
-    P = P + (dfield * fade)[:, None] * vn_
+    # ---- final pass: SHAPE FIT. The knot fit gets the proportions roughly
+    # right but not her shape (no waist, no curve of the hips and rear).
+    # Here the base surface is pulled straight onto her own surface, inward
+    # AND outward: onto her bare skin, and onto clothing that lies on her body
+    # (bodice, the robe where it hugs her hips and rear, boots), minus the
+    # cloth's thickness. Loose cloth (sleeves, the cape's flare, hems), hair,
+    # the hat and ornaments are not targets: they are filtered out by colour,
+    # by reach, and by disagreeing with their neighbours. Arms are left alone
+    # (her arms are all sleeve). Repeated a few times, smoothing in between.
+    def vnormals(P_):
+        TRI_ = np.array([(f[0], f[i], f[i + 1]) for f in BP for i in range(1, len(f) - 1)], dtype=np.int64)
+        fn_ = np.cross(P_[TRI_[:, 1]] - P_[TRI_[:, 0]], P_[TRI_[:, 2]] - P_[TRI_[:, 0]])
+        vn = np.zeros_like(P_)
+        for j in range(3):
+            np.add.at(vn, TRI_[:, j], fn_)
+        vn /= np.maximum(np.linalg.norm(vn, axis=1, keepdims=True), 1e-12)
+        if np.mean(np.einsum("ij,ij->i", vn, P_ - P_.mean(0))) < 0:
+            vn = -vn
+        return vn
+
+    def obj_face_colours(o):
+        try:
+            me_ = o.data
+            img_ = None
+            for m in me_.materials:
+                if m and m.node_tree:
+                    bs = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+                    if bs and bs.inputs["Base Color"].links:
+                        nd = bs.inputs["Base Color"].links[0].from_node
+                        if nd.type == "TEX_IMAGE" and nd.image:
+                            img_ = nd.image; break
+            if img_ is None:
+                return None
+            W_, H_ = img_.size
+            px_ = np.empty(W_ * H_ * 4, dtype=np.float32); img_.pixels.foreach_get(px_)
+            px_ = px_.reshape(H_, W_, 4)[:, :, :3]
+            uv_ = np.empty(len(me_.loops) * 2, dtype=np.float32); me_.uv_layers.active.data.foreach_get("uv", uv_); uv_ = uv_.reshape(-1, 2)
+            ls_ = np.empty(len(me_.polygons), dtype=np.int32); me_.polygons.foreach_get("loop_start", ls_)
+            lt_ = np.empty(len(me_.polygons), dtype=np.int32); me_.polygons.foreach_get("loop_total", lt_)
+            uc_ = np.zeros((len(ls_), 2))
+            for q in range(3):
+                uc_ += uv_[ls_ + np.minimum(q, lt_ - 1)]
+            uc_ /= 3.0
+            xi_ = np.clip((uc_[:, 0] % 1.0) * (W_ - 1), 0, W_ - 1).astype(np.int32)
+            yi_ = np.clip((uc_[:, 1] % 1.0) * (H_ - 1), 0, H_ - 1).astype(np.int32)
+            c_ = px_[yi_, xi_].astype(np.float64)
+            del px_
+            return c_
+        except Exception as e:
+            say("robe colour read failed", e)
+            return None
+
+    # target surface: her skin (wide rule) + robe faces that aren't hair
+    tv = [BW]; tf = [p for p, sk in zip(Bpol, skin_wide) if sk]; tthk = [0.0] * len(tf); off_ = len(BW)
+    ro = lay.get("Robe")
+    if ro:
+        RV = wverts(ro); RP = polys(ro)
+        rc = obj_face_colours(ro)
+        keep_r = np.ones(len(RP), bool)
+        if rc is not None:
+            mx_ = rc.max(1); mn_ = rc.min(1); sat_ = np.where(mx_ > 1e-4, (mx_ - mn_) / np.maximum(mx_, 1e-4), 0)
+            keep_r = ~((mx_ < 0.22) & (sat_ < 0.45))            # hair: dark and grey
+            say("shape fit: robe faces kept", int(keep_r.sum()), "of", len(RP), "(dark grey ones are hair)")
+        tv.append(RV); tf += [tuple(i + off_ for i, _ in zip(p, p)) for p, k in zip(RP, keep_r) if k]
+        tthk += [0.003 * HH] * int(keep_r.sum())
+    TV = np.vstack(tv); TTHK = np.array(tthk)
+    ttree = BVHTree.FromPolygons([tuple(p) for p in TV], tf)
+    armw = Wt[:, [SI[x] for x in SEG if x.split(".")[0] in ("armU", "armL")]].sum(1)
+    P0 = P.copy()
+    zfrac = (P[:, 2] - z0) / ST
+    region = (zfrac > 0.03) & (zfrac < 0.82) & (keepw < 0.5) & (armw < 0.5)
+    wreg = np.clip(np.minimum((zfrac - 0.03) / 0.03, (0.82 - zfrac) / 0.04), 0, 1) * (1 - keepw) * np.clip(1 - 2 * armw, 0, 1)
+    R_IN, R_OUT, R_TOT = 0.08 * ST, 0.08 * ST, 0.16 * ST
+    for it_ in range(6):
+        vn = vnormals(P)
+        d = np.full(len(P), np.nan)
+        for i_ in np.where(region)[0]:
+            n_ = Vector(vn[i_]); o_ = Vector(P[i_] - vn[i_] * R_IN)
+            gone = 0.0; best = None
+            for _ in range(6):
+                hit = ttree.ray_cast(o_, n_, R_IN + R_OUT - gone)
+                if hit[0] is None:
+                    break
+                t = gone + hit[3]
+                # an outward-facing surface (we cross it going outwards)
+                if hit[1].dot(n_) > 0.3:
+                    dd = t - R_IN - TTHK[hit[2]]
+                    if best is None or abs(dd) < abs(best):
+                        best = dd
+                gone = t + 1e-5 * HH; o_ = hit[0] + n_ * (1e-5 * HH)
+            if best is not None:
+                d[i_] = best
+        val = np.isfinite(d)
+        for _ in range(3):                                      # drop pulls far off their neighbourhood (loose cloth, chains)
+            num = np.where(val, d, 0.0); den = val.astype(float)
+            for _ in range(10):
+                num = navg(num); den = navg(den)
+            loc = num / np.maximum(den, 1e-9)
+            val &= np.abs(d - loc) < 0.025 * ST
+        # never wander too far from the knot fit in total
+        tot = np.einsum("ij,ij->i", (P + np.nan_to_num(d)[:, None] * vn) - P0, vn)
+        val &= np.abs(tot) < R_TOT
+        df = np.where(val, d, 0.0); pin = val.copy()
+        for _ in range(40):
+            df = navg(df); df[pin] = np.where(val, d, 0.0)[pin]
+        for _ in range(4):
+            df = 0.5 * df + 0.5 * navg(df)
+        step = 0.8 if it_ < 5 else 1.0
+        P = P + (df * wreg * step)[:, None] * vn
+        P = taubin(P, 2)
+        say("shape fit pass %d: %d of %d vertices found her surface, mean |pull| %.3f ST" % (
+            it_ + 1, int(val.sum()), int(region.sum()), float(np.mean(np.abs(d[val]))) / ST if val.any() else 0))
+    # smooth out creases cloth edges and chains leave (hip, crotch), without
+    # losing the shape: a few shape-preserving passes over the fitted region
+    P = taubin(P, 4, wreg)
     P = taubin(P, 2)
     # the crotch: between the hip joints, below them, the base should be a plain smooth
     # join of the two thighs, never a bump. Shrink-smooth that small region.
@@ -879,7 +976,6 @@ try:
         wgt = np.clip(1 - (dist - rsh) / (1.2 * rsh), 0, 1) * near_ * side_
         P = P - (wgt * over * 0.6)[:, None] * (d_ / np.maximum(dist, 1e-9)[:, None])
     P = taubin(P, 3)
-    say("skin snap: %d of %d vertices pushed out onto her visible skin" % (int(pin.sum()), int(band.sum())))
     tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
     for p_ in tmp.polygons:
         p_.use_smooth = True

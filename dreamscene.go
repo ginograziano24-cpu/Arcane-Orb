@@ -74,7 +74,7 @@ func (g *Game) drawDreamMeadow(B *Batch, L *Level, t, side float64) {
 					rz := z + fk*0.7
 					h := 1.2 + 0.5*math.Sin(fk*2+z)
 					sway := 0.12 * math.Sin(t*1.4+fk+z)
-					B.Draw(cached("dreamReed"+itoa(k%2), func() *Mesh { return growReed(int64(k%2) + 3) }), V3{rx, -0.6, rz}, V3{1, h, 1}, rotXYZ(sway*0.3, fk*1.9+z, 0), color.RGBA{}, 0.2)
+					B.DrawLive(cached("dreamReed"+itoa(k%2), func() *Mesh { return growReed(int64(k%2) + 3) }), V3{rx, -0.6, rz}, V3{1, h, 1}, rotXYZ(sway*0.3, fk*1.9+z, 0), color.RGBA{}, 0.2)
 					B.Billboard(V3{rx + sway, -0.6 + h, rz}, 0.28, sprSoft, alpha(color.RGBA{255, 230, 140, 255}, 0.85), true)
 				}
 			}
@@ -105,7 +105,7 @@ func (g *Game) drawDreamMeadow(B *Batch, L *Level, t, side float64) {
 	for i, s := range [][4]float64{{13, 6, 1.6, 10}, {19, 22, 2.1, 13}, {12, 34, 1.3, 7}, {26, 44, 2.4, 15}, {16, 58, 1.7, 10}, {31, 70, 2.2, 13}, {21, 84, 1.9, 11}, {38, 30, 1.8, 11}, {44, 56, 2.6, 16}} {
 		x := lx * (HalfW + s[0])
 		bob := 0.1 * math.Sin(t*0.8+float64(i)*1.7)
-		B.Draw(candyMesh(true), V3{x, -0.6 + bob, s[1]}, V3{s[2], s[3], s[2]}, rotXYZ(0, float64(i)*0.9, 0), color.RGBA{}, 0.15)
+		B.DrawLive(candyMesh(true), V3{x, -0.6 + bob, s[1]}, V3{s[2], s[3], s[2]}, rotXYZ(0, float64(i)*0.9, 0), color.RGBA{}, 0.15)
 		if !low {
 			B.Decal(x, s[1], -0.53, s[2]*3.2, s[2]*3.2, sprSoft, alpha(color.RGBA{255, 90, 150, 255}, 0.25), true)
 		}
@@ -247,7 +247,7 @@ func (g *Game) drawDreamMeadow(B *Batch, L *Level, t, side float64) {
 		y := 3.2 + math.Mod(fi*1.9, 3) + math.Sin(t*0.7+fi*1.3)*0.35
 		c := hues[i%len(hues)]
 		fl := 0.85 + 0.15*math.Sin(t*3.1+fi*2.3)
-		B.Draw(lantern, V3{x, y, z}, v3(1.1), rotXYZ(0, t*0.2+fi, math.Sin(t*0.8+fi)*0.08), c, float32(0.35*fl))
+		B.DrawLive(lantern, V3{x, y, z}, v3(1.1), rotXYZ(0, t*0.2+fi, math.Sin(t*0.8+fi)*0.08), c, float32(0.35*fl))
 		B.Billboard(V3{x, y, z}, 2.6, sprSoft, alpha(c, 0.55*fl), true)
 		if !low {
 			B.Billboard(V3{x, y, z}, 6.5, sprSoft, alpha(c, 0.16*fl), true)

@@ -515,6 +515,7 @@ func registerTex(img *ebiten.Image) uint8 {
 }
 
 type Batch struct {
+	live     bool     // DrawLive: skip the placement bake cache for this draw
 	obj      objScope // the prop being drawn, cleared from the camera's way
 	cam      *Camera
 	quads    []quad
