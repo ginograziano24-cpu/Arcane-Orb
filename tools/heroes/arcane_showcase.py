@@ -35,6 +35,7 @@ try:
     if eyeproj.available():
         bpy.context.view_layer.update()
         eyeproj.attach_overlay(max(obs, key=lambda o: len(o.data.polygons)))
+        eyeproj.satin(bpy.data.materials)
 except Exception as e:
     print("eye overlay failed", e)
 mn = Vector((1e9,) * 3); mx = Vector((-1e9,) * 3)

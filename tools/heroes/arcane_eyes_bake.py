@@ -38,9 +38,16 @@ try:
         bpy.ops.object.shade_smooth()
     except Exception as e:
         say("normals reset skipped", e)
-    eyeproj.build_face_patch(ob, say)
-    if MODE == "trim":
-        eyeproj.trim_lock(ob, say)
+    FRINGE = os.environ.get("FRINGE", "").strip().lower()
+    if FRINGE in ("swept", "over"):
+        eyeproj.build_face_patch(ob, say, win=(1300, 1767, 236, 820))
+        eyeproj.remove_fringe(ob, say)
+        bpy.context.view_layer.update()
+        eyeproj.add_fringe(ob, FRINGE, say)
+    else:
+        eyeproj.build_face_patch(ob, say)
+        if MODE == "trim":
+            eyeproj.trim_lock(ob, say)
     say("faces now", len(ob.data.polygons))
 except Exception as e:
     import traceback

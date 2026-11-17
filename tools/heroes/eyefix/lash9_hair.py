@@ -32,16 +32,38 @@ lum2=0.30*lum+0.70*dl
 rng=np.random.RandomState(3)
 nz=ndimage.convolve(rng.randn(H_,W_).astype(np.float32),k,mode='nearest'); nz=ndimage.gaussian_filter(nz,0.7); nz/=nz.std()
 nz2=ndimage.convolve(ndimage.gaussian_filter(rng.randn(H_,W_).astype(np.float32),3),k,mode='nearest'); nz2/=nz2.std()
-t=np.clip((lum2-0.24)/0.46,0,1)**1.05+0.03*nz+0.045*nz2
+t=np.clip((lum2-0.25)/0.5,0,1)**1.1+0.03*nz+0.045*nz2
 t=np.clip(t,0,1)[...,None]
-dark=np.array([0.15,0.15,0.20]); light=np.array([0.83,0.85,0.93])
+ref=(st<0.18)&(mx>0.12)&(mx<0.8)&(xx>2150)&(yy>200)&(yy<700)
+rl=lum[ref]; rp=src[ref]
+dark=rp[rl<np.percentile(rl,12)].mean(0); light=rp[rl>np.percentile(rl,93)].mean(0)
+print('hair dark',dark.round(2),'light',light.round(2))
 rec=dark*(1-t)+light*t
+# no bright rim along the edge of the fringe
+inner=ndimage.gaussian_filter(hm,5)
+rim=np.clip((0.97-inner)/0.45,0,1)[...,None]*hm[...,None]
+rec=rec*(1-rim)+np.minimum(rec,ndimage.gaussian_filter(rec,(7,7,0))*0.85)*rim
 hw=np.clip(ndimage.gaussian_filter(hm,1.2)*1.4-0.2,0,1)
 Hh=src*(1-hw[...,None])+rec*hw[...,None]
 # image A: recoloured hair outside the eye areas
 wa=hw*(1-np.clip(zone*1.5,0,1))
 A2=A*(1-wa[...,None])+rec*wa[...,None]
 mask2=np.maximum(mask,np.clip(wa*2,0,1))
+browbox=((xx>1810)&(xx<2180)&(yy>535)&(yy<655))
+brow=browbox&(st<0.22)&(mx<0.7)&(mx>0.2)
+brow=ndimage.binary_dilation(ndimage.binary_opening(brow,iterations=2),iterations=2)
+lab,n=ndimage.label(brow)
+if n:
+    sz=ndimage.sum(brow,lab,range(1,n+1)); brow=lab==(int(np.argmax(sz))+1)
+bw=np.clip(ndimage.gaussian_filter(brow.astype(np.float32),1.6)*1.3-0.1,0,1)
+browcol=src*0.88
+A2=A2*(1-bw[...,None])+browcol*bw[...,None]
+mask2=np.maximum(mask2,bw)
+ys_,xs_=np.mgrid[0:H_,0:W_]
+sxm=np.clip(2*1767-xs_,0,W_-1); sym=np.clip(ys_-8,0,H_-1)
+bwm=bw[sym,sxm]; bcm=browcol[sym,sxm]
+A2=A2*(1-bwm[...,None])+bcm*bwm[...,None]
+mask2=np.maximum(mask2,bwm)
 Image.fromarray((np.concatenate([np.clip(A2,0,1),al],-1)*255).astype(np.uint8)).save('eyes_fixed_h.png')
 Image.fromarray((np.clip(mask2,0,1)*255).astype(np.uint8)).save('eyes_mask_h.png')
 Image.fromarray((np.clip(Hh,0,1)*255).astype(np.uint8)).save('eyes_hair.png')

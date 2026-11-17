@@ -62,7 +62,8 @@ def import_hero(path):
             import eyeproj
             if eyeproj.available():
                 bpy.context.view_layer.update()
-                eyeproj.attach_overlay(max(objs, key=lambda o: len(o.data.polygons)), coat=0.25)
+                eyeproj.attach_overlay(max(objs, key=lambda o: len(o.data.polygons)), coat=0.0)
+                eyeproj.satin(bpy.data.materials)
         except Exception as e:
             print("eye overlay failed", e)
     # bounds over all meshes
@@ -88,9 +89,9 @@ def import_hero(path):
         for n in m.node_tree.nodes:
             if n.type == "BSDF_PRINCIPLED":
                 if "Roughness" in n.inputs and not n.inputs["Roughness"].is_linked:
-                    n.inputs["Roughness"].default_value = 0.45
+                    n.inputs["Roughness"].default_value = max(n.inputs["Roughness"].default_value, 0.62)
                 if "Coat Weight" in n.inputs and not n.inputs["Coat Weight"].is_linked:
-                    n.inputs["Coat Weight"].default_value = 0.25
+                    n.inputs["Coat Weight"].default_value = 0.0
     return root
 
 def camera(loc, look, lens):

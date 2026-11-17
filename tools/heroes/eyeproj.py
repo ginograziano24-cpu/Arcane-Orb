@@ -215,7 +215,7 @@ def flatten_lids(ob, say=print, k=0.7, iters=3):
     return moved_tot
 
 
-def build_face_patch(ob, say=print):
+def build_face_patch(ob, say=print, win=None):
     """Her model is one fused shell: where the hair lock crosses her right eye
     there is no face underneath. This copies the matching piece of the left
     side of her face, mirrors it over and adds it wherever the right side has
@@ -226,8 +226,9 @@ def build_face_patch(ob, say=print):
     g.mirror_fit(say)
     mid_px = FACE_MID_X
     # wider than the cut itself: the lock stands off her face, so from an angle you see past its edge
-    lx0, lx1 = 2 * mid_px - PATCH_WIN[1], 2 * mid_px - PATCH_WIN[0]
-    ly0, ly1 = PATCH_WIN[2] - EYE_DROP, PATCH_WIN[3] - EYE_DROP
+    W_ = win or PATCH_WIN
+    lx0, lx1 = 2 * mid_px - W_[1], 2 * mid_px - W_[0]
+    ly0, ly1 = W_[2] - EYE_DROP, W_[3] - EYE_DROP
     inwin = (g.pxu > lx0) & (g.pxu < lx1) & (g.pxv > ly0) & (g.pxv < ly1) & (g.wco[:, 1] < g.depth_lim)
     npoly = len(me.polygons)
     tot = np.empty(npoly, dtype=np.int32); me.polygons.foreach_get("loop_total", tot)
@@ -278,6 +279,22 @@ def build_face_patch(ob, say=print):
         faces.append((ids[0], ids[2], ids[1]))                     # mirrored, so the winding flips
         l0, l1, l2 = loops[f]
         fuv += [uv[l0], uv[l2], uv[l1]]
+    # smooth the rebuilt skin (the mirrored copy carries small wrinkles);
+    # vertices that meet her own face stay put
+    try:
+        V = np.array(verts, dtype=np.float64)
+        inv = {v: k for k, v in vmap.items()}
+        free = np.array([not exists[inv[n]] for n in range(len(verts))])
+        nb = [set() for _ in range(len(verts))]
+        for a_, b_, c_ in faces:
+            nb[a_] |= {b_, c_}; nb[b_] |= {a_, c_}; nb[c_] |= {a_, b_}
+        nbl = [list(x) for x in nb]
+        for _ in range(10):
+            avg = np.array([V[l].mean(0) if l else V[i] for i, l in enumerate(nbl)])
+            V[free] = V[free] * 0.35 + avg[free] * 0.65
+        verts = [tuple(v) for v in V]
+    except Exception as e:
+        say("patch: smoothing skipped", e)
     pm = bpy.data.meshes.new("face_patch")
     pm.from_pydata(verts, [], faces)
     pm.update()
@@ -291,6 +308,27 @@ def build_face_patch(ob, say=print):
         pm.materials.append(m)
     po = bpy.data.objects.new("face_patch", pm)
     bpy.context.scene.collection.objects.link(po)
+    for m in me.materials:
+        pm.materials.append(m)
+    po = bpy.data.objects.new("face_patch", pm)
+    bpy.context.scene.collection.objects.link(po)
+    # smooth the rebuilt skin (the mirrored copy carries small wrinkles); the
+    # vertices that meet her own face stay where they are
+    try:
+        vg = po.vertex_groups.new(name="free")
+        inv = {v: k for k, v in vmap.items()}
+        free_ids = [n for n in range(len(verts)) if not exists[inv[n]]]
+        if free_ids:
+            vg.add(free_ids, 1.0, "REPLACE")
+            sm = po.modifiers.new("smooth", "LAPLACIANSMOOTH")
+            sm.iterations = 12; sm.lambda_factor = 0.8; sm.lambda_border = 0.0
+            sm.vertex_group = "free"; sm.use_volume_preserve = True
+            bpy.ops.object.select_all(action="DESELECT")
+            po.select_set(True); bpy.context.view_layer.objects.active = po
+            bpy.ops.object.modifier_apply(modifier=sm.name)
+        po.vertex_groups.remove(vg)
+    except Exception as e:
+        say("patch: smoothing skipped", e)
     po.matrix_world = ob.matrix_world.copy()
     bpy.ops.object.select_all(action="DESELECT")
     po.select_set(True); ob.select_set(True); bpy.context.view_layer.objects.active = ob
@@ -603,3 +641,179 @@ def project_bake(ob, base_img, base_uv_name, say=print, src_from_world=None, fix
     sc.render.engine = old_engine
     say("eye projection baked into", tgt.name)
     return tgt
+
+
+def satin(materials, say=print):
+    """Her materials import very glossy, which reads as wet plastic on hair and
+    skin. Raise the roughness to a satin floor, drop the clear coat, soften the
+    specular."""
+    n = 0
+    for m in materials:
+        if not m or not m.node_tree:
+            continue
+        nt = m.node_tree
+        for b in [x for x in nt.nodes if x.type == "BSDF_PRINCIPLED"]:
+            ro = b.inputs["Roughness"]
+            if ro.links:
+                mx = nt.nodes.new("ShaderNodeMath"); mx.operation = "MAXIMUM"; mx.inputs[1].default_value = 0.62
+                nt.links.new(ro.links[0].from_socket, mx.inputs[0]); nt.links.new(mx.outputs[0], ro)
+            else:
+                ro.default_value = max(ro.default_value, 0.62)
+            if "Coat Weight" in b.inputs and not b.inputs["Coat Weight"].is_linked:
+                b.inputs["Coat Weight"].default_value = 0.0
+            for nm in ("Specular IOR Level", "Specular"):
+                if nm in b.inputs and not b.inputs[nm].is_linked:
+                    b.inputs[nm].default_value = min(b.inputs[nm].default_value, 0.35)
+                    break
+            n += 1
+    say("satin finish on", n, "material(s)")
+
+
+# ---------------------------------------------------------------------------
+# New fringe: the sculpted front slab is removed and replaced by tapered
+# strands, side-swept ("swept") or hanging over her right eye ("over").
+FR_WIN = (1300, 1810, 232, 830)          # where the old fringe slab is removed
+
+
+def _px_world(cam, px, py):
+    rx, ry = cam["res"]; s_ = cam["ortho_scale"] / rx
+    return cam["loc"][0] + (px - rx / 2) * s_, cam["loc"][2] + (ry / 2 - py) * s_
+
+
+def remove_fringe(ob, say=print):
+    """Deletes the old fringe slab in front of her right forehead and eye
+    (only where face is behind it, so no hole opens); hat and ornaments stay."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    me = ob.data
+    g = _Geo(ob, cam, None)
+    fr = bpy.data.images.load(os.path.join(L2, "eyes_front.png"), check_existing=True)
+    w, h = fr.size
+    pix = np.empty(w * h * 4, dtype=np.float32); fr.pixels.foreach_get(pix)
+    img = pix.reshape(h, w, 4)[::-1, :, :3]
+    px_ = np.clip(g.pxu.astype(int), 0, w - 1); py_ = np.clip(g.pxv.astype(int), 0, h - 1)
+    col = img[py_, px_]
+    r, gg, b = col[:, 0], col[:, 1], col[:, 2]
+    mx = col.max(1); st = (mx - col.min(1)) / np.maximum(mx, 1e-3)
+    other = ((b > r * 1.02) & (b > gg * 1.12) & (st > 0.28)) | ((r > b * 1.4) & (gg > b * 1.25) & (st > 0.31))
+    inwin = (g.pxu > FR_WIN[0]) & (g.pxu < FR_WIN[1]) & (g.pxv > FR_WIN[2]) & (g.pxv < FR_WIN[3]) & (g.wco[:, 1] < g.depth_lim) & ~other
+    slab = np.zeros(len(g.co), dtype=bool)
+    for i in np.where(inwin)[0]:
+        y = g.wco[i, 1]
+        hs = g.hits(g.wco[i, 0], g.wco[i, 2], 8, facing=True)
+        slab[i] = any(fc and (hh > y + 0.0012 * g.hgt) and (hh < y + 0.03 * g.hgt) for hh, fc in hs)
+    tri = _tris(me)
+    if tri is None:
+        say("fringe: mesh not all triangles, skipped"); return 0
+    sel = slab[tri].sum(1) >= 2
+    k = int(sel.sum())
+    if k:
+        _edit_faces(ob, sel, lambda: bpy.ops.mesh.delete(type="FACE"))
+    say("fringe: removed", k, "faces of the old fringe slab")
+    return k
+
+
+def _fringe_paths(mode):
+    """Strand centre lines in face-image pixels: list of (points Nx2, root width px).
+    Each layout is a bundle between an inner edge (along her forehead) and an
+    outer edge (under the hat brim, toward her temple)."""
+    rng = np.random.RandomState(5 if mode == "swept" else 9)
+    if mode == "swept":
+        E0 = np.array([(1894, 226), (1848, 360), (1770, 468), (1648, 516), (1510, 546), (1412, 608), (1388, 724)], float)
+        E1 = np.array([(1604, 290), (1548, 338), (1490, 396), (1440, 452), (1405, 522), (1384, 604), (1372, 706)], float)
+        n = 34
+    else:
+        E0 = np.array([(1894, 226), (1852, 350), (1794, 468), (1750, 556), (1722, 636), (1708, 712)], float)
+        E1 = np.array([(1604, 290), (1528, 380), (1466, 478), (1426, 576), (1404, 676), (1396, 770)], float)
+        n = 32
+    out = []
+    for i in range(n):
+        s = i / (n - 1)
+        ctrl = E0 * (1 - s) + E1 * s
+        ctrl = ctrl + rng.uniform(-1, 1, ctrl.shape) * np.array([6.0, 5.0])
+        ctrl[0] += rng.uniform(-1, 1, 2) * np.array([10.0, 6.0])
+        if mode == "over":                      # staggered, slightly clumped ends
+            ctrl[-1, 1] += 40 * np.sin(s * 9.0) + rng.uniform(-20, 20)
+        # Catmull-Rom through the control points
+        P = np.vstack([ctrl[0] * 2 - ctrl[1], ctrl, ctrl[-1] * 2 - ctrl[-2]])
+        pts = []
+        for k in range(1, len(P) - 2):
+            p0, p1, p2, p3 = P[k - 1], P[k], P[k + 1], P[k + 2]
+            for t in np.linspace(0, 1, 8, endpoint=False):
+                pts.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+        pts.append(ctrl[-1])
+        wd = (40 if mode == "swept" else 36) + 8 * (1 - abs(2 * s - 0.8)) + rng.uniform(-5, 5)
+        out.append((np.array(pts), wd))
+    return out
+
+
+def add_fringe(ob, mode, say=print):
+    """Builds the new fringe as tapered strands lying on her forehead, with
+    their own hair texture (heroes/arcane_layers2/fringe_tex.png)."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    g = _Geo(ob, cam, None)
+    px = g.px; hgt = g.hgt
+    V = []; F = []; UV = []
+    K = 8
+    for si, (pts, wd) in enumerate(_fringe_paths(mode)):
+        n = len(pts)
+        P = []
+        for (x, y) in pts:
+            wx, wz = _px_world(cam, x, y)
+            hs = g.hits(wx, wz, 4, facing=True)
+            fy = next((hh for hh, fc in hs if fc), None)
+            P.append([wx, fy if fy is not None else np.nan, wz])
+        P = np.array(P)
+        bad = np.isnan(P[:, 1])
+        if bad.all():
+            continue
+        idx = np.arange(n)
+        P[bad, 1] = np.interp(idx[bad], idx[~bad], P[~bad, 1])
+        # smooth the surface depth along the strand and lift it off the skin
+        yy = P[:, 1].copy()
+        for _ in range(6):
+            yy[1:-1] = 0.25 * yy[:-2] + 0.5 * yy[1:-1] + 0.25 * yy[2:]
+        P[:, 1] = np.minimum(yy, P[:, 1])
+        t = idx / (n - 1)
+        lift = (0.0042 * (1 - t) ** 1.3 + 0.0011) * hgt * (1.0 + 0.15 * np.sin(si * 1.7))
+        P[:, 1] -= lift
+        width = (wd * px) * np.clip((1 - t) ** 0.65, 0.06, 1)
+        thick = width * 0.32 + 0.0003 * hgt
+        T = np.gradient(P, axis=0); T /= np.maximum(np.linalg.norm(T, axis=1, keepdims=True), 1e-12)
+        N0 = np.array([0.0, -1.0, 0.0])
+        base = len(V)
+        u0 = (si * 0.137) % 0.8
+        for i in range(n):
+            Nn = N0 - T[i] * T[i].dot(N0); Nn /= max(np.linalg.norm(Nn), 1e-12)
+            Bn = np.cross(T[i], Nn)
+            for k in range(K):
+                a = 2 * np.pi * k / K
+                q = P[i] + Bn * np.cos(a) * width[i] * 0.5 + Nn * np.sin(a) * thick[i] * 0.5
+                V.append(tuple(g.to_local(q).tolist()))
+                UV.append((u0 + 0.2 * k / K, t[i]))
+        for i in range(n - 1):
+            for k in range(K):
+                a_ = base + i * K + k; b_ = base + i * K + (k + 1) % K
+                c_ = base + (i + 1) * K + (k + 1) % K; d_ = base + (i + 1) * K + k
+                F.append((a_, b_, c_)); F.append((a_, c_, d_))
+    me = bpy.data.meshes.new("fringe")
+    me.from_pydata(V, [], F)
+    me.update()
+    ul = me.uv_layers.new(name="UVMap")
+    loops = np.empty(len(me.loops), dtype=np.int32); me.loops.foreach_get("vertex_index", loops)
+    UVa = np.array(UV, dtype=np.float32)
+    ul.data.foreach_set("uv", UVa[loops].ravel())
+    me.shade_smooth()
+    m = bpy.data.materials.new("fringe_hair"); m.use_nodes = True
+    bs = next(x for x in m.node_tree.nodes if x.type == "BSDF_PRINCIPLED")
+    tx = m.node_tree.nodes.new("ShaderNodeTexImage")
+    tx.image = bpy.data.images.load(os.path.join(L2, "fringe_tex.png"), check_existing=True)
+    m.node_tree.links.new(tx.outputs["Color"], bs.inputs["Base Color"])
+    bs.inputs["Roughness"].default_value = 0.62
+    me.materials.append(m)
+    fo = bpy.data.objects.new("fringe", me)
+    bpy.context.scene.collection.objects.link(fo)
+    fo.matrix_world = ob.matrix_world.copy()
+    if ob.parent:
+        fo.parent = ob.parent; fo.matrix_world = ob.matrix_world.copy()
+    say("fringe:", mode, "built", len(F), "faces")
+    return fo
