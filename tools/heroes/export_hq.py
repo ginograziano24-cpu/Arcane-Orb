@@ -185,6 +185,8 @@ def align(hi, lo):
     hi.matrix_world = best[1]
     select_only([hi], hi)
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    global LAST_ALIGN
+    LAST_ALIGN = best[1].copy()     # source space -> aligned space
     return best[0] / hl
 
 
@@ -400,6 +402,19 @@ def export(hid):
     say("  baked", TEX, "px in", int(time.time() - t0), "s")
     sc.render.image_settings.file_format = "JPEG"
     sc.render.image_settings.quality = 92
+    if hid == "arcane":
+        try:
+            import sys as _sys
+            _sys.path.insert(0, HERE)
+            import eyeproj
+            if eyeproj.available():
+                sc.render.bake.use_selected_to_active = False
+                inv = LAST_ALIGN.inverted()
+                img = eyeproj.project_bake(mid, img, "bake", say, src_from_world=[list(r) for r in inv])
+                mat.node_tree.nodes.active.image = img
+        except Exception as e:
+            import traceback
+            say("  eye projection failed", e, traceback.format_exc())
     img.save_render(os.path.join(OUT, hid + ".jpg"))
     # weights from the rigged model
     lo.hide_render = False
