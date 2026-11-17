@@ -38,7 +38,12 @@ mat_ = ob.data.materials[0]
 nt_ = mat_.node_tree
 outn = next(n for n in nt_.nodes if n.type == "OUTPUT_MATERIAL")
 em = nt_.nodes.new("ShaderNodeEmission")
-nt_.links.new(texn.outputs["Color"], em.inputs["Color"])
+try:
+    eyeproj.attach_overlay(ob, say)
+except Exception as e:
+    say("overlay for check render failed", e)
+_bc = bsdf.inputs["Base Color"]
+nt_.links.new(_bc.links[0].from_socket if _bc.links else texn.outputs["Color"], em.inputs["Color"])
 nt_.links.new(em.outputs[0], outn.inputs["Surface"])
 cd = bpy.data.cameras.new("chk"); cd.type = "ORTHO"; cd.ortho_scale = cam["ortho_scale"]
 co_ = bpy.data.objects.new("chk", cd); sc.collection.objects.link(co_); sc.camera = co_

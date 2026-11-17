@@ -348,6 +348,19 @@ def export(hid):
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     gap = align(hi, lo)
     say(hid, "original", len(hi.data.polygons), "faces; fit gap", round(gap, 4))
+    overlay = False
+    if hid == "arcane":
+        # her cleaned-up face image laid over the original at full sharpness,
+        # so the bake below picks it up
+        try:
+            sys.path.insert(0, HERE)
+            import eyeproj
+            if eyeproj.available():
+                bpy.context.view_layer.update()
+                overlay = eyeproj.attach_overlay(hi, say, src_from_world=[list(r) for r in LAST_ALIGN.inverted()]) > 0
+        except Exception as e:
+            import traceback
+            say("  eye overlay failed", e, traceback.format_exc())
     emission_route(hi)
     # the game mesh
     mid = hi.copy(); mid.data = hi.data.copy(); mid.name = "hq"
@@ -402,7 +415,7 @@ def export(hid):
     say("  baked", TEX, "px in", int(time.time() - t0), "s")
     sc.render.image_settings.file_format = "JPEG"
     sc.render.image_settings.quality = 92
-    if hid == "arcane":
+    if hid == "arcane" and not overlay:
         try:
             import sys as _sys
             _sys.path.insert(0, HERE)

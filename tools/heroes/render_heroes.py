@@ -55,6 +55,16 @@ def light(name, kind, loc, energy, color, size=2.0):
 def import_hero(path):
     bpy.ops.import_scene.gltf(filepath=path)
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+    if os.path.basename(path) in ("arcane_eyes.glb", NEWER_ARCANE):
+        # her lashes and eyes at full sharpness, laid over the texture
+        try:
+            sys.path.insert(0, HERE)
+            import eyeproj
+            if eyeproj.available():
+                bpy.context.view_layer.update()
+                eyeproj.attach_overlay(max(objs, key=lambda o: len(o.data.polygons)), coat=0.25)
+        except Exception as e:
+            print("eye overlay failed", e)
     # bounds over all meshes
     mn = Vector((1e9, 1e9, 1e9)); mx = Vector((-1e9, -1e9, -1e9))
     for o in objs:
@@ -79,7 +89,7 @@ def import_hero(path):
             if n.type == "BSDF_PRINCIPLED":
                 if "Roughness" in n.inputs and not n.inputs["Roughness"].is_linked:
                     n.inputs["Roughness"].default_value = 0.45
-                if "Coat Weight" in n.inputs:
+                if "Coat Weight" in n.inputs and not n.inputs["Coat Weight"].is_linked:
                     n.inputs["Coat Weight"].default_value = 0.25
     return root
 
