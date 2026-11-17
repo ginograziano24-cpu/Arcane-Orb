@@ -771,10 +771,52 @@ try:
             P = forward(X); g = girths(P)
     # her arms are all sleeve: what was measured there is cloth, so the base
     # keeps slim arms (no thicker than the mannequin's own) instead
+    # Her real arms are hidden in the sleeves, so they are sized from her own
+    # legs by ordinary proportion (upper arm about half the top of the thigh,
+    # forearm 0.41, wrist 0.27), never from the cloth around them.
+    thighT = float(np.nanmax([np.nanmax(TG[x]) for x in ("legU.L", "legU.R") if np.isfinite(TG[x]).any()]))
+    ARMP = {"armU": ((0.0, 0.50), (0.5, 0.46), (1.0, 0.40)), "armL": ((0.0, 0.40), (0.3, 0.41), (1.0, 0.27))}
+    for sd_ in (".L", ".R"):
+        for s_ in ("armU", "armL"):
+            if s_ + sd_ not in X:
+                continue
+            u_, _ = UTH[s_ + sd_]
+            sel_ = Wt[:, SI[s_ + sd_]] > 0.8
+            rv = np.linalg.norm(Vbar, axis=1)
+            for k in range(NK[s_ + sd_]):
+                uk = US[int(round(KPOS[s_ + sd_][k]))]
+                near_ = sel_ & (np.abs(u_ - uk) < 0.15)
+                if near_.sum() < 6:
+                    continue
+                gm = 2 * math.pi * float(np.median(rv[near_]))
+                tgt = np.interp(uk, [a for a, _ in ARMP[s_]], [b for _, b in ARMP[s_]]) * thighT
+                X[s_ + sd_][k] = float(np.clip(math.log(tgt / max(gm, 1e-6)), math.log(0.5), math.log(2.2)))
+    # then measure the arms' real cross-sections and correct until they match
+    for it_ in range(4):
+        P = forward(X); g = girths(P)
+        for sd_ in (".L", ".R"):
+            for s_ in ("armU", "armL"):
+                sg = s_ + sd_
+                if sg not in X:
+                    continue
+                corr = {}
+                for k in range(NK[sg]):
+                    uk = US[int(round(KPOS[sg][k]))]
+                    lr = []
+                    for i in range(NS):
+                        if (sg, i) in KEYS and abs(US[i] - uk) < 0.25 and np.isfinite(g[KEYS.index((sg, i))]):
+                            tgt = np.interp(US[i], [a for a, _ in ARMP[s_]], [b for _, b in ARMP[s_]]) * thighT
+                            lr.append(math.log(tgt / g[KEYS.index((sg, i))]))
+                    if lr:
+                        corr[k] = float(np.mean(lr))
+                if corr:
+                    mc = float(np.mean(list(corr.values())))
+                    for k in range(NK[sg]):
+                        X[sg][k] = float(np.clip(X[sg][k] + 0.9 * corr.get(k, mc), math.log(0.5), math.log(2.6)))
     for sd_ in (".L", ".R"):
         for s_ in ("armU", "armL"):
             if s_ + sd_ in X:
-                X[s_ + sd_] = np.minimum(X[s_ + sd_], 0.0)
+                say("arm %s: knots %s (thigh top %.1f%% of stature)" % (s_ + sd_, np.round(np.exp(X[s_ + sd_]), 2), thighT / ST * 100))
     P = forward(X); g = girths(P)
     okr = np.isfinite(g)
     r = np.log(GT[okr] / g[okr])
@@ -826,8 +868,11 @@ try:
     rms_vert = float(np.sqrt(np.mean(rv_ ** 2)))
     say("vertex fit: RMS girth error %.1f%% (knot fit %.1f%%)" % (rms_vert * 100, rms_knots * 100))
     if rms_vert < rms_knots:
-        P, g = Pv, gv
-        say("using the vertex fit")
+        # the arms always keep their proportional knot shape (the vertex fit
+        # would wrap them in the sleeves)
+        aw_ = np.clip(Wt[:, [SI[x] for x in SEG if x.split(".")[0] in ("armU", "armL")]].sum(1) * 1.5, 0, 1)
+        P = Pv + aw_[:, None] * (P - Pv); g = girths(P)
+        say("using the vertex fit (arms from the knot fit)")
     else:
         say("using the knot fit")
     # ---- final pass: SHAPE FIT. The knot fit gets the proportions roughly
@@ -907,12 +952,33 @@ try:
     P0 = P.copy()
     zfrac = (P[:, 2] - z0) / ST
     region = (zfrac > 0.07) & (zfrac < 0.82) & (keepw < 0.5) & (armw < 0.5)
-    wreg = np.clip(np.minimum((zfrac - 0.07) / 0.04, (0.82 - zfrac) / 0.04), 0, 1) * (1 - keepw) * np.clip(1 - 2 * armw, 0, 1)
+    wreg = np.clip(np.minimum((zfrac - 0.27) / 0.04, (0.82 - zfrac) / 0.04), 0, 1) * (1 - keepw) * np.clip(1 - 2 * armw, 0, 1)
+    region &= zfrac > 0.27                                      # below the knee is boot: calves keep the fitted form
     R_IN, R_OUT, R_TOT = 0.08 * ST, 0.08 * ST, 0.16 * ST
     for it_ in range(6):
         vn = vnormals(P)
         d = np.full(len(P), np.nan)
-        for i_ in np.where(region)[0]:
+        # the torso: from her spine outward, the FIRST surface met is her
+        # skin or the tight corset; the loose coat lies beyond it and is
+        # never what the torso fits to
+        ht_, dt_, Lt_, _, _ = FR["torso"]
+        ut_ = np.clip(((P - ht_) @ dt_) / Lt_, 0, 1)
+        ax_ = ht_ + (ut_ * Lt_)[:, None] * dt_
+        radv = P - ax_; radl = np.linalg.norm(radv, axis=1)
+        torsoR = region & (tw > 0.5) & (zfrac > 0.5) & (zfrac < 0.8) & (radl > 0.01 * ST)
+        for i_ in np.where(torsoR)[0]:
+            dv_ = radv[i_] / radl[i_]
+            o_ = Vector(ax_[i_] + dv_ * 0.25 * radl[i_]); n_ = Vector(dv_); gone = 0.25 * radl[i_]
+            for _ in range(8):
+                hit = ttree.ray_cast(o_, n_, radl[i_] + R_OUT - gone)
+                if hit[0] is None:
+                    break
+                t = gone + hit[3]
+                if hit[1].dot(n_) > 0.3:
+                    d[i_] = (t - radl[i_] - TTHK[hit[2]]) * max(0.3, float(dv_ @ vn[i_]))
+                    break
+                gone = t + 1e-5 * HH; o_ = hit[0] + n_ * (1e-5 * HH)
+        for i_ in np.where(region & ~torsoR)[0]:
             n_ = Vector(vn[i_]); o_ = Vector(P[i_] - vn[i_] * R_IN)
             gone = 0.0; best = None
             for _ in range(6):
@@ -958,8 +1024,8 @@ try:
     cx_all = float(np.median(P[:, 0]))
     zf = (P[:, 2] - z0) / ST
     shz = np.clip(np.minimum((zf - 0.72) / 0.04, (0.92 - zf) / 0.04), 0, 1) * np.clip((np.abs(P[:, 0] - cx_all) / ST - 0.03) / 0.03, 0, 1) * (1 - keepw)
-    for _ in range(25):
-        P = P + (0.5 * shz)[:, None] * (navg(P) - P)
+    for _ in range(4):                                          # a light touch only: her shoulders keep their volume
+        P = P + (0.3 * shz)[:, None] * (navg(P) - P)
     # (3) neck: her high collar was measured as neck; shrink-smooth the neck
     # so it tapers into the head instead of flaring into a collar
     nkw = np.clip(Wt[:, SI["neck"]] * 3, 0, 1) * np.clip(1 - 2 * Wt[:, SI["head"]], 0, 1)
@@ -1112,6 +1178,42 @@ try:
         for lam in (0.5, -0.52):
             P2 = P2 + lam * ank[:, None] * (navg2(P2) - P2)
     say("her skin: %d points kept on her surface after the agreement check" % int(pin2.sum()))
+    # ---- her real skin, verbatim. The snap above follows her surface only as
+    # finely as the base's own grid, so small folds and exact contours were
+    # still smoothed away. Her own skin faces now go into the base as they
+    # are: the fitted form sinks just under them, so wherever her skin shows
+    # you see her sculpt exactly, and the fitted form only shows where the
+    # clothes covered her. Only skin that lies on the body surface is taken
+    # (a pinned base point close by), which leaves out skin-coloured flaps
+    # and cuffs hanging in the air.
+    from mathutils.kdtree import KDTree
+    pinw = pin2.astype(float)
+    for _ in range(3):
+        pinw = np.maximum(pinw, navg2(pinw))
+    for _ in range(3):
+        pinw = 0.5 * pinw + 0.5 * navg2(pinw)
+    P2 = P2 - (0.006 * ST * pinw * zone2)[:, None] * vnorm2(P2)
+    pidx = np.where(pin2)[0]
+    kd = KDTree(len(pidx))
+    for j_, i_ in enumerate(pidx):
+        kd.insert(Vector(P2[i_]), j_)
+    kd.balance()
+    BWa = np.asarray(BW)
+    keepF = []
+    for f, sk in zip(Bpol, skin_wide):
+        if not sk:
+            continue
+        c_ = BWa[list(f)].mean(0)
+        zc_ = (c_[2] - z0) / ST
+        if zc_ < 0.15 or zc_ > 0.84:
+            continue
+        if kd.find(Vector(c_))[2] < 0.012 * ST:
+            keepF.append(f)
+    used = sorted({v for f in keepF for v in f})
+    remap = {v: k_ + len(P2) for k_, v in enumerate(used)}
+    P2 = np.vstack([P2, BWa[used]])
+    BP2 = list(BP2) + [tuple(remap[v] for v in f) for f in keepF]
+    say("her skin, verbatim: %d of her own faces carried into the base" % len(keepF))
     P, BP = P2, BP2
     tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
     for p_ in tmp.polygons:
