@@ -68,7 +68,7 @@ func (g *Game) renderScale(ddt float64) float64 {
 
 // ---------------------------------------------------------------- screen
 
-var settingTabs = []string{"Audio", "Display", "Effects", "Controls", "Access"}
+var settingTabs = []string{"Audio", "Display", "Effects", "Gameplay", "Controls", "Access"}
 
 func (g *Game) drawSettings(s *ebiten.Image) {
 	u := g.ui
@@ -93,19 +93,19 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		if g.setTab == i {
 			acc = cGold
 		}
-		tx := 960 - 470 + float64(i)*190
-		if u.button(s, "stab"+itoa(i), t, tx, 196, 180, 50, acc, true) {
+		tx := 960 - 480 + float64(i)*162
+		if u.button(s, "stab"+itoa(i), t, tx, 196, 152, 50, acc, true) {
 			g.setTab = i
 			g.rebinding = ""
 		}
 		if g.setTab == i {
-			g.tabSlide(s, "settings", tx+20, 254, 140)
+			g.tabSlide(s, "settings", tx+16, 254, 120)
 		}
 	}
 	y := 300.0
 	rowGap := 62.0
 	if g.setTab == 2 {
-		rowGap = 50 // the Effects tab's ten switches and two dials still clear Back
+		rowGap = 56 // the Effects tab's seven switches and two dials still clear Back
 	}
 	toggle := func(id, label string, v bool) bool {
 		u.text(s, label, fBold, 22, 520, y+12, cWhite, alignLeft)
@@ -199,7 +199,6 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		was := [4]bool{st.NoBloom, st.Particles == 1, st.Classic, st.NoAA}
 		st.Shake = toggle("shake", "Screen shake", st.Shake)
 		st.NoRumble = !toggle("rumble", "Controller rumble", !st.NoRumble)
-		st.TopDown = toggle("topdown", "Top-down camera", st.TopDown)
 		st.Flashes = toggle("flash", "Flash effects", st.Flashes)
 		p := toggle("parts", "Full particles", st.Particles == 1)
 		st.Particles = 0
@@ -209,9 +208,6 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 		st.NoBloom = !toggle("bloom", "Bloom & colour grading", !st.NoBloom)
 		st.NoAA = !toggle("aa", "Anti-aliasing (smooth 3D edges)", !st.NoAA)
 		st.Classic = toggle("classic", "Classic backdrop (painted picture, no 3D scenery)", st.Classic)
-		st.FastAnim = toggle("fastanim", "Fast animations (no slow motion or hit-stop, quicker screens)", st.FastAnim)
-		st.AimGuide = toggle("aimguide", "Aim guide (shows where the orb will leave your paddle)", st.AimGuide)
-		st.DmgNums = toggle("dmgnums", "Damage numbers, coloured by what dealt them", st.DmgNums)
 		// brick emphasis: bright brick edges and the scenery stepping back
 		u.text(s, "Brick emphasis (bright edges, scenery steps back)", fBold, 22, 520, y+12, cWhite, alignLeft)
 		if u.button(s, "brickemph", emphNames[min(st.BrickEmph, 2)], 1220, y, 180, 44, cAcc, true) {
@@ -227,8 +223,14 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 			st.Quality = 3
 		}
 	case 3:
-		g.drawControls(s, y)
+		// how the game plays and reads, split out of Effects so neither tab crowds Back
+		st.TopDown = toggle("topdown", "Top-down camera", st.TopDown)
+		st.FastAnim = toggle("fastanim", "Fast animations (no slow motion or hit-stop, quicker screens)", st.FastAnim)
+		st.AimGuide = toggle("aimguide", "Aim guide (shows where the orb will leave your paddle)", st.AimGuide)
+		st.DmgNums = toggle("dmgnums", "Damage numbers, coloured by what dealt them", st.DmgNums)
 	case 4:
+		g.drawControls(s, y)
+	case 5:
 		ts := (g.textScale() - 0.9) / 0.45
 		nt := u.sliderFmt(s, "Text size", 520, y, 880, ts, g.mouseHeld, func(v float64) string {
 			return fmt.Sprintf("%.0f%%", (0.9+0.45*v)*100)

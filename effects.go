@@ -60,9 +60,11 @@ func (L *Level) skyStrike(x, z, dmg float64, col color.RGBA) {
 	L.Arcs = append(L.Arcs, &Arc{Pts: jag(V3{x + (L.rng.Float64()-0.5)*2, 14, z}, V3{x, 0.8, z}, L.rng), Life: 0.35, Col: col})
 	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 2.4, Life: 0.3, Max: 0.3, Col: col})
 	L.Flash = math.Max(L.Flash, 0.15)
-	for _, b := range L.near(x, z, 1.4) {
+	nb := L.near(x, z, 1.4)
+	for _, b := range nb {
 		L.damage(b, Hit{Src: "Lightning", Dmg: dmg, Elemental: true, Silent: true})
 	}
+	L.nearDone(nb)
 	L.g.snd.Play("zap")
 }
 
@@ -90,11 +92,13 @@ func (L *Level) blackHole(x, z float64) {
 	L.Shake, L.Flash = 0.9, 0.4
 	L.g.snd.Play("horizon")
 	L.g.snd.Play("boom")
-	for _, b := range L.near(x, z, rad) {
+	nb := L.near(x, z, rad)
+	for _, b := range nb {
 		if b.Layer <= 1 {
 			L.damage(b, Hit{Src: "Event Horizon", Dmg: 5 * s.Damage * s.DmgMult, Void: true, Blast: true, Silent: true})
 		}
 	}
+	L.nearDone(nb)
 }
 
 // steamBurst (Steam Engine): a brick both burning and frozen explodes.
@@ -111,9 +115,11 @@ func (L *Level) steamBurst(b *Brick) {
 	}
 	L.text(V3{x, 1.8, z}, "STEAM!", color.RGBA{230, 240, 255, 255}, false)
 	L.g.snd.PlayVol("shatter", 0.7)
-	for _, n := range L.near(x, z, 2.8) {
+	nb := L.near(x, z, 2.8)
+	for _, n := range nb {
 		L.damage(n, Hit{Src: "Steam Engine", Dmg: 1.5 * s.Damage * s.DmgMult, Elemental: true, Silent: true})
 	}
+	L.nearDone(nb)
 }
 
 // barrierSaved runs relic and fusion effects when a barrier saves an orb.

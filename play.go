@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"image/color"
 	"math"
-	"time"
 	"math/rand"
 	"strings"
+	"time"
 
 	"orb/levelgen"
 )
@@ -203,7 +203,8 @@ type Boss struct {
 // ---------------------------------------------------------------- level
 
 type Level struct {
-	introT, introMax      float64 // boss intro cinematic
+	nearPool              [][]*Brick // reusable near() buffers
+	introT, introMax      float64    // boss intro cinematic
 	hitStop               float64
 	critStopT             float64 // last crit freeze (they're rationed)
 	finaleT               float64 // >0 while the last brick's slow-motion plays
@@ -284,20 +285,20 @@ type Level struct {
 	ambientT          float64
 	propsX            []V3
 	paddleBounce      float64
-	padSquash         float64 // squash-and-stretch after a hard return (feel.go)
-	dmgNums           int     // damage numbers started this frame
-	prevWorld         int     // the run's last world before this chamber (chambersave.go)
-	initBricks        int     // bricks as the chamber was built
-	stuckT            float64 // how long an orb has rested on the paddle (auto-launch)
+	padSquash         float64    // squash-and-stretch after a hard return (feel.go)
+	dmgNums           int        // damage numbers started this frame
+	prevWorld         int        // the run's last world before this chamber (chambersave.go)
+	initBricks        int        // bricks as the chamber was built
+	stuckT            float64    // how long an orb has rested on the paddle (auto-launch)
 	famT              [8]float64 // familiar shot timers (familiars.go)
 	famAng, owlCD     float64
-	famIntro          bool // the familiars' arrival burst has played (visfx9.go)
+	famIntro          bool       // the familiars' arrival burst has played (visfx9.go)
 	p2Hist            [6]float64 // player two's recent paddle positions (visfx10.go)
 	p2Touch           bool       // the co-op paddles were touching last frame
-	p2On, drawingP2   bool    // co-op: player two's paddle (coop.go)
+	p2On, drawingP2   bool       // co-op: player two's paddle (coop.go)
 	p2X               float64
-	nextSave          float64 // chamber clock of the next mid-chamber autosave
-	crackT, crackX    float64 // the faint arcane crackle on the paddle's face
+	nextSave          float64  // chamber clock of the next mid-chamber autosave
+	crackT, crackX    float64  // the faint arcane crackle on the paddle's face
 	shatter           []*Brick // a slain Guardian's armour, core outward
 	shatterN          int
 	kickX, kickZ      float64 // camera kick: offset and velocity (a damped spring)
@@ -771,16 +772,12 @@ func (L *Level) Update(dt float64, in Input) {
 		}
 	}
 	alive := L.Balls[:0]
-	lostReal := false
 	for _, b := range L.Balls {
 		if b.Z > LoseZ {
 			alive = append(alive, b)
-		} else if b.Phantom <= 0 {
-			lostReal = true
 		}
 	}
 	L.Balls = alive
-	_ = lostReal
 	if !L.Cleared && L.realBalls() == 0 {
 		L.loseBall()
 		if g.state != StLevel {
@@ -1747,25 +1744,43 @@ func (L *Level) destroy(b *Brick, h Hit) {
 			shR = 4.2
 		}
 		L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: shR + 0.4, Life: 0.35, Max: 0.35, Col: color.RGBA{170, 230, 255, 255}})
-		for _, n := range L.near(x, z, shR) {
+		nb := L.near(x, z, shR)
+		for _, n := range nb {
 			if n != b {
 				L.damage(n, Hit{Src: "Shatter", Dmg: 1.5, Elemental: true, Silent: true})
 			}
 		}
+		L.nearDone(nb)
 		g.snd.Play("shatter")
 	}
 }
 
 var crystalGlow = color.RGBA{120, 220, 255, 255}
 
+// near lists the live bricks within rad of (x, z). The slice comes from a
+// small pool: blasts chain into blasts (damage can call near again), so each
+// caller takes its own buffer and hands it back with nearDone when done.
 func (L *Level) near(x, z, rad float64) []*Brick {
 	var out []*Brick
+	if n := len(L.nearPool); n > 0 {
+		out = L.nearPool[n-1][:0]
+		L.nearPool = L.nearPool[:n-1]
+	}
 	for _, b := range L.Bricks {
 		if b.Alive && math.Hypot(b.X()-x, (b.Z()-z)*1.4) <= rad {
 			out = append(out, b)
 		}
 	}
 	return out
+}
+
+// nearDone returns a near() buffer to the pool.
+func (L *Level) nearDone(buf []*Brick) {
+	if cap(buf) == 0 || len(L.nearPool) >= 8 {
+		return
+	}
+	clear(buf) // drop brick pointers so a freed level isn't kept alive
+	L.nearPool = append(L.nearPool, buf[:0])
 }
 
 // Blast tuning. Radii are in blast cells (blastCell world units each):
@@ -1827,7 +1842,8 @@ func (L *Level) explode(x, z, radiusCells, dmg float64, big bool) {
 		L.Flash = 0.5
 	}
 	g.snd.Play("boom")
-	for _, b := range L.near(x, z, rad) {
+	nb := L.near(x, z, rad)
+	for _, b := range nb {
 		if b.Alive && b.Layer <= 1 {
 			if st.CryoCharge {
 				b.Frozen = 4 + st.FreezeDur
@@ -1838,6 +1854,7 @@ func (L *Level) explode(x, z, radiusCells, dmg float64, big bool) {
 			L.damage(b, Hit{Src: "Explosions", Dmg: dmg, Blast: true, Silent: true})
 		}
 	}
+	L.nearDone(nb)
 }
 
 func jag(a, b V3, rng *rand.Rand) []V3 {
