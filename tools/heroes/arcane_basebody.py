@@ -1112,7 +1112,7 @@ try:
         return P2, faces, A2
     zfv = (P[:, 2] - z0) / ST
     bodyzone = np.clip(np.minimum((zfv - 0.15) / 0.04, (0.84 - zfv) / 0.03), 0, 1) * (1 - keepw) * np.clip(1 - 2 * armw, 0, 1)
-    P2, BP2, A2 = subdivide(P, BP, {"zone": bodyzone, "head": Wt[:, SI["head"]]})
+    P2, BP2, A2 = subdivide(P, BP, {"zone": bodyzone, "head": Wt[:, SI["head"]], "arm": armw})
     E2 = set()
     for f in BP2:
         for q in range(4):
@@ -1220,7 +1220,7 @@ try:
                 gz.append(zz); gl.append(hl[3]); gr.append(hr[3])
     # the thighs part higher than her model's (which touch): up to 0.555 of
     # stature, a narrow round-topped gap that meets her own gap lower down
-    apex_t = z0 + 0.555 * ST
+    apex_t = z0 + 0.52 * ST                                    # where her thighs part (the point of her V)
     if apex is not None and len(gz) > 5:
         gz = np.array(gz); gl = np.array(gl); gr = np.array(gr)
         for _ in range(3):
@@ -1240,6 +1240,14 @@ try:
         sgn_ = np.where(dxg >= 0, 1.0, -1.0)
         P2[inside_, 0] = cxh + sgn_[inside_] * lim[inside_]
         say("thigh gap: %d base points trimmed back to her inner thighs" % int(inside_.sum()))
+        # and the faces that would stretch across the gap go
+        sgnP = np.sign(P2[:, 0] - cxh)
+        nb0 = len(BP2)
+        BP2 = [f for f in BP2 if not (min(sgnP[v] for v in f) < 0 < max(sgnP[v] for v in f)
+                                       and max(P2[v, 2] for v in f) < apex_t - 0.004 * ST
+                                       and min(P2[v, 2] for v in f) > gz[0]
+                                       and max(P2[v, 1] for v in f) < ymid + 0.03 * ST)]
+        say("thigh gap: %d faces across it removed" % (nb0 - len(BP2)))
     # the crotch: a smooth, rounded, featureless join of the thighs
     zcr_ = apex_t
     crw = np.clip(1 - np.abs(P2[:, 0] - cxh) / (0.6 * hwh), 0, 1) * np.clip(1 - np.abs(P2[:, 2] - zcr_) / (0.05 * ST), 0, 1)
@@ -1282,51 +1290,227 @@ try:
         kdu.insert(Vector(P2[i_]), j_)
     kdu.balance()
     BWa = np.asarray(BW)
-    keepF = []
-    BC_ = np.array([BWa[list(f)].mean(0) for f in Bpol])
-    zcr_ = apex_t
-    crzF = (np.abs(BC_[:, 0] - cxh) < 0.45 * hwh) & (BC_[:, 2] > zcr_ - 0.03 * ST) & (BC_[:, 2] < zcr_ + 0.04 * ST)
+    # ---- HER SURFACE, AS IS. Everything that is her body's surface in her
+    # model goes in unchanged: all of her skin (boots up to the chin), and
+    # the clothing that hugs her (corset, bust cups, bodice), which carries
+    # her figure exactly as the game model shows it; that clothing is simply
+    # recoloured to skin. The fitted form is only the filling in between
+    # (under the loose coat, the hanging panel, the sleeves), and it is
+    # pushed under her surface wherever it would poke out past it.
     nbv = len(P2)
     base_tree = BVHTree.FromPolygons([tuple(p) for p in P2], [tuple(f) for f in BP2])
-    for f, sk, cz_ in zip(Bpol, skinf, crzF):
-        c_ = BWa[list(f)].mean(0)
-        if cz_:
-            continue                                            # the crotch stays the smooth join
-        if not sk:
-            continue
-        if c_[2] < knee_z0 - 0.05 * ST or c_[2] > z_chin - 0.05 * Hhead:
-            continue
-        # all of her real skin that lies on her body (not flaps standing off it)
-        lim_ = 0.05 * ST if c_[2] < z_waist else 0.015 * ST
-        nb_ = base_tree.find_nearest(Vector(c_), 0.06 * ST)
-        if nb_[0] is not None and nb_[3] < lim_:
-            keepF.append(f)
-    # none of her skin inside the thigh gap
-    if apex is not None and len(gz) > 5 and keepF:
-        KC_ = np.array([BWa[list(f)].mean(0) for f in keepF])
-        gl_k = gap_lim(KC_, KC_[:, 0] - cxh)
-        ing_ = (np.abs(KC_[:, 0] - cxh) < gl_k) & (KC_[:, 1] < ymid + 0.03 * ST)
-        keepF = [f for f, bad in zip(keepF, ing_) if not bad]
-    # drop slivers: pieces of under 40 faces
+    def seg_d(Cs, a_, b_):
+        ab = b_ - a_; t_ = np.clip(((Cs - a_) @ ab) / max(ab @ ab, 1e-12), 0, 1)
+        return np.linalg.norm(Cs - (a_ + t_[:, None] * ab), axis=1)
+    def near_limbs(Cs, segs, r):
+        m_ = np.zeros(len(Cs), bool)
+        for sg in segs:
+            for sd_ in (".L", ".R"):
+                m_ |= seg_d(Cs, *TJ[sg + sd_]) < r
+        return m_
+    zcr_ = apex_t
+    z_sh = 0.5 * (TJ["armU.L"][0][2] + TJ["armU.R"][0][2])
+    zlo_, zhi_ = knee_z0 - 0.05 * ST, z_chin - 0.05 * Hhead
+    SVs = [BWa]; SF = []; kind = []; offv = len(BWa)
+    BC_ = np.array([BWa[list(f)].mean(0) for f in Bpol])
+    # her WHOLE body layer: it is her complete figure (the corset-shaped torso
+    # included); only trims, chains, jewels and hair-coloured bits are left out
+    bfc_ = obj_face_colours(bodyo)
+    notacc = np.ones(len(Bpol), bool)
+    if bfc_ is not None:
+        mx_ = bfc_.max(1); mn_ = bfc_.min(1); sat_ = np.where(mx_ > 1e-4, (mx_ - mn_) / np.maximum(mx_, 1e-4), 0)
+        r_, g_, b_ = bfc_[:, 0], bfc_[:, 1], bfc_[:, 2]
+        notacc = ~(((mx_ < 0.22) & (sat_ < 0.45)) | ((r_ > b_ * 1.25) & (g_ > b_ * 1.05) & (sat_ > 0.45) & ~skinf)
+                   | ((b_ > r_ * 1.3) & (b_ > g_ * 1.1) & (mx_ > 0.55) & (sat_ > 0.45)))
+    okB = notacc & (BC_[:, 2] > zlo_) & (BC_[:, 2] < zhi_) & ~near_limbs(BC_, ("hand",), 0.05 * ST)
+    # her body is one large continuous surface; her hair, the staff, hat
+    # pieces and trims are separate pieces in the same layer (colour alone
+    # can't tell them apart: hair and gold read as skin)
+    _, wid = np.unique(np.round(BWa / (1e-5 * HH)).astype(np.int64), axis=0, return_inverse=True); wid = wid.ravel()
+    parw = np.arange(wid.max() + 1)
+    def fw(a_):
+        r_ = a_
+        while parw[r_] != r_:
+            r_ = parw[r_]
+        while parw[a_] != r_:
+            parw[a_], a_ = r_, parw[a_]
+        return r_
+    for f_ in Bpol:
+        r0_ = fw(wid[f_[0]])
+        for v in f_[1:]:
+            r1_ = fw(wid[v])
+            if r1_ != r0_:
+                parw[r1_] = r0_
+    compF = np.array([fw(wid[f_[0]]) for f_ in Bpol])
+    from collections import Counter as _Cc
+    csz_ = _Cc(compF.tolist())
+    cxc = {}
+    for c_, x_ in zip(compF.tolist(), BC_[:, 0]):
+        cxc.setdefault(c_, []).append(x_)
+    bodyc = {c_ for c_, n_ in csz_.items() if n_ >= 2000 and abs(float(np.mean(cxc[c_])) - cxh) < 0.2 * ST}
+    say("her body layer: %d pieces; body pieces kept %s (faces), %d faces in other pieces left out" % (
+        len(csz_), sorted([csz_[c_] for c_ in bodyc], reverse=True)[:8], int(sum(n_ for c_, n_ in csz_.items() if c_ not in bodyc))))
+    okB &= np.array([c_ in bodyc for c_ in compF.tolist()])
+    z_lw = z_waist + 0.06 * ST
+    lowF = [Bpol[i_] for i_ in np.where(okB & (BC_[:, 2] < z_lw))[0]]
+    okB &= BC_[:, 2] >= z_lw                                    # waist down is handled exactly, below
+    for f_, ok_ in zip(Bpol, okB):
+        if ok_:
+            SF.append(tuple(f_)); kind.append(0)
+    ncl = 0
+    for lo_ in ():
+        LV_ = np.asarray(wverts(lo_)); LP_ = polys(lo_)
+        C_ = np.array([LV_[list(f)].mean(0) for f in LP_])
+        cand = (C_[:, 2] > zcr_) & (C_[:, 2] < z_sh - 0.04 * ST)
+        # the fabric only: not her hair, not gold trim or chains, not jewels
+        fc_ = obj_face_colours(lo_)
+        if fc_ is not None:
+            mx_ = fc_.max(1); mn_ = fc_.min(1); sat_ = np.where(mx_ > 1e-4, (mx_ - mn_) / np.maximum(mx_, 1e-4), 0)
+            r_, g_, b_ = fc_[:, 0], fc_[:, 1], fc_[:, 2]
+            hairc = ((mx_ < 0.22) & (sat_ < 0.45)) | ((mx_ < 0.62) & (sat_ < 0.3))
+            gold = (r_ > b_ * 1.25) & (g_ > b_ * 1.05) & (sat_ > 0.3)
+            jewel = (b_ > r_ * 1.3) & (b_ > g_ * 1.1) & (mx_ > 0.55) & (sat_ > 0.45)
+            cand &= ~hairc & ~gold & ~jewel
+        cand &= ~((np.abs(C_[:, 0] - cxh) < 0.07 * ST) & (C_[:, 2] < znav) & (C_[:, 1] < ymid))   # the hanging front panel
+        cand &= ~near_limbs(C_, ("armU", "armL", "hand"), 0.05 * ST)                              # sleeves
+        for k_ in np.where(cand)[0]:
+            nb_ = base_tree.find_nearest(Vector(C_[k_]), 0.03 * ST)
+            if nb_[0] is not None and nb_[3] < 0.012 * ST:                                     # it hugs her body
+                SF.append(tuple(v + offv for v in LP_[k_])); kind.append(1); ncl += 1
+        SVs.append(LV_); offv += len(LV_)
+    SV = np.vstack(SVs); kind = np.array(kind)
+    SC_ = np.array([SV[list(f)].mean(0) for f in SF])
+    keep_ = np.ones(len(SF), bool)
+    # nothing in the smooth crotch join, nothing in the thigh gap
+    # not flaps standing off her body (strands lying on her back included)
+    for k_ in np.where(keep_)[0]:
+        lim_ = 0.025 * ST if (SC_[k_, 2] > z_waist and SC_[k_, 1] > ymid) else 0.08 * ST
+        nb_ = base_tree.find_nearest(Vector(SC_[k_]), 0.09 * ST)
+        if nb_[0] is None or nb_[3] > lim_:
+            keep_[k_] = False
+    SF = [f for f, k_ in zip(SF, keep_) if k_]; kind = kind[keep_]
+    # whole pieces only (skin pieces of 40+ faces, clothing pieces of 150+)
     par_ = {}
     def fnd(a_):
         while par_.get(a_, a_) != a_:
             par_[a_] = par_.get(par_[a_], par_[a_]); a_ = par_[a_]
         return a_
-    for f in keepF:
+    for f in SF:
         r0_ = fnd(f[0])
         for v in f[1:]:
             r1_ = fnd(v)
             if r1_ != r0_:
                 par_[r1_] = r0_
     from collections import Counter
-    csz = Counter(fnd(f[0]) for f in keepF)
-    keepF = [f for f in keepF if csz[fnd(f[0])] >= 40]
+    csz = Counter(fnd(f[0]) for f in SF)
+    km_ = [csz[fnd(f[0])] >= (40 if k_ == 0 else 400) for f, k_ in zip(SF, kind)]
+    keepF = [f for f, k_ in zip(SF, km_) if k_]
+    say("her surface: %d skin faces and %d hugging-clothing faces kept" % (int(sum(1 for k_, m_ in zip(kind, km_) if m_ and k_ == 0)), int(sum(1 for k_, m_ in zip(kind, km_) if m_ and k_ == 1))))
+    # the filling goes under her surface wherever it pokes out past it
+    surf_tree = BVHTree.FromPolygons([tuple(v) for v in SV], keepF)
+    vnP = vnorm2(P2)
+    ar2 = A2["arm"]; hd0 = A2["head"]
+    moved = np.zeros(len(P2), bool)
+    for i_ in range(nbv):
+        if ar2[i_] > 0.3 or hd0[i_] > 0.5 or not (zlo_ < P2[i_, 2] < zhi_):
+            continue
+        n_ = Vector(vnP[i_])
+        hit = surf_tree.ray_cast(Vector(P2[i_] + vnP[i_] * 0.002 * ST), -n_, 0.09 * ST)
+        if hit[0] is not None and hit[1].dot(n_) > 0.3:
+            P2[i_] = np.array(hit[0]) - vnP[i_] * 0.004 * ST
+            moved[i_] = True
+    mw_ = moved.astype(float)
+    for _ in range(2):
+        mw_ = np.maximum(mw_, navg2(mw_))
+    for _ in range(3):
+        for lam in (0.5, -0.52):
+            P2 = P2 + lam * (0.6 * mw_)[:, None] * (navg2(P2) - P2)
+    say("filling: %d points pushed under her surface" % int(moved.sum()))
+    base_tree = BVHTree.FromPolygons([tuple(p) for p in P2], [tuple(f) for f in BP2])
+    # ---- WAIST DOWN: her own body exactly as modelled; only its holes (the
+    # pelvis centre under the panel, the top of the butt, patches on the
+    # backs of the thighs) are filled, by pieces stitched to her own hole
+    # edges and smoothed to continue her curves
+    from mathutils.kdtree import KDTree as _KD
+    Vw = np.zeros((wid.max() + 1, 3)); Vw[wid] = BWa
+    HFw = [tuple(int(wid[v]) for v in f) for f in lowF]
+    HFw = [f for f in HFw if len(set(f)) == len(f)]
+    # her model is several pieces whose edges lie against each other; join
+    # them where they touch, so only her real holes count as holes
+    ec0 = _Cc()
+    for f in HFw:
+        for q in range(len(f)):
+            a_, b_ = f[q], f[(q + 1) % len(f)]
+            ec0[(a_, b_) if a_ < b_ else (b_, a_)] += 1
+    ob_ = sorted({v for e, c in ec0.items() if c == 1 for v in e})
+    kdo = _KD(max(1, len(ob_)))
+    for j_, v in enumerate(ob_):
+        kdo.insert(Vector(Vw[v]), j_)
+    kdo.balance()
+    wmap = {}
+    for v in ob_:
+        if v in wmap:
+            continue
+        for co_, j_, d_ in kdo.find_range(Vector(Vw[v]), 0.0015 * ST):
+            u = ob_[j_]
+            if u != v and u not in wmap:
+                wmap[u] = v
+    HFw = [tuple(wmap.get(v, v) for v in f) for f in HFw]
+    HFw = [f for f in HFw if len(set(f)) == len(f)]
+    say("waist down: %d touching edge points of her pieces joined" % len(wmap))
+    Htree = BVHTree.FromPolygons([tuple(v) for v in Vw], HFw)
+    ecw = _Cc()
+    for f in HFw:
+        for q in range(len(f)):
+            a_, b_ = f[q], f[(q + 1) % len(f)]
+            ecw[(a_, b_) if a_ < b_ else (b_, a_)] += 1
+    hb = sorted({v for e, c in ecw.items() if c == 1 for v in e})
+    kdb = _KD(max(1, len(hb)))
+    for j_, v in enumerate(hb):
+        kdb.insert(Vector(Vw[v]), j_)
+    kdb.balance()
+    z_ll = knee_z0 - 0.05 * ST
+    rb = np.zeros(len(P2), bool)
+    rb[:nbv] = (P2[:nbv, 2] > z_ll) & (P2[:nbv, 2] < z_lw) & (A2["arm"][:nbv] < 0.3)
+    dH = np.full(len(P2), np.inf); nearP = np.zeros_like(P2)
+    for i_ in np.where(rb)[0]:
+        h_ = Htree.find_nearest(Vector(P2[i_]), 0.04 * ST)
+        if h_[0] is not None:
+            dH[i_] = h_[3]; nearP[i_] = np.array(h_[0])
+    covered = dH < 0.012 * ST
+    hole = rb & ~covered
+    isP = [any(hole[v] for v in f) for f in BP2]
+    pv = sorted({v for f, k_ in zip(BP2, isP) if k_ for v in f})
+    border = [v for v in pv if not hole[v]]
+    redirect = {}
+    for v in border:
+        co_, j_, d_ = kdb.find(Vector(P2[v]))
+        if co_ is not None and d_ < 0.02 * ST:
+            P2[v] = Vw[hb[j_]]; redirect[v] = hb[j_]          # stitched to her own edge
+        elif np.isfinite(dH[v]):
+            P2[v] = nearP[v]
+    nbrs = [[] for _ in range(len(P2))]
+    for a_, b_ in E2:
+        nbrs[a_].append(b_); nbrs[b_].append(a_)
+    pvs = set(pv)
+    for v in border:
+        for u in nbrs[v]:
+            if u not in pvs and covered[u]:
+                P2[u] = nearP[u]                              # a second ring on her surface: the fill leaves at her tangent
+    free = np.zeros(len(P2), bool); free[[v for v in pv if hole[v]]] = True
+    for _ in range(600):
+        Lx = navg2(P2) - P2
+        LL = navg2(Lx) - Lx
+        P2[free] -= 0.2 * LL[free]
+    nb0 = len(BP2)
+    BP2 = [f for f, k_ in zip(BP2, isP) if k_ or not all(rb[v] for v in f)]
+    say("waist down: %d of her faces as modelled, %d hole-edge points, fill pieces of %d faces (%d points smoothed), %d base faces dropped" % (
+        len(HFw), len(hb), sum(isP), int(free.sum()), nb0 - len(BP2)))
     used = sorted({v for f in keepF for v in f})
     remap = {v: k_ + len(P2) for k_, v in enumerate(used)}
-    PV_ = BWa[used].copy()
-    # tuck the edges of her skin patches down onto the filled form, so the
-    # join is smooth (no lip, no hard line where the clothes were cut out)
+    PV_ = SV[used].copy()
+    # tuck the edges of her surface pieces down onto the filling, so the join
+    # is smooth (no lip, no hard line where the clothes were cut out)
     from collections import Counter as _C
     ec_ = _C()
     for f in keepF:
@@ -1342,10 +1526,10 @@ try:
     idx_ = {v: k_ for k_, v in enumerate(used)}
     for set_, w_ in ((bnd_, 1.0), (ring1, 0.5)):
         for v in set_:
-            hit = base_tree.find_nearest(Vector(BWa[v]), 0.03 * ST)
+            hit = base_tree.find_nearest(Vector(SV[v]), 0.012 * ST)
             if hit[0] is not None:
                 PV_[idx_[v]] = (1 - w_) * PV_[idx_[v]] + w_ * np.array(hit[0])
-    say("her skin: %d patch edge points tucked onto the filled form" % len(bnd_))
+    say("her surface: %d piece edge points tucked onto the filling" % len(bnd_))
     P2 = np.vstack([P2, PV_])
     # her own head (face, eyes, hair) goes in as its own textured piece, so
     # the base's plain head comes out above the chin
@@ -1372,6 +1556,58 @@ try:
            if not (min(P2[v, 2] for v in f) > z_cut and not all(headb[v] for v in f))
            and not (max(P2[v, 2] for v in f) < knee_z - 0.05 * ST)]          # lower legs: her boots go on
     BP2 = list(BP2) + [tuple(remap[v] for v in f) for f in keepF]
+    usedH = sorted({v for f in HFw for v in f})
+    hmap = {v: k_ + len(P2) for k_, v in enumerate(usedH)}
+    P2 = np.vstack([P2, Vw[usedH]])
+    BP2 = [tuple(hmap[redirect[v]] if v in redirect else v for v in f) for f in BP2]
+    BP2 = BP2 + [tuple(hmap[v] for v in f) for f in HFw]
+    # blend the stitches: a few rings around every point where the fill meets
+    # her own edge are smoothed together, so her ragged cut edges don't show
+    seam = np.zeros(len(P2), bool)
+    for v in set(redirect.values()):
+        if v in hmap:
+            seam[hmap[v]] = True
+    Eall = set()
+    for f in BP2:
+        for q in range(len(f)):
+            a_, b_ = f[q], f[(q + 1) % len(f)]
+            Eall.add((a_, b_) if a_ < b_ else (b_, a_))
+    Eall = np.array(sorted(Eall), dtype=np.int64)
+    dga = np.zeros(len(P2)); np.add.at(dga, Eall[:, 0], 1); np.add.at(dga, Eall[:, 1], 1)
+    def navgA(X):
+        o_ = np.zeros_like(X)
+        np.add.at(o_, Eall[:, 0], X[Eall[:, 1]]); np.add.at(o_, Eall[:, 1], X[Eall[:, 0]])
+        return o_ / np.maximum(dga, 1)[(...,) + (None,) * (X.ndim - 1)]
+    sw = seam.astype(float)
+    for _ in range(3):
+        sw = np.maximum(sw, navgA(sw))
+    for _ in range(2):
+        sw = 0.5 * sw + 0.5 * navgA(sw)
+    sw[P2[:, 2] > z_lw + 0.01 * ST] = 0.0
+    for _ in range(4):
+        for lam in (0.45, -0.47):
+            P2 = P2 + lam * sw[:, None] * (navgA(P2) - P2)
+    say("waist down: stitches blended over %d points" % int((sw > 0.05).sum()))
+    # under her, from the point of the V in front to the bottom of the cleft
+    # behind: one smooth, closed, shaded surface with no anatomical detail
+    zc_lo, zc_hi = z0 + 0.47 * ST, z0 + 0.59 * ST
+    cw_ = np.clip(1 - np.abs(P2[:, 0] - cxh) / (0.03 * ST), 0, 1) * np.clip(np.minimum((P2[:, 2] - zc_lo) / (0.02 * ST), (zc_hi - P2[:, 2]) / (0.02 * ST)), 0, 1)
+    under_ = cw_ * np.clip((P2[:, 1] - (ymid - 0.03 * ST)) / (0.02 * ST), 0, 1)   # the underside and the back, not the front of the pelvis
+    for _ in range(8):                                          # shape-keeping smoothing: her outline does not move
+        for lam in (0.5, -0.53):
+            P2 = P2 + lam * (0.7 * under_)[:, None] * (navgA(P2) - P2)
+    # her V in front: two soft creases from the hips meeting just above where
+    # the thighs part, pressed gently into the front of the pelvis
+    apexV = np.array([cxh, z0 + 0.52 * ST]); topL = np.array([cxh - 0.052 * ST, z0 + 0.575 * ST]); topR = np.array([cxh + 0.052 * ST, z0 + 0.575 * ST])
+    xz_ = P2[:, [0, 2]]
+    def segd(a_, b_):
+        ab = b_ - a_; t_ = np.clip(((xz_ - a_) @ ab) / (ab @ ab), 0, 1)
+        return np.linalg.norm(xz_ - (a_ + t_[:, None] * ab), axis=1), t_
+    dL, tL = segd(apexV, topL); dR, tR = segd(apexV, topR)
+    frontV = np.clip(((ymid - 0.005 * ST) - P2[:, 1]) / (0.015 * ST), 0, 1)
+    gro = lambda d_, t_: 0.0035 * ST * np.exp(-(d_ / (0.006 * ST)) ** 2) * np.clip((1 - t_) / 0.15, 0, 1) ** 0.5
+    P2[:, 1] += np.maximum(gro(dL, tL), gro(dR, tR)) * frontV
+    say("the V: creases from the hips to %.3f of stature; underside smoothed over %d points" % ((apexV[1] - z0) / ST, int((under_ > 0.1).sum())))
     say("her skin, verbatim: %d of her own faces carried into the base" % len(keepF))
     # the belly: a long navel and soft muscle tone (the centre line from under
     # the bust to the navel, and two faint side lines), pressed into the front
@@ -1387,7 +1623,7 @@ try:
     # hip dips: a soft inward curve on each side where the hip meets the thigh
     zdip = (apex if apex is not None else zh - 0.05 * ST) + 0.07 * ST
     band_ = np.abs(P2[:, 2] - zdip) < 0.02 * ST
-    for sg_ in (1.0, -1.0):
+    for sg_ in ():
         lat_ = sg_ * (P2[:, 0] - cxh)
         W_ = float(np.percentile(lat_[band_ & (lat_ > 0)], 98)) if (band_ & (lat_ > 0)).any() else 0.2 * ST
         wl_ = np.clip((lat_ - 0.6 * W_) / (0.3 * W_), 0, 1)
@@ -1451,6 +1687,16 @@ try:
         for i_, c_ in enumerate(cols):
             ca.data[i_].color_srgb = (float(c_[0]), float(c_[1]), float(c_[2]), 1.0)
         say("colour: her skin tone %s, sampled onto the base" % np.round(base_tone, 3))
+        # last: weld points that sit on top of each other and close tiny cracks
+        bmw = bmesh.new(); bmw.from_mesh(tmp)
+        nvb = len(bmw.verts)
+        bmesh.ops.remove_doubles(bmw, verts=bmw.verts[:], dist=0.0004 * HH)
+        bmw.edges.ensure_lookup_table()
+        holes_ = bmesh.ops.holes_fill(bmw, edges=[e for e in bmw.edges if e.is_boundary], sides=10)
+        bmw.to_mesh(tmp); bmw.free(); tmp.update()
+        for p_ in tmp.polygons:
+            p_.use_smooth = True
+        say("clean-up: %d points welded, %d tiny cracks closed" % (nvb - len(tmp.vertices), len(holes_.get("faces", []))))
     except Exception as e:
         say("colour failed", e)
     # ---- measurements: the same cross-sections the fit used
