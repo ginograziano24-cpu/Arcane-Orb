@@ -64,7 +64,7 @@ Written 2026-11-17 for docs/POLISH_PASS.md. This phase made no code changes.
   - But anything using `x += k*dt` lerps (for example `PaddleW += (tw-PaddleW)*min(1,10*dt)`) behaves slightly differently at 30, 60 and 240 Hz.
   - **Check:** run the bench at 60 and at 240 and compare a recorded chamber, or switch gameplay to a fixed 120 Hz accumulator (render stays free).
 - **Stuck orbs.** `fixAngle` keeps the vertical component at ≥30% of speed, which stops horizontal loops. `antistall.go` exists and has a test. Keep the soak test (`soak.go`) in the Phase 6 run.
-- **Saves.** `runsave.go` is versioned (v2, rejects unknown versions). `save.go` (meta-progress) has no version field. **Add one before release** so future changes can migrate instead of resetting progress.
+- **Saves.** Both are versioned: `runsave.go` is v2 and rejects unknown versions, and `save.go` (meta-progress) carries a `version` field. Saves are written atomically (tmp file, then rename), and a corrupt save is backed up to `.bak` before falling back to defaults. Nothing to fix. Keep the rule: never break existing saves.
 - **Multi-ball loss.** `lostReal` is computed and then discarded (`_ = lostReal`). Harmless, but it's leftover code worth cleaning.
 
 ## 6. Clarity and UX

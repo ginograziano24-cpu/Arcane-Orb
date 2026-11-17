@@ -141,8 +141,12 @@ func (g *Game) pickQuip(arch string) {
 	if hl, ok := heroLore[arch]; ok {
 		name = hl.Name
 	}
-	g.toast(name, lines[quipPick], classInfo[arch].Col, icStar)
-	g.heroVoice(arch, lines[quipPick])
+	line := quipLine(arch, quipPick, &g.pickLast, rand.Intn)
+	if line == "" {
+		line = lines[quipPick]
+	}
+	g.toast(name, line, classInfo[arch].Col, icStar)
+	g.heroVoice(arch, line)
 }
 
 // quip lets the current hero say their line for a moment, if the rules allow.
@@ -170,7 +174,11 @@ func (g *Game) quip(m quipMoment) {
 		return
 	}
 	q.said[m] = true
-	g.say(q, lines[m])
+	line := quipLine(g.run.Arch.ID, m, &g.quipLast, rand.Intn)
+	if line == "" {
+		line = lines[m]
+	}
+	g.say(q, line)
 }
 
 // comboQuip comments on a long combo: tier 0 at 50 hits, 1 at 100, 2 at

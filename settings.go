@@ -198,6 +198,7 @@ func (g *Game) drawSettings(s *ebiten.Image) {
 	case 2:
 		was := [4]bool{st.NoBloom, st.Particles == 1, st.Classic, st.NoAA}
 		st.Shake = toggle("shake", "Screen shake", st.Shake)
+		st.NoRumble = !toggle("rumble", "Controller rumble", !st.NoRumble)
 		st.TopDown = toggle("topdown", "Top-down camera", st.TopDown)
 		st.Flashes = toggle("flash", "Flash effects", st.Flashes)
 		p := toggle("parts", "Full particles", st.Particles == 1)

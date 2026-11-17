@@ -40,6 +40,7 @@ func main() {
 		return // Steam is relaunching the game through the client
 	}
 	bootMark("Steam init")
+	loadFeelOverrides()
 	buildAtlas()
 	bootMark("UI atlas")
 	ebiten.SetWindowSize(1600, 900)

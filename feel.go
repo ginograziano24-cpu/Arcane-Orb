@@ -25,6 +25,9 @@ func (L *Level) paddleStrike(b *Ball, sp float64) {
 	k := clamp01((sp/base - 0.85) / 0.6) // a normal return is ~0.25, a fast orb 1
 	k = math.Max(0.25, k)
 	L.padSquash = math.Max(L.padSquash, k)
+	if k >= 0.45 {
+		L.g.rumble(feel.RumblePaddle*k, 45*time.Millisecond)
+	}
 	if k < 0.45 || L.g.settings.Particles == 0 {
 		return // the crackle is for the hard ones only, and stays slight
 	}

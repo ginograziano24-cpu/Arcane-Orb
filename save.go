@@ -11,6 +11,7 @@ type Settings struct {
 	Music      float64              `json:"music"`
 	SFX        float64              `json:"sfx"`
 	Shake      bool                 `json:"shake"`
+	NoRumble   bool                 `json:"no_rumble,omitempty"` // controller rumble off (feelcfg.go)
 	Flashes    bool                 `json:"flashes"`
 	Particles  int                  `json:"particles"` // 0 reduced, 1 full
 	Fullscreen bool                 `json:"fullscreen"`

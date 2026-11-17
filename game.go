@@ -232,6 +232,8 @@ type Game struct {
 	scrollSel      int // pad: selected scroll slot
 	hero           heroPortrait
 	quips          quipState     // the hero speech bubble (quips.go)
+	quipLast       [numQuipMoments]int // last quip line said per moment, kept across runs (quips_more.go)
+	pickLast       [numQuipMoments]int
 	bgMuted        bool          // sound is silenced while the window is in the background
 	challengeSel   string        // challenge picked on the Challenges screen
 	weeklySel      bool          // the weekly mutator run was picked on the Challenges screen

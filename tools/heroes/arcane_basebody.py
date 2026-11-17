@@ -388,10 +388,12 @@ try:
                 continue
             if np.linalg.norm(c_ - head_c) < 0.12 * ST or np.linalg.norm(c_ - sh) > LA + LB + Lh:
                 continue
-            if best_ is None or n_ > best_[1]:
-                best_ = (cid, n_, c_)
+            # a real hand hangs off the arm: the line from the shoulder runs inside her sleeve
+            ins = sum(1 for t in (0.2, 0.35, 0.5, 0.65, 0.8) if inside(sh + (c_ - sh) * t) < 0.004 * ST)
+            if best_ is None or (ins, n_) > (best_[3], best_[1]):
+                best_ = (cid, n_, c_, ins)
         hc = best_[2] if best_ else sh + np.array([sgn * 0.2, -0.05, -0.25]) * ST
-        say("hand", sd, "piece", best_[1] if best_ else None, "at", np.round((hc - np.array([fx, 0, z0])) / ST, 3))
+        say("hand", sd, "piece", best_[1] if best_ else None, "inside", best_[3] if best_ else None, "at", np.round((hc - np.array([fx, 0, z0])) / ST, 3))
         u_ = (hc - sh) / max(np.linalg.norm(hc - sh), 1e-9)
         wr = hc - u_ * 0.4 * Lh
         dv_ = wr - sh; d_ = np.linalg.norm(dv_)
@@ -499,7 +501,7 @@ try:
                 skin_ok = ok & (ly == 0)
                 ref = np.median(rh[skin_ok]) if skin_ok.sum() >= 8 else np.percentile(rh[ok], 40)
                 ok &= rh < 1.3 * ref
-            st.append(dict(c=c, rm=rm, rh=np.where(ok, rh, np.nan), ly=ly, n=int(ok.sum()), robe=float((ly[ok] > 0).mean()) if ok.any() else 1.0))
+            st.append(dict(c=c, rm=rm, rh=np.where(ok, rh, np.nan), ly=ly, n=int(ok.sum()), robe=float((ly[ok] > 0).mean()) if ok.any() else 1.0, skip=(s == "hips" and u < 0.5) or (s.startswith("legU") and u < 0.18)))
         HER[s] = st
 
     def harm(n):
@@ -508,7 +510,7 @@ try:
 
     def station_coef(s, stt):
         ok = np.isfinite(stt["rh"]) & np.isfinite(stt["rm"]) & (stt["rm"] > 1e-6)
-        if ok.sum() < 16:
+        if ok.sum() < 16 or stt.get("skip"):
             return None
         q = stt["rh"][ok] / stt["rm"][ok]
         if s in TORSO and ok.sum() >= 32:
@@ -609,7 +611,7 @@ try:
     bt = mtree(P)
     say("measurements (girth, % of her stature): her innermost surface vs base form")
     for nm_, s, u in (("neck", "neck", 0.5), ("chest", "chest", 0.35), ("under chest", "chest", 0.12), ("waist", "spine", 0.5),
-                      ("hips", "hips", 0.3), ("thigh L", "legU.L", 0.25), ("thigh R", "legU.R", 0.25), ("knee L", "legU.L", 0.9),
+                      ("hips", "hips", 0.75), ("thigh L", "legU.L", 0.25), ("thigh R", "legU.R", 0.25), ("knee L", "legU.L", 0.9),
                       ("calf L", "legL.L", 0.35), ("calf R", "legL.R", 0.35), ("upper arm L", "armU.L", 0.5), ("upper arm R", "armU.R", 0.5),
                       ("forearm L", "armL.L", 0.4), ("forearm R", "armL.R", 0.4)):
         h, d, L_, e1, e2 = FR[s]

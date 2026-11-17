@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -127,9 +128,10 @@ func (L *Level) explodePaddle() {
 	x, z := L.PaddleX, PaddleZ
 	body, trim := L.Biome.PaddleBody, L.Biome.Trim
 	L.paddleGone = paddleReform
-	L.Shake = math.Max(L.Shake, 1.1)
+	L.Shake = math.Max(L.Shake, feel.ShakePaddleLost)
 	L.Flash = math.Max(L.Flash, 0.55)
-	L.hitStop = math.Max(L.hitStop, 0.12)
+	L.hitStop = math.Max(L.hitStop, feel.HitStopPaddleLost)
+	g.rumble(feel.RumbleLifeLost, 320*time.Millisecond)
 	L.hurtFlash = 1
 	for i := 0; i < 3; i++ {
 		L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 3 + 2.5*float64(i), Life: 0.35 + 0.15*float64(i), Max: 0.35 + 0.15*float64(i), Col: mixc(color.RGBA{255, 120, 70, 255}, trim, float64(i)/2)})

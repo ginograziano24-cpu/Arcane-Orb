@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"time"
 	"math/rand"
 	"strings"
 
@@ -1027,11 +1028,14 @@ func (L *Level) collideBricks(b *Ball) {
 	c1 := int(math.Floor((b.X + reach + HalfW) / CellW))
 	r0 := rowAt(b.Z + reach)
 	r1 := rowAt(b.Z - reach)
-	var splash []*Brick
+	// small fixed buffers on the stack: this runs every physics substep for
+	// every orb, so it must not allocate (it only spills past 16 bricks)
+	var splashBuf, hitsBuf [16]*Brick
+	splash := splashBuf[:0]
 	var best *Brick
 	bestPen := -1.0
 	var nx, nz float64
-	var hits []*Brick
+	hits := hitsBuf[:0]
 	for rr := max(r0, 0); rr <= min(r1, GridRows-1); rr++ {
 		for cc := max(c0, 0); cc <= min(c1, levelgen.Cols-1); cc++ {
 			br := L.Grid[rr][cc]
@@ -1090,11 +1094,11 @@ func (L *Level) collideBricks(b *Ball) {
 		if br == best {
 			switch {
 			case destroyed && (br.MaxHP >= 3 || br.Kind == levelgen.Elite):
-				L.camKick(-nx, -nz, 7)
+				L.camKick(-nx, -nz, feel.KickHeavyBreak)
 			case destroyed:
-				L.camKick(-nx, -nz, 3.5)
+				L.camKick(-nx, -nz, feel.KickBreak)
 			default:
-				L.camKick(-nx, -nz, 1.5)
+				L.camKick(-nx, -nz, feel.KickHit)
 			}
 			if !solid {
 				reflect = false
@@ -1262,9 +1266,13 @@ func (L *Level) damage(b *Brick, h Hit) (bool, bool) {
 		L.sparks(V3{b.X(), 1.2, b.Z()}, 16, color.RGBA{255, 220, 120, 255}, 7)
 		L.Shake = math.Max(L.Shake, 0.25)
 		if L.Boss.HP <= 0 {
+			g.rumble(feel.RumbleBossKill, 600*time.Millisecond)
 			L.killBoss()
-		} else if L.Boss.coreHits >= 4 {
-			L.moveCore()
+		} else {
+			g.rumble(feel.RumbleBossHit, 120*time.Millisecond)
+			if L.Boss.coreHits >= 4 {
+				L.moveCore()
+			}
 		}
 		return false, true
 	}
@@ -1422,8 +1430,8 @@ func (L *Level) ballHit(ball *Ball, b *Brick) (bool, bool) {
 	}
 	if crit && L.T-L.critStopT > 0.35 && !g.settings.FastAnim {
 		L.critStopT = L.T
-		L.hitStop = math.Max(L.hitStop, 0.045)
-		L.Shake = math.Max(L.Shake, 0.18)
+		L.hitStop = math.Max(L.hitStop, feel.HitStopCrit)
+		L.Shake = math.Max(L.Shake, feel.ShakeCrit)
 	}
 	L.passiveOnHit(ball, b, dmg)
 	if L.midasT > 0 && L.rng.Float64() < 0.6 {
@@ -2736,12 +2744,14 @@ func (L *Level) breakPop(b *Brick, x, z float64) {
 	L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 0.9, Life: 0.22, Max: 0.22, Col: c})
 	switch {
 	case b.Kind == levelgen.Elite:
-		L.hitStop = math.Max(L.hitStop, 0.09)
+		L.hitStop = math.Max(L.hitStop, feel.HitStopEliteBreak)
+		L.g.rumble(feel.RumbleHeavyBreak*1.5, 110*time.Millisecond)
 		L.Rings = append(L.Rings, &Ring{X: x, Z: z, MaxR: 4, Life: 0.5, Max: 0.5, Col: color.RGBA{255, 210, 120, 255}})
 		L.sparks(V3{x, 1, z}, 26, color.RGBA{255, 220, 140, 255}, 11)
 		L.Flash = math.Max(L.Flash, 0.25)
 	case b.MaxHP >= 3:
-		L.hitStop = math.Max(L.hitStop, 0.035)
+		L.hitStop = math.Max(L.hitStop, feel.HitStopHeavyBreak)
+		L.g.rumble(feel.RumbleHeavyBreak, 70*time.Millisecond)
 		L.sparks(V3{x, 0.8, z}, 8, c, 7)
 	}
 }
@@ -2876,7 +2886,7 @@ func (L *Level) camKick(dx, dz, v float64) {
 }
 
 func (L *Level) updateKick(dt float64) {
-	const k, c = 380.0, 30.0
+	k, c := feel.KickSpring, feel.KickDamping
 	step := func(x, v *float64) {
 		a := -k**x - c**v
 		*v += a * dt
