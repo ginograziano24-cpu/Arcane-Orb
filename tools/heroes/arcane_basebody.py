@@ -422,12 +422,17 @@ try:
             ax_ = dv_ / d_
             e1_ = np.cross(ax_, [0, 0, 1.0]); e1_ /= max(np.linalg.norm(e1_), 1e-9); e2_ = np.cross(ax_, e1_)
             sc_best = None; el = None
-            for th in np.linspace(0, 2 * math.pi, 24, endpoint=False):
+            for th in np.linspace(0, 2 * math.pi, 48, endpoint=False):
                 cand = sh + ax_ * a_ + hgt_ * (math.cos(th) * e1_ + math.sin(th) * e2_)
+                # her elbows hang beside her body, never inside the torso
+                if sgn * (cand[0] - cxt) < 0.85 * hwm or cand[2] > sh[2]:
+                    continue
                 pts = [sh + (cand - sh) * t for t in (0.25, 0.5, 0.75, 1.0)] + [cand + (wr - cand) * t for t in (0.25, 0.5, 0.75)]
                 scv = sum(inside(p) for p in pts)
                 if sc_best is None or scv < sc_best:
                     sc_best, el = scv, cand
+        if el is None:
+            el = sh + np.array([sgn * 0.15 * LA, 0.0, -0.99 * LA])
         u_ = (hc - el) / max(np.linalg.norm(hc - el), 1e-9)
         wr = hc - u_ * 0.4 * Lh
         TJ["armU" + sd] = (sh, el); TJ["armL" + sd] = (el, wr); TJ["hand" + sd] = (wr, wr + u_ * Lh)
@@ -626,7 +631,7 @@ try:
         for _ in range(3):
             HARM[s][1:-1] = 0.25 * HARM[s][:-2] + 0.5 * HARM[s][1:-1] + 0.25 * HARM[s][2:]
     # ---- the parameters: a few knots of log-size per bone, smooth by construction
-    NK = {s: (6 if s in TORSO else 3) for s in FIT}
+    NK = {s: (6 if s in TORSO else 5 if s.startswith("arm") else 3) for s in FIT}
     KPOS = {s: np.linspace(0, NS - 1, NK[s]) for s in FIT}
     X = {s: np.log(np.clip(np.interp(KPOS[s], np.arange(NS), A0[s]), 0.5, 2.2)) for s in FIT}
     # the pelvis below the hip line is shaped by the thighs, not by a torso slice
@@ -777,7 +782,9 @@ try:
     # legs by ordinary proportion (upper arm about half the top of the thigh,
     # forearm 0.41, wrist 0.27), never from the cloth around them.
     thighT = float(np.nanmax([np.nanmax(TG[x]) for x in ("legU.L", "legU.R") if np.isfinite(TG[x]).any()]))
-    ARMP = {"armU": ((0.0, 0.50), (0.5, 0.46), (1.0, 0.40)), "armL": ((0.0, 0.40), (0.3, 0.41), (1.0, 0.27))}
+    # a shaped arm: shoulder cap, bicep, slimmer elbow, forearm swell, wrist
+    ARMP = {"armU": ((0.0, 0.56), (0.2, 0.50), (0.55, 0.47), (0.85, 0.40), (1.0, 0.37)),
+            "armL": ((0.0, 0.37), (0.22, 0.42), (0.5, 0.37), (0.8, 0.30), (1.0, 0.27))}
     for sd_ in (".L", ".R"):
         for s_ in ("armU", "armL"):
             if s_ + sd_ not in X:
@@ -1137,7 +1144,7 @@ try:
     def crotchbox(Q):
         return (np.abs(Q[:, 0] - cxh) < 0.9 * hwh) & (np.abs(Q[:, 2] - (zh - 0.05 * ST)) < 0.08 * ST)
     crz2 = crotchbox(P2)
-    zone2 = A2["zone"]
+    zone2 = A2["zone"].copy() * (~crz2)
     RS = 0.03 * ST
     for pass_ in range(2):
         vn2 = vnorm2(P2)
@@ -1188,6 +1195,17 @@ try:
         for lam in (0.5, -0.52):
             P2 = P2 + lam * ank[:, None] * (navg2(P2) - P2)
     say("her skin: %d points kept on her surface after the agreement check" % int(pin2.sum()))
+    # the crotch: a smooth, rounded, featureless join of the thighs
+    crw = np.clip(1 - np.abs(P2[:, 0] - cxh) / (0.9 * hwh), 0, 1) * np.clip(1 - np.abs(P2[:, 2] - (zh - 0.05 * ST)) / (0.09 * ST), 0, 1)
+    crw = np.clip(crw * 2.5, 0, 1)
+    for _ in range(20):
+        for lam in (0.5, -0.52):
+            P2 = P2 + lam * crw[:, None] * (navg2(P2) - P2)
+    # the belly: a long navel and soft muscle tone (the centre line from under
+    # the bust to the navel, and two faint side lines), on the front only
+    zs0, zc0 = TJ["spine"][0][2], TJ["chest"][0][2]
+    znav = zs0 + 0.6 * (zc0 - zs0)
+    say("belly: navel at %.3f of stature" % ((znav - z0) / ST))
     # ---- her real skin, verbatim. The snap above follows her surface only as
     # finely as the base's own grid, so small folds and exact contours were
     # still smoothed away. Her own skin faces now go into the base as they
@@ -1218,18 +1236,18 @@ try:
     kdu.balance()
     BWa = np.asarray(BW)
     keepF = []
-    crzF = crotchbox(np.array([BWa[list(f)].mean(0) for f in Bpol]))
+    BC_ = np.array([BWa[list(f)].mean(0) for f in Bpol])
+    crzF = (np.abs(BC_[:, 0] - cxh) < 1.25 * hwh) & (np.abs(BC_[:, 2] - (zh - 0.05 * ST)) < 0.11 * ST)
     for f, sk, cz_ in zip(Bpol, skin_wide, crzF):
         c_ = BWa[list(f)].mean(0)
-        if cz_ and kd.find(Vector(c_))[2] < 0.012 * ST:
-            keepF.append(f)                                     # her own crotch, verbatim
-            continue
+        if cz_:
+            continue                                            # the crotch stays the smooth join
         if not sk:
             continue
         zc_ = (c_[2] - z0) / ST
         if zc_ < 0.15 or zc_ > 0.84:
             continue
-        if kd.find(Vector(c_))[2] < 0.012 * ST and (len(uidx) == 0 or kdu.find(Vector(c_))[2] > 0.02 * ST):
+        if kd.find(Vector(c_))[2] < 0.012 * ST and (len(uidx) == 0 or kdu.find(Vector(c_))[2] > 0.025 * ST):
             keepF.append(f)
     used = sorted({v for f in keepF for v in f})
     remap = {v: k_ + len(P2) for k_, v in enumerate(used)}
@@ -1237,9 +1255,41 @@ try:
     # her own head (face, eyes, hair) goes in as its own textured piece, so
     # the base's plain head comes out above the chin
     z_cut = z_chin - 0.05 * Hhead
-    BP2 = [f for f in BP2 if not (all(A2["head"][v] > 0.6 for v in f) and min(P2[v, 2] for v in f) > z_cut)]
+    # the base's neck sinks just inside her own neck and head; above the cut
+    # only a cranium cap stays (hair coloured, just under her hair) to fill
+    # the scalp her model never had under the hat
+    rN = np.hypot(P2[:, 0] - fx, P2[:, 1] - head_y)
+    nz_ = (P2[:, 2] > z_cut - 0.25 * Hhead) & (rN < 0.7 * Hhead)
+    P2[nz_, 0] = fx + (P2[nz_, 0] - fx) * 0.9
+    P2[nz_, 1] = head_y + (P2[nz_, 1] - head_y) * 0.9
+    hc3 = np.array([fx, head_y, z_chin + 0.55 * Hhead])
+    hd2 = np.r_[A2["head"], np.zeros(len(P2) - len(A2["head"]))]
+    headb = (hd2 > 0.6) & (P2[:, 2] > z_cut - 0.1 * Hhead)
+    P2[headb] = hc3 + (P2[headb] - hc3) * 0.93               # a backing just inside her head (fills her mouth and scalp)
+    cran_v = headb & ((P2[:, 2] > z_eye + 0.15 * Hhead) | (P2[:, 1] > head_y + 0.12 * Hhead))
+    ztop_ = z_chin + 0.95 * Hhead                               # her own head top (the cap must not rise above it)
+    hi_ = headb & (P2[:, 2] > z_eye)
+    if hi_.any():
+        k_ = min(1.0, (ztop_ - z_eye) / max(float(P2[hi_, 2].max()) - z_eye, 1e-6))
+        P2[hi_, 2] = z_eye + (P2[hi_, 2] - z_eye) * k_
+    knee_z = 0.5 * (TJ["legL.L"][0][2] + TJ["legL.R"][0][2])
+    BP2 = [f for f in BP2
+           if not (min(P2[v, 2] for v in f) > z_cut and not all(headb[v] for v in f))
+           and not (max(P2[v, 2] for v in f) < knee_z - 0.05 * ST)]          # lower legs: her boots go on
     BP2 = list(BP2) + [tuple(remap[v] for v in f) for f in keepF]
     say("her skin, verbatim: %d of her own faces carried into the base" % len(keepF))
+    # the belly: a long navel and soft muscle tone (the centre line from under
+    # the bust to the navel, and two faint side lines), pressed into the front
+    # of whatever surface is there (her own skin or the filled form)
+    dx_ = P2[:, 0] - cxh; dz_ = P2[:, 2] - znav
+    bandB = (np.abs(dz_) < 0.03 * ST) & (np.abs(dx_) < 0.08 * ST)
+    cyb = float(np.mean(P2[bandB, 1])) if bandB.any() else head_y
+    front_ = np.clip((cyb - P2[:, 1]) / (0.02 * ST), 0, 1)
+    dent = 0.011 * ST * np.exp(-(dx_ / (0.011 * ST)) ** 2 - (dz_ / (0.024 * ST)) ** 2)
+    lineA = 0.002 * ST * np.exp(-(dx_ / (0.007 * ST)) ** 2) * np.clip((dz_ + 0.03 * ST) / (0.02 * ST), 0, 1) * np.clip((0.11 * ST - dz_) / (0.03 * ST), 0, 1)
+    sideL = 0.0014 * ST * np.exp(-((np.abs(dx_) - 0.05 * ST) / (0.008 * ST)) ** 2) * np.clip((dz_ + 0.04 * ST) / (0.02 * ST), 0, 1) * np.clip((0.08 * ST - dz_) / (0.03 * ST), 0, 1)
+    P2[:, 1] += (dent + lineA + sideL) * front_
+    say("belly: navel pressed on %d points (front centre y %.3f), tone lines on %d" % (int((dent * front_ > 0.003 * ST).sum()), cyb, int(((lineA + sideL) * front_ > 0.0008 * ST).sum())))
     P, BP = P2, BP2
     tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
     for p_ in tmp.polygons:
@@ -1268,6 +1318,30 @@ try:
                 if hit[0] is not None:
                     w_ = float(np.clip(1 - hit[3] / (0.012 * ST), 0, 1))
                     cols[i_] = w_ * bc_[sk_ids[hit[2]]] + (1 - w_) * base_tone
+        # under her hair (scalp, nape, upper back) the skin wears her hair
+        # colour, so the gaps between strands read as hair
+        try:
+            rc_h = obj_face_colours(ro) if ro is not None else None
+            if rc_h is not None:
+                mxh = rc_h.max(1); mnh = rc_h.min(1); sth = np.where(mxh > 1e-4, (mxh - mnh) / np.maximum(mxh, 1e-4), 0)
+                RVh = np.asarray(RV); hcen = np.array([RVh[list(f)].mean(0) for f in RP])
+                hm_ = (mxh < 0.22) & (sth < 0.45) & (hcen[:, 2] > z0 + 0.5 * HH) & (np.hypot(hcen[:, 0] - fx, hcen[:, 1] - head_y) < 1.9 * Hhead)
+                htree = BVHTree.FromPolygons([tuple(v) for v in RVh], [RP[i] for i in np.where(hm_)[0]])
+                hair_col = np.median(rc_h[hm_], axis=0)
+                nh_ = 0
+                for i_ in range(len(P)):
+                    # head, nape and upper back only, behind her (never shoulders' front, arms or below)
+                    if P[i_, 2] < z_chin - 1.3 * Hhead or P[i_, 1] < head_y + 0.05 * Hhead or abs(P[i_, 0] - fx) > 0.9 * hwm:
+                        continue
+                    hit = htree.find_nearest(Vector(P[i_]), 0.03 * ST)
+                    if hit[0] is not None:
+                        w_ = float(np.clip(1.2 - hit[3] / (0.025 * ST), 0, 1))
+                        cols[i_] = w_ * hair_col + (1 - w_) * cols[i_]; nh_ += 1
+                say("hair colour under her strands on %d points" % nh_)
+        except Exception as e:
+            say("hair backing skipped", e)
+        ncr = min(len(cran_v), len(cols))
+        cols[:ncr][cran_v[:ncr]] = np.array([0.09, 0.09, 0.11])
         ca = tmp.color_attributes.new("SkinCol", "BYTE_COLOR", "POINT")
         for i_, c_ in enumerate(cols):
             ca.data[i_].color_srgb = (float(c_[0]), float(c_[1]), float(c_[2]), 1.0)
@@ -1309,9 +1383,16 @@ try:
         def near_head(Cs, wide):
             rr = np.hypot(Cs[:, 0] - fx, Cs[:, 1] - head_y) / Hhead
             above = Cs[:, 2] > z_eye
-            return np.where(above, rr < 0.75, rr < (2.3 if wide else 0.75)) & (Cs[:, 2] < z_chin + 1.15 * Hhead)
+            ok_ = np.where(above, rr < 0.75, rr < (1.9 if wide else 0.75)) & (Cs[:, 2] < z_chin + (0.98 if wide else 1.15) * Hhead)   # (the hat's crown lining sits above her head)
+            if wide:                                            # hair is never in front of her body
+                ok_ &= (Cs[:, 2] > z_chin) | (Cs[:, 1] > head_y - 0.15 * Hhead) | (np.abs(Cs[:, 0] - fx) > 0.85 * hwm)
+            return ok_
         hc_ = np.array([BWa_[list(f)].mean(0) for f in Bpol])
-        extras.append(extract(bodyo, (hc_[:, 2] > z_cut) & near_head(hc_, False), "Arcanist_BaseHead"))
+        bcol_ = obj_face_colours(bodyo)
+        hatband = np.zeros(len(Bpol), bool)
+        if bcol_ is not None:
+            hatband = (hc_[:, 2] > z_eye + 0.25 * Hhead) & ~skinf & (bcol_.max(1) > 0.35)
+        extras.append(extract(bodyo, (hc_[:, 2] > z_cut) & near_head(hc_, False) & ~hatband, "Arcanist_BaseHead"))
         if ro is not None:
             rc_ = obj_face_colours(ro)
             if rc_ is not None:
@@ -1320,6 +1401,24 @@ try:
                 rc3_ = np.array([RVa_[list(f)].mean(0) for f in RP])
                 hair_ = (mx_ < 0.22) & (sat_ < 0.45) & (rc3_[:, 2] > z0 + 0.5 * HH) & near_head(rc3_, True)
                 extras.append(extract(ro, hair_, "Arcanist_BaseHair"))
+        # her boots, as in her model: what lies along her lower legs and feet
+        def seg_dist(Cs, a_, b_):
+            ab = b_ - a_; t_ = np.clip(((Cs - a_) @ ab) / max(ab @ ab, 1e-12), 0, 1)
+            return np.linalg.norm(Cs - (a_ + t_[:, None] * ab), axis=1)
+        for lname_, lo_ in (("Robe", ro), ("Armor", lay.get("Armor"))):
+            if lo_ is None:
+                continue
+            LV_ = np.asarray(wverts(lo_)); LP_ = polys(lo_)
+            C_ = np.array([LV_[list(f)].mean(0) for f in LP_])
+            near_ = np.zeros(len(LP_), bool)
+            for sd_ in (".L", ".R"):
+                near_ |= seg_dist(C_, *TJ["legL" + sd_]) < 0.06 * ST
+                near_ |= seg_dist(C_, *TJ["foot" + sd_]) < 0.05 * ST
+            keep_ = near_ & (C_[:, 2] < knee_z - 0.04 * ST)
+            if lo_ is bodyo:
+                keep_ &= ~skinf
+            if keep_.sum() > 50:
+                extras.append(extract(lo_, keep_, "Arcanist_BaseBoots_" + lname_))
         say("her head and hair added: %s" % ", ".join("%s %d faces" % (e.name, len(e.data.polygons)) for e in extras))
     except Exception as e:
         say("head and hair skipped", e)
