@@ -119,6 +119,31 @@ def main():
         if band.any():
             say("  height %.1f of stature: %d faces, %.0f%% skin" % (zz, int(band.sum()), 100 * skin[band].mean()))
     np.savez(os.path.join(L2, "skinmap_faces.npz"), skin=skin, score=score)
+    # her body is the large continuous piece(s) of the Body layer; hair, the
+    # staff, hat bits and trims are separate small pieces
+    par = np.arange(vid.max() + 1)
+    def fr(a_):
+        r_ = a_
+        while par[r_] != r_:
+            r_ = par[r_]
+        while par[a_] != r_:
+            par[a_], a_ = r_, par[a_]
+        return r_
+    for f in Fv:
+        r0 = fr(f[0])
+        for v in f[1:]:
+            r1 = fr(v)
+            if r1 != r0:
+                par[r1] = r0
+    comp = np.array([fr(f[0]) for f in Fv])
+    from collections import Counter
+    csz = Counter(comp.tolist())
+    cxs = {}
+    for c_, x_ in zip(comp.tolist(), FC[:, 0]):
+        cxs.setdefault(c_, []).append(x_)
+    bodyc = {c_ for c_, n_ in csz.items() if n_ >= 2000 and abs(float(np.mean(cxs[c_])) - fx) < 0.2 * ST}
+    bodyF = np.array([c_ in bodyc for c_ in comp.tolist()])
+    say("body pieces: %s faces; below the belly %d body faces kept whatever their paint" % (sorted([csz[c_] for c_ in bodyc], reverse=True), int((bodyF & (FC[:, 2] <= z_belly)).sum())))
 
     col = bpy.data.collections.new("SkinMap"); sc.collection.children.link(col)
 
@@ -137,7 +162,7 @@ def main():
 
     # set A: her original, textured, no clothing below the belly
     nude = []
-    nude.append(copy_keep(body, skin | (FC[:, 2] > z_belly), "SM_Body"))
+    nude.append(copy_keep(body, bodyF | (FC[:, 2] > z_belly), "SM_Body"))
     for n in ("Robe", "Armor", "Hat"):
         o = lay.get(n)
         if o is None:
@@ -171,7 +196,7 @@ def main():
     sc.render.resolution_x, sc.render.resolution_y = 800, 1100
     ctr = Vector((0.5 * (allP[:, 0].min() + allP[:, 0].max()), 0.5 * (allP[:, 1].min() + allP[:, 1].max()), z0 + 0.5 * HH))
     views = (("front", -90), ("back", 90), ("side", 0))
-    for tag, objs in (("nude", nude), ("map", [mapo])):
+    for tag, objs in (("nude2", nude),):
         for o in col.objects:
             o.hide_render = o not in objs
         for vname, ang in views:
@@ -191,7 +216,7 @@ def main():
         fo.rotation_euler = (math.radians(150), 0, math.radians(90))
         sc.render.filepath = os.path.join(L2, "skinmap_%s_under.png" % tag)
         bpy.ops.render.render(write_still=True)
-    say("renders: skinmap_nude_*.png (no clothing below the belly), skinmap_map_*.png (peach skin, red clothing)")
+    say("renders: skinmap_nude2_*.png (her original, no clothing below the belly, her whole body piece kept)")
     open(os.path.join(L2, "skinmap_done.txt"), "w").write("ok")
 
 
