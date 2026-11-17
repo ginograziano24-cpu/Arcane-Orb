@@ -119,6 +119,7 @@ func (L *Level) steamBurst(b *Brick) {
 // barrierSaved runs relic and fusion effects when a barrier saves an orb.
 func (L *Level) barrierSaved(x float64) {
 	r := L.g.run
+	L.g.quip(quipNearMiss)
 	if r.Stats.Sanctuary {
 		L.Rings = append(L.Rings, &Ring{X: x, Z: BarrierZ, MaxR: 3, Life: 0.4, Max: 0.4, Col: color.RGBA{140, 255, 180, 255}})
 		L.gainGold(3, x, BarrierZ+1, true)

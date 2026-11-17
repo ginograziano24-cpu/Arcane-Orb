@@ -31,6 +31,7 @@ const (
 	quipLegendary                   // a legendary (or better) card is taken
 	quipLastLife                    // down to the last life
 	quipWin                         // the story is finished
+	quipNearMiss                    // the orb is saved at the last moment (quips_more.go)
 	numQuipMoments
 )
 
@@ -173,10 +174,16 @@ func (g *Game) quip(m quipMoment) {
 	if q.since < quipGap && m != quipLastLife && m != quipWin {
 		return
 	}
+	if m == quipNearMiss && q.since < 30 {
+		return // a close shave is worth a line now and then, not every time
+	}
 	q.said[m] = true
 	line := quipLine(g.run.Arch.ID, m, &g.quipLast, rand.Intn)
 	if line == "" {
 		line = lines[m]
+	}
+	if line == "" {
+		return
 	}
 	g.say(q, line)
 }
