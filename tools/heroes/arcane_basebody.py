@@ -892,7 +892,13 @@ try:
         if rc is not None:
             mx_ = rc.max(1); mn_ = rc.min(1); sat_ = np.where(mx_ > 1e-4, (mx_ - mn_) / np.maximum(mx_, 1e-4), 0)
             keep_r = ~((mx_ < 0.22) & (sat_ < 0.45))            # hair: dark and grey
-            say("shape fit: robe faces kept", int(keep_r.sum()), "of", len(RP), "(dark grey ones are hair)")
+        # below her hips the robe is only hanging panels (front and back
+        # flaps between the legs); her legs and rear are bare skin, so the
+        # fit must never reach for those panels or it webs the thighs
+        zh_fit = 0.5 * (TJ["legU.L"][0][2] + TJ["legU.R"][0][2])
+        rcz = np.array([RV[list(p_), 2].mean() for p_ in RP])
+        keep_r &= (rcz > zh_fit) | (rcz < z0 + 0.15 * ST)       # boots stay a target
+        say("shape fit: robe faces kept", int(keep_r.sum()), "of", len(RP), "(hair and the panels below her hips left out)")
         tv.append(RV); tf += [tuple(i + off_ for i, _ in zip(p, p)) for p, k in zip(RP, keep_r) if k]
         tthk += [0.003 * HH] * int(keep_r.sum())
     TV = np.vstack(tv); TTHK = np.array(tthk)
@@ -946,6 +952,21 @@ try:
     # losing the shape: a few shape-preserving passes over the fitted region
     P = taubin(P, 4, wreg)
     P = taubin(P, 2)
+    # ---- clean-up passes for a smooth, shapely form
+    # (2) shoulders: round the block the sleeves left into a sloping
+    # shoulder (shrinking smoothing rounds corners)
+    cx_all = float(np.median(P[:, 0]))
+    zf = (P[:, 2] - z0) / ST
+    shz = np.clip(np.minimum((zf - 0.72) / 0.04, (0.92 - zf) / 0.04), 0, 1) * np.clip((np.abs(P[:, 0] - cx_all) / ST - 0.03) / 0.03, 0, 1) * (1 - keepw)
+    for _ in range(25):
+        P = P + (0.5 * shz)[:, None] * (navg(P) - P)
+    # (3) neck: her high collar was measured as neck; shrink-smooth the neck
+    # so it tapers into the head instead of flaring into a collar
+    nkw = np.clip(Wt[:, SI["neck"]] * 3, 0, 1) * np.clip(1 - 2 * Wt[:, SI["head"]], 0, 1)
+    for _ in range(30):
+        P = P + (0.5 * nkw)[:, None] * (navg(P) - P)
+    P = taubin(P, 3)
+    say("clean-up: shoulders rounded, neck tapered")
     # the crotch: between the hip joints, below them, the base should be a plain smooth
     # join of the two thighs, never a bump. Shrink-smooth that small region.
     hipL, hipR = TJ["legU.L"][0], TJ["legU.R"][0]
@@ -976,6 +997,122 @@ try:
         wgt = np.clip(1 - (dist - rsh) / (1.2 * rsh), 0, 1) * near_ * side_
         P = P - (wgt * over * 0.6)[:, None] * (d_ / np.maximum(dist, 1e-9)[:, None])
     P = taubin(P, 3)
+    # ---- her own body where it shows. Her model already has her bare
+    # thighs, the lower curve of her rear, her hips, midriff and bust, with
+    # their real contours and folds. The base is subdivided (four faces for
+    # every one, so it can carry that detail) and snapped exactly onto her
+    # skin wherever her skin is right there; only what clothing covers stays
+    # the fitted, smoothed form, and the two blend over a few rings.
+    def subdivide(P_, F_, attrs):
+        P_ = np.asarray(P_); n0 = len(P_)
+        emap = {}; newP = [P_]; newA = {k: [v] for k, v in attrs.items()}
+        nxt = n0; faces = []
+        cent = []
+        def edge_pt(a_, b_):
+            nonlocal nxt
+            key = (a_, b_) if a_ < b_ else (b_, a_)
+            if key not in emap:
+                emap[key] = nxt; nxt += 1
+                cent.append(("e", a_, b_))
+            return emap[key]
+        for f in F_:
+            f = list(f); k = len(f)
+            em = [edge_pt(f[q], f[(q + 1) % k]) for q in range(k)]
+            c_ = nxt; nxt += 1; cent.append(("f", f))
+            for q in range(k):
+                faces.append((f[q], em[q], c_, em[q - 1]))
+        add = np.zeros((nxt - n0, 3)); addA = {k: np.zeros((nxt - n0,) + v.shape[1:]) for k, v in attrs.items()}
+        for t_, item in enumerate(cent):
+            if item[0] == "e":
+                add[t_] = 0.5 * (P_[item[1]] + P_[item[2]])
+                for k, v in attrs.items():
+                    addA[k][t_] = 0.5 * (v[item[1]] + v[item[2]])
+            else:
+                idx = item[1]
+                add[t_] = P_[idx].mean(0)
+                for k, v in attrs.items():
+                    addA[k][t_] = v[idx].mean(0)
+        P2 = np.vstack([P_, add])
+        A2 = {k: np.concatenate([v, addA[k]]) for k, v in attrs.items()}
+        return P2, faces, A2
+    zfv = (P[:, 2] - z0) / ST
+    bodyzone = np.clip(np.minimum((zfv - 0.15) / 0.04, (0.84 - zfv) / 0.03), 0, 1) * (1 - keepw) * np.clip(1 - 2 * armw, 0, 1)
+    P2, BP2, A2 = subdivide(P, BP, {"zone": bodyzone})
+    E2 = set()
+    for f in BP2:
+        for q in range(4):
+            a_, b_ = f[q], f[(q + 1) % 4]
+            E2.add((a_, b_) if a_ < b_ else (b_, a_))
+    E2 = np.array(sorted(E2), dtype=np.int64)
+    deg2 = np.zeros(len(P2)); np.add.at(deg2, E2[:, 0], 1); np.add.at(deg2, E2[:, 1], 1)
+
+    def navg2(X):
+        out = np.zeros_like(X)
+        np.add.at(out, E2[:, 0], X[E2[:, 1]]); np.add.at(out, E2[:, 1], X[E2[:, 0]])
+        return out / np.maximum(deg2, 1)[(...,) + (None,) * (X.ndim - 1)]
+    TRI2 = np.array([(f[0], f[i], f[i + 1]) for f in BP2 for i in range(1, 3)], dtype=np.int64)
+
+    def vnorm2(Q):
+        fn_ = np.cross(Q[TRI2[:, 1]] - Q[TRI2[:, 0]], Q[TRI2[:, 2]] - Q[TRI2[:, 0]])
+        vn = np.zeros_like(Q)
+        for j_ in range(3):
+            np.add.at(vn, TRI2[:, j_], fn_)
+        vn /= np.maximum(np.linalg.norm(vn, axis=1, keepdims=True), 1e-12)
+        if np.mean(np.einsum("ij,ij->i", vn, Q - Q.mean(0))) < 0:
+            vn = -vn
+        return vn
+    skin_tree2 = BVHTree.FromPolygons([tuple(p) for p in BW], [p for p, sk in zip(Bpol, skin_wide) if sk])
+    zone2 = A2["zone"]
+    RS = 0.03 * ST
+    for pass_ in range(2):
+        vn2 = vnorm2(P2)
+        d2 = np.zeros(len(P2)); pin2 = np.zeros(len(P2), bool)
+        for i_ in np.where(zone2 > 0.5)[0]:
+            n_ = Vector(vn2[i_]); o_ = Vector(P2[i_] - vn2[i_] * RS)
+            gone = 0.0; best = None
+            for _ in range(4):
+                hit = skin_tree2.ray_cast(o_, n_, 2 * RS - gone)
+                if hit[0] is None:
+                    break
+                t_ = gone + hit[3]
+                if hit[1].dot(n_) > 0.7:
+                    dd = t_ - RS
+                    if best is None or abs(dd) < abs(best):
+                        best = dd
+                gone = t_ + 1e-5 * HH; o_ = hit[0] + n_ * (1e-5 * HH)
+            if best is not None:
+                d2[i_] = best; pin2[i_] = True
+        # keep only snaps that agree with their neighbours: a lone point that
+        # jumps to a stray flap (between the thighs, at a seam) is dropped,
+        # and the edge of each skin patch is pulled in two rings so the
+        # hand-off to the fitted form happens on calm surface
+        for _ in range(2):
+            pf = pin2.astype(float)
+            loc = navg2(d2 * pf) / np.maximum(navg2(pf), 1e-6)
+            pin2 &= (np.abs(d2 - loc) < 0.006 * ST + 0.3 * np.abs(loc)) & (navg2(pf) > 0.5)
+        pin2 &= navg2(pin2.astype(float)) > 0.99
+        d2 = np.where(pin2, d2, 0.0)
+        # pinned points take her surface exactly; the rest blend in over a few rings
+        df2 = d2.copy(); wsum = pin2.astype(float)
+        for _ in range(16):
+            num = navg2(df2 * wsum); den = navg2(wsum)
+            fill = np.where(den > 1e-6, num / np.maximum(den, 1e-6), 0.0) * 0.93
+            df2 = np.where(pin2, d2, fill); wsum = np.where(pin2, 1.0, np.minimum(1.0, den))
+        P2 = P2 + (df2 * zone2)[:, None] * vn2
+        say("her skin: pass %d, %d of %d body vertices sit on her own surface" % (pass_ + 1, int(pin2.sum()), int((zone2 > 0.5).sum())))
+    # one gentle smoothing of the blend ring only (pinned points keep her shape)
+    msk = np.clip(1.0 - pin2.astype(float), 0, 1) * zone2
+    for _ in range(8):
+        for lam in (0.5, -0.52):
+            P2 = P2 + lam * msk[:, None] * (navg2(P2) - P2)
+    # boot tops: the ankles keep a ridge where the boot cuff was; calm it
+    zf2 = (P2[:, 2] - z0) / ST
+    ank = np.clip(1 - np.abs(zf2 - 0.085) / 0.04, 0, 1)
+    for _ in range(12):
+        for lam in (0.5, -0.52):
+            P2 = P2 + lam * ank[:, None] * (navg2(P2) - P2)
+    say("her skin: %d points kept on her surface after the agreement check" % int(pin2.sum()))
+    P, BP = P2, BP2
     tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
     for p_ in tmp.polygons:
         p_.use_smooth = True
@@ -1056,6 +1193,33 @@ try:
     for c in sc.collection.children:
         c.hide_render = False
     bpy.data.objects.remove(cam, do_unlink=True); bpy.data.objects.remove(so, do_unlink=True)
+    # the base sits inside her clothes, so in Solid view the clothes hide it:
+    # open the file with only the Base Form shown (the eye icons in the
+    # Outliner bring the other layers back)
+    try:
+        lcs = bpy.context.view_layer.layer_collection.children
+        for c in sc.collection.children:
+            if c.name in lcs:
+                lcs[c.name].hide_viewport = c.name != "Base Form"
+        for o in bpy.context.view_layer.objects:
+            o.select_set(o == bf)
+        bpy.context.view_layer.objects.active = bf
+        say("viewport: only the Base Form is shown")
+    except Exception as e:
+        say("viewport visibility skipped", e)
+    # and on its own, as files any app opens
+    try:
+        out_glb = os.path.join(L2, "arcanist_base_body.glb")
+        bpy.ops.export_scene.gltf(filepath=out_glb, use_selection=True, export_format="GLB")
+        say("exported", out_glb)
+    except Exception as e:
+        say("glb export skipped", e)
+    try:
+        out_obj = os.path.join(L2, "arcanist_base_body.obj")
+        bpy.ops.wm.obj_export(filepath=out_obj, export_selected_objects=True, export_materials=False)
+        say("exported", out_obj)
+    except Exception as e:
+        say("obj export skipped", e)
     bpy.ops.wm.save_as_mainfile(filepath=LAYERS)
     say("saved", LAYERS)
 except Exception as e:
