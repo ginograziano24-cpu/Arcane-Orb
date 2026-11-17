@@ -16,7 +16,7 @@ def soft_box(x0, x1, y0, y1, f):
     b = np.clip((yy - y0) / f, 0, 1) * np.clip((y1 - yy) / f, 0, 1)
     return a * b
 
-add = np.maximum(soft_box(1345, 1748, 560, 952, 22), soft_box(1688, 1852, 556, 772, 18))
+add = np.maximum(soft_box(1345, 1768, 560, 1015, 40), soft_box(1688, 1852, 556, 772, 18))
 out = np.maximum(m, add)
 img = Image.fromarray((np.clip(out, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.5))
 img.save(dst)

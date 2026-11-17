@@ -295,6 +295,18 @@ def build_face_patch(ob, say=print, win=None, smooth=True, overlap=False):
         front = (cd <= cellmin + 0.0015 * g.hgt) | thin_
         say("patch: kept the front layer,", int(front.sum()), "of", len(fsel), "candidate faces")
         fsel = fsel[front]
+    # her mesh splits vertices along texture seams; weld them here so the
+    # copied piece moves as one surface (split seams opened into thin cracks)
+    if len(fsel):
+        vids = np.unique(tri[fsel])
+        ext_ = float(np.ptp(g.co, axis=0).max()) or 1.0
+        keys = np.round(g.co[vids] / (2e-6 * ext_)).astype(np.int64)
+        _, first_, inv_ = np.unique(keys, axis=0, return_index=True, return_inverse=True)
+        rep = np.arange(len(g.co)); rep[vids] = vids[first_][inv_.ravel()]
+        nwelded = int((rep[vids] != vids).sum())
+        tri = tri.copy(); tri[fsel] = rep[tri[fsel]]
+        fsel = fsel[(tri[fsel, 0] != tri[fsel, 1]) & (tri[fsel, 1] != tri[fsel, 2]) & (tri[fsel, 0] != tri[fsel, 2])]
+        say("patch: welded", nwelded, "seam vertices")
     used = np.unique(tri[fsel])
     vis = {}; newpos = {}; exists = {}; delta = {}
     for i in used:
@@ -423,6 +435,34 @@ def build_face_patch(ob, say=print, win=None, smooth=True, overlap=False):
         _ra.data.foreach_set("value", np.full(len(pm.vertices), 1.0, dtype=np.float32))
     except Exception:
         pass
+    # close the small gaps left where single faces were not copied (they
+    # showed as thin dark cracks on her cheek); the long outer edge stays open
+    try:
+        import bmesh
+        bm = bmesh.new(); bm.from_mesh(pm)
+        uvb = bm.loops.layers.uv.get(uvl.name) or bm.loops.layers.uv.active
+        old = set(f.index for f in bm.faces)
+        res = bmesh.ops.holes_fill(bm, edges=list(bm.edges), sides=48)
+        newf = res.get("faces", [])
+        if newf:
+            bmesh.ops.triangulate(bm, faces=newf)
+            bm.faces.ensure_lookup_table()
+            for f in bm.faces:
+                if f.index in old and f in newf:
+                    continue
+            if uvb is not None:
+                for f in bm.faces:
+                    for lp in f.loops:
+                        if lp[uvb].uv.length == 0.0:
+                            donor = next((l2 for l2 in lp.vert.link_loops if l2 is not lp and l2[uvb].uv.length > 0.0), None)
+                            if donor is not None:
+                                lp[uvb].uv = donor[uvb].uv.copy()
+            for f in bm.faces:
+                f.smooth = True
+        bm.to_mesh(pm); bm.free(); pm.update()
+        say("patch: closed", len(newf), "small gaps")
+    except Exception as e:
+        say("patch: gap fill skipped", e)
     po = bpy.data.objects.new("face_patch", pm)
     bpy.context.scene.collection.objects.link(po)
     po.matrix_world = ob.matrix_world.copy()

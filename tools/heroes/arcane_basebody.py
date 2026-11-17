@@ -260,7 +260,14 @@ try:
     Nk = np.array([fx, head_y + 0.12 * depth, Hd[2] - 0.40 * Hhead])
     TJ["head"] = (Hd, top); TJ["neck"] = (Nk, Hd)
     # ---- inner surface of her (skin + robe + armour), with the layer of every face
-    iv = [BW]; ifc = [[p for p, sk in zip(Bpol, skinf) if sk]]; ilay = [0] * len(ifc[0]); off = len(BW)
+    skin_wide = skinf.copy()
+    if col is not None:                                         # her skin for measuring: the learned colour OR the broad warm-skin rule (glossy thighs)
+        _mx = col.max(1); _mn = col.min(1); _sat = np.where(_mx > 1e-4, (_mx - _mn) / np.maximum(_mx, 1e-4), 0)
+        _d = np.maximum(_mx - _mn, 1e-6)
+        _hue = np.where(_mx == col[:, 0], ((col[:, 1] - col[:, 2]) / _d) % 6, np.where(_mx == col[:, 1], (col[:, 2] - col[:, 0]) / _d + 2, (col[:, 0] - col[:, 1]) / _d + 4)) * 60
+        skin_wide |= (_hue < 36) & (_sat > 0.08) & (_sat < 0.6) & (_mx > 0.3) & (col[:, 0] > col[:, 2] * 1.05)
+    say("skin faces for measuring", int(skin_wide.sum()))
+    iv = [BW]; ifc = [[p for p, sk in zip(Bpol, skin_wide) if sk]]; ilay = [0] * len(ifc[0]); off = len(BW)
     for li_, k_ in ((1, "Robe"), (2, "Armor")):
         o = lay.get(k_)
         if o:
@@ -316,8 +323,12 @@ try:
             if len(q) < 15:
                 continue
             c_, r_ = circle(q[:, :2])
+            # only the front of the thigh is skin, so the circle's depth is shaky:
+            # put the centre half the thigh's width behind its front instead
+            wdt = np.percentile(q[:, 0], 97) - np.percentile(q[:, 0], 3)
+            cy_ = np.percentile(q[:, 1], 3) + 0.5 * wdt
             if 0.02 * ST < r_ < 0.12 * ST and abs(c_[0] - cut) < 0.16 * ST:
-                rows[sgn].append((zz, c_[0], c_[1], r_))
+                rows[sgn].append((zz, 0.5 * (np.percentile(q[:, 0], 97) + np.percentile(q[:, 0], 3)), cy_, 0.5 * wdt))
     for sgn in (+1, -1):
         say("  leg", "L" if sgn > 0 else "R", "circles", [(round((r[0] - z0) / ST, 3), round((r[1] - fx) / ST, 3), round(r[3] / ST, 3)) for r in rows[sgn]])
     jz = [z for z in joined if z > z0 + 0.4 * ST]
@@ -467,11 +478,21 @@ try:
         r = np.full(NA, np.nan); ly = np.zeros(NA, int)
         for k, a_ in enumerate(TH):
             v = math.cos(a_) * e1 + math.sin(a_) * e2
-            hit = tree.ray_cast(Vector(c), Vector(v), cap if np.isscalar(cap) else (cap[k] if np.isfinite(cap[k]) else 0.6 * HH))
-            if hit[0] is not None:
-                r[k] = hit[3]
+            lim = cap if np.isscalar(cap) else (cap[k] if np.isfinite(cap[k]) else 0.6 * HH)
+            o = Vector(c); vv = Vector(v); gone = 0.0
+            for _ in range(5):
+                hit = tree.ray_cast(o, vv, lim - gone)
+                if hit[0] is None:
+                    break
+                if lay_of is not None and hit[1].dot(vv) < 0:
+                    # an inner shell facing the bone (her model is a thick shell
+                    # in places): not her outer surface, carry on through it
+                    gone += hit[3] + 1e-5 * HH; o = hit[0] + vv * (1e-5 * HH)
+                    continue
+                r[k] = gone + hit[3]
                 if lay_of is not None:
                     ly[k] = lay_of[hit[2]]
+                break
         return r, ly
 
     def fill_periodic(r):
@@ -503,15 +524,17 @@ try:
     # her side, measured once per cross-section (re-measured if recentred)
     def measure_her(s, c, e1, e2, u):
         rm, _ = rays(mt0[GROUP[s]], c, e1, e2, 0.6 * HH)
-        cap = (1.35 if s in TORSO else 1.5) * rm           # her rays stop short of loose sleeves and cloth
+        cap = (2.2 if s in TORSO else 2.6) * rm           # the slim mannequin is much thinner than her; loose cloth is filtered below
         rh, ly = rays(itree, c, e1, e2, cap, ILAY)
         rh = rh - THK[ly]
         ok = np.isfinite(rh) & (rh > 0.004 * HH)
+        if s in TORSO and ok.sum() > 16:
+            ok &= ~((ly == 1) & (rh > 1.3 * np.median(rh[ok])))  # far robe hits (the cape hanging off her back) are not her
         if s not in TORSO and ok.sum() > 8:
             skin_ok = ok & (ly == 0)
             ref = np.median(rh[skin_ok]) if skin_ok.sum() >= 8 else np.percentile(rh[ok], 40)
             ok &= rh < 1.3 * ref
-        skip = (s == "torso" and (u < 0.14 or u > 0.8)) or (s.startswith("legU") and u < 0.18) or (s.startswith("armU") and u < 0.2)
+        skip = (s == "torso" and (u < 0.33 or u > 0.76)) or (s.startswith("legU") and u < 0.18) or (s.startswith("armU") and u < 0.2)
         return dict(c=c, rm=rm, rh=np.where(ok, rh, np.nan), ly=ly, n=int(ok.sum()), nb=int(np.isfinite(rm).sum()),
                     robe=float((ly[ok] > 0).mean()) if ok.any() else 1.0, skip=skip)
     HER = {}
@@ -545,11 +568,13 @@ try:
         h, d, L_, e1, e2 = frame(s)
         g_ = np.full(NS, np.nan)
         for i, stt in enumerate(HER[s]):
-            if stt["skip"] or stt["n"] < 40 or stt["nb"] < 60:
+            if stt["skip"] or stt["n"] < 28 or stt["nb"] < (28 if s.startswith("leg") else 48):     # the leg pieces are open at the hip, so fewer base rays land there
                 continue
             rh = fill_periodic(stt["rh"])
             if rh is not None:
                 g_[i] = perim(stt["c"], e1, e2, rh)
+        if s.startswith("legU") or s.startswith("armU") or s == "torso":
+            say("   %s stations (u: her rays/base rays/girth%%)" % s, " ".join("%.2f:%d/%d/%s" % (US[i], st_["n"], st_["nb"], "-" if not np.isfinite(g_[i]) else "%.0f" % (g_[i] / ST * 100)) for i, st_ in enumerate(HER[s])))
         tol = 0.35 if s in TORSO else 0.25
         okk = np.isfinite(g_)
         for i in np.where(okk)[0]:                              # drop cross-sections far off their neighbours
@@ -598,6 +623,15 @@ try:
     NK = {s: (6 if s in TORSO else 3) for s in FIT}
     KPOS = {s: np.linspace(0, NS - 1, NK[s]) for s in FIT}
     X = {s: np.log(np.clip(np.interp(KPOS[s], np.arange(NS), A0[s]), 0.5, 2.2)) for s in FIT}
+    # the pelvis below the hip line is shaped by the thighs, not by a torso slice
+    # (a slice there cuts between the legs and turned into a skirt)
+    legx = float(np.mean([np.median(X[x]) for x in ("legU.L", "legU.R")]))
+    LOWK = [k for k in range(NK["torso"]) if US[int(round(KPOS["torso"][k]))] < 0.33]
+    for k in LOWK:
+        X["torso"][k] = min(X["torso"][k], legx)
+    for sd_ in (".L", ".R"):                                    # upper arms hidden in the sleeves: start from the forearm's scale
+        if np.isfinite(TG["armU" + sd_]).sum() < 3:
+            X["armU" + sd_][:] = min(float(np.median(X["armL" + sd_])), math.log(1.2))
     if "neck" in X and np.isfinite(TG["neck"]).sum() < 3:
         X["neck"][:] = 0.0                                      # hidden neck: the mannequin's own
     COEF = {}
@@ -711,8 +745,13 @@ try:
             say("fit: outer %d step %d  RMS girth error %.1f%%" % (outer + 1, it + 1, rms * 100))
             if rms < 0.03:
                 break
-            A_ = np.vstack([J[:, live] * okr[:, None], math.sqrt(0.3) * D2[:, live], math.sqrt(0.05) * np.eye(int(live.sum()))])
-            b_ = np.r_[r, np.zeros(len(D2)), np.zeros(int(live.sum()))]
+            PR = []; pb = []                                    # low pelvis knots held near the thighs' scale
+            legx = float(np.mean([np.median(X[x]) for x in ("legU.L", "legU.R")]))
+            for k in LOWK:
+                row = np.zeros(len(PAR)); row[PI[("torso", k)]] = 1.0; PR.append(row[live]); pb.append(legx - X["torso"][k])
+            PR = np.array(PR).reshape(-1, int(live.sum())); pb = np.array(pb)
+            A_ = np.vstack([J[:, live] * okr[:, None], math.sqrt(0.3) * D2[:, live], math.sqrt(0.05) * np.eye(int(live.sum())), 1.0 * PR])
+            b_ = np.r_[r, np.zeros(len(D2)), np.zeros(int(live.sum())), pb]
             dx = np.linalg.lstsq(A_, b_, rcond=None)[0]
             full = np.zeros(len(PAR)); full[live] = dx
             for (s, k), j in PI.items():
@@ -721,6 +760,57 @@ try:
     okr = np.isfinite(g)
     r = np.log(GT[okr] / g[okr])
     say("fit: final RMS girth error %.1f%% over %d cross-sections" % (float(np.sqrt(np.mean(r ** 2))) * 100, int(okr.sum())))
+    rms_knots = float(np.sqrt(np.mean(r ** 2)))
+    # ---- second way: fit every vertex straight onto her surface where it can
+    # be seen (now that the bones sit inside her), fill the hidden parts from
+    # their neighbours, smooth. Keep whichever matches her girths better.
+    r0 = np.linalg.norm(Vbar, axis=1)
+    qv = np.full(len(Pn), np.nan); lyv = np.zeros(len(Pn), int)
+    for i_ in range(len(Pn)):
+        if keepw[i_] > 0.5 or r0[i_] < 0.003 * HH:
+            continue
+        dv = Vbar[i_] / r0[i_]
+        o_ = Vector(Pn[i_] - Vbar[i_]); vv_ = Vector(dv); gone_ = 0.0; lim_ = 3.0 * r0[i_] + 0.03 * HH
+        for _ in range(5):
+            hit = itree.ray_cast(o_, vv_, lim_ - gone_)
+            if hit[0] is None:
+                break
+            if hit[1].dot(vv_) < 0:
+                gone_ += hit[3] + 1e-5 * HH; o_ = hit[0] + vv_ * (1e-5 * HH); continue
+            lyv[i_] = ILAY[hit[2]]
+            qv[i_] = max(gone_ + hit[3] - THK[lyv[i_]], 0.25 * r0[i_]) / r0[i_]
+            break
+    val = np.isfinite(qv) & (qv > 0.4) & (qv < 3.2)
+    for _ in range(3):                                          # drop rays far off their neighbourhood (cloth, props)
+        lq = np.log(np.where(val, qv, 1.0))
+        num = np.where(val, lq, 0.0); den = val.astype(float)
+        for _ in range(12):
+            num = navg(num); den = navg(den)
+        loc = num / np.maximum(den, 1e-9)
+        val &= np.abs(lq - loc) < math.log(1.3)
+    say("vertex fit: %d of %d vertices see her surface" % (int(val.sum()), int((keepw <= 0.5).sum())))
+    qf = np.where(val, qv, np.nan)
+    seedv = np.nanmedian(qf) if np.isfinite(qf).any() else 1.0
+    qf = np.where(val, qv, seedv); qf = np.where(keepw > 0.5, 1.0, qf)
+    anc = val | (keepw > 0.5); qa = qf.copy()
+    for _ in range(120):
+        qf = navg(qf); qf[anc] = qa[anc]
+    for _ in range(6):
+        qf = 0.5 * qf + 0.5 * navg(qf)
+    qf = keepw * 1.0 + (1 - keepw) * qf
+    Pv = Pn + (qf - 1.0)[:, None] * Vbar
+    Pv = taubin(Pv, 6)
+    Pv = taubin(Pv, 8, tw)
+    gv = girths(Pv)
+    okv = np.isfinite(gv)
+    rv_ = np.log(GT[okv] / gv[okv])
+    rms_vert = float(np.sqrt(np.mean(rv_ ** 2)))
+    say("vertex fit: RMS girth error %.1f%% (knot fit %.1f%%)" % (rms_vert * 100, rms_knots * 100))
+    if rms_vert < rms_knots:
+        P, g = Pv, gv
+        say("using the vertex fit")
+    else:
+        say("using the knot fit")
     tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
     for p_ in tmp.polygons:
         p_.use_smooth = True
