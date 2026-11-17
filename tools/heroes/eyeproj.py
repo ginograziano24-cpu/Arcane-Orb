@@ -62,6 +62,20 @@ class _Geo:
         self.eps = 4e-4 * ext
         # a surface this close in front does not count as hiding a vertex (overlapping rebuilt pieces)
         self.near = 0.003 * self.hgt / max(float(np.linalg.norm(A[:, 1])), 1e-12)
+        self.reb_face = None
+        self.skin_reach = 0.006 * self.hgt / max(float(np.linalg.norm(A[:, 1])), 1e-12)
+        self.reb_reach = 0.015 * self.hgt / max(float(np.linalg.norm(A[:, 1])), 1e-12)
+        try:
+            at = me.attributes.get("rebuilt")
+            if at is not None and at.domain == "POINT" and len(me.polygons):
+                rv = np.empty(n, dtype=np.float32); at.data.foreach_get("value", rv)
+                tot_ = np.empty(len(me.polygons), dtype=np.int32); me.polygons.foreach_get("loop_total", tot_)
+                st_ = np.empty(len(me.polygons), dtype=np.int32); me.polygons.foreach_get("loop_start", st_)
+                li_ = np.empty(len(me.loops), dtype=np.int32); me.loops.foreach_get("vertex_index", li_)
+                first = li_[st_]
+                self.reb_face = rv[first] >= 0.5
+        except Exception:
+            self.reb_face = None
 
     def to_local(self, p):
         return self.Ai @ (np.asarray(p, dtype=np.float64) - self.t)
@@ -82,8 +96,21 @@ class _Geo:
         return out
 
     def hidden(self, i):
+        """True when something other than rebuilt skin covers vertex i from the camera.
+        Rebuilt skin (forehead, mirrored patch) lying just in front does not count, so
+        the original skin under it is still painted and never shows dark through a gap."""
         o = self.Vector(self.co[i].tolist()) + self.dv * max(self.eps, self.near)
-        return self.bvh.ray_cast(o, self.dv, 1e6)[0] is not None
+        for _ in range(6):
+            h, _n, fi, dist = self.bvh.ray_cast(o, self.dv, 1e6)
+            if h is None:
+                return False
+            thin = _n is not None and _n.dot(self.dv) > 0.1 and dist < self.skin_reach      # another skin layer lying on it
+            reb = self.reb_face is not None and fi is not None and fi < len(self.reb_face) and self.reb_face[fi] and dist < self.reb_reach
+            if thin or reb:
+                o = h + self.dv * self.eps
+                continue
+            return True
+        return True
 
     def lockwin(self):
         return (self.pxu > LOCK_WIN[0]) & (self.pxu < LOCK_WIN[1]) & (self.pxv > LOCK_WIN[2]) & (self.pxv < LOCK_WIN[3]) & (self.wco[:, 1] < self.depth_lim)
@@ -878,7 +905,7 @@ def rebuild_forehead(ob, say=print):
     snapped = 0
     for j in range(nyy):
         for i in range(nxx):
-            if inside[j, i] and dist[j, i] <= 6:
+            if inside[j, i] and (dist[j, i] <= 6 or (abs(GX[j, i] - PART_X) < 95 and GY[j, i] > 556)):
                 px, py = GX[j, i], GY[j, i]
                 if px > PART_X:
                     h = depth(px, py)
@@ -886,8 +913,11 @@ def rebuild_forehead(ob, say=print):
                     h = depth(2 * PART_X - px, py - EYE_DROP)
                     if h is not None:
                         h += right_shift(px, WX[j, i], WZ[j, i])
-                if h is not None and abs(h - DY[j, i]) < 0.004 * hgt:
+                bridge = abs(px - PART_X) < 95 and py > 556          # over the nose bridge: follow her face closely
+                if h is not None and abs(h - DY[j, i]) < (0.012 if bridge else 0.004) * hgt:
                     w = (1 - (dist[j, i] - 1) / 6.0) ** 2
+                    if bridge:
+                        w = max(w, float(np.clip((py - 556) / 48.0, 0, 1)))
                     DY[j, i] = DY[j, i] * (1 - w) + (h - 0.0004 * hgt) * w
                     snapped += 1
     # one forehead texel for the base texture (the overlay paints the real colour)
@@ -1141,3 +1171,129 @@ def add_fringe(ob, mode, say=print):
         fo.parent = ob.parent; fo.matrix_world = ob.matrix_world.copy()
     say("fringe:", mode, "built", len(F), "faces")
     return fo
+
+
+SEAL_WIN = (1300, 2240, 236, 990)        # face-image pixels searched for holes
+SEAL_EYES = ((1530, 698), (2004, 690))   # eye openings are left alone (lids, lashes, eyeballs)
+
+
+def _seal_scan(g, cam, step):
+    x0, x1, y0, y1 = SEAL_WIN
+    xs = np.arange(x0, x1, step, dtype=float); ys = np.arange(y0, y1, step, dtype=float)
+    D = np.full((len(ys), len(xs)), np.nan); F = np.zeros(D.shape, bool)
+    for j, py in enumerate(ys):
+        for i, px in enumerate(xs):
+            wx, wz = _px_world(cam, px, py)
+            h = g.hits(wx, wz, 1, facing=True)
+            if h:
+                D[j, i], F[j, i] = h[0]
+    GX, GY = np.meshgrid(xs, ys)
+    excl = np.zeros(D.shape, bool)
+    for ex, ey in SEAL_EYES:
+        excl |= ((GX - ex) / 150.0) ** 2 + ((GY - ey) / 80.0) ** 2 < 1.0
+    good0 = F & np.isfinite(D) & (D < g.depth_lim)
+    Dg = np.where(good0, D, np.nan)
+    k = 5
+    P_ = np.pad(Dg, k, constant_values=np.nan)
+    from numpy.lib.stride_tricks import sliding_window_view
+    W_ = sliding_window_view(P_, (2 * k + 1, 2 * k + 1))
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        med = np.nanmedian(W_.reshape(D.shape[0], D.shape[1], -1), axis=2)
+    good = good0 & ~(np.isfinite(med) & (D > med + 0.003 * g.hgt))
+    # a hole is a small gap closed in by good face all round
+    def dil(m, n):
+        for _ in range(n):
+            p = np.pad(m, 1, constant_values=False)
+            m = m | p[:-2, 1:-1] | p[2:, 1:-1] | p[1:-1, :-2] | p[1:-1, 2:]
+        return m
+    def ero(m, n):
+        for _ in range(n):
+            p = np.pad(m, 1, constant_values=True)
+            m = m & p[:-2, 1:-1] & p[2:, 1:-1] & p[1:-1, :-2] & p[1:-1, 2:]
+        return m
+    r = max(2, int(round(12 / step)))
+    closed = ero(dil(good, r), r)
+    frac = sliding_window_view(np.pad(good.astype(float), 4), (9, 9)).mean(axis=(2, 3))
+    hole = closed & ~good & ~excl & (frac > 0.55)
+    return xs, ys, GX, GY, D, good, med, hole, dil
+
+
+def seal_face(ob, say=print, step=2, passes=2):
+    """Finds every small hole, crack or gap in the front of her face (places
+    where the camera sees through the skin to the inside of the head, or
+    deep behind it) and closes each with a small surface that matches the
+    skin around it. Checks itself afterwards. Colour comes from the overlay."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    me = ob.data
+    uvl = me.uv_layers.active
+    uvname = uvl.name if uvl else "UVMap"
+    total = 0
+    for ps in range(passes + 1):
+        g = _Geo(ob, cam, None)
+        xs, ys, GX, GY, D, good, med, hole, dil = _seal_scan(g, cam, step)
+        nh = int(hole.sum())
+        say("seal: pass", ps, "hole samples", nh, "(%d px each)" % step)
+        if nh == 0 or ps == passes:
+            break
+        reg = dil(hole, 2)
+        # depth over the region: fixed at good samples, diffused into the holes
+        Z = np.where(good, D, np.where(np.isfinite(med), med, np.nan))
+        fixed = good & reg
+        Zf = np.where(np.isfinite(Z), Z, np.nanmean(Z[fixed]) if fixed.any() else g.face_y)
+        for _ in range(60):
+            p = np.pad(Zf, 1, mode="edge")
+            avg = 0.25 * (p[:-2, 1:-1] + p[2:, 1:-1] + p[1:-1, :-2] + p[1:-1, 2:])
+            Zf = np.where(fixed, Zf, np.where(reg, avg, Zf))
+        edge = reg & ~dil(~reg, 1) if False else (reg & dil(~reg, 1))
+        off = np.where(edge, 0.0, -0.00025 * g.hgt)          # a hair in front of the skin, tucked in at the edges
+        idx = -np.ones(reg.shape, int); V = []
+        for j, i in zip(*np.nonzero(reg)):
+            wx, wz = _px_world(cam, GX[j, i], GY[j, i])
+            idx[j, i] = len(V); V.append(tuple(g.to_local((wx, Zf[j, i] + off[j, i], wz)).tolist()))
+        Fc = []
+        nyy, nxx = reg.shape
+        for j in range(nyy - 1):
+            for i in range(nxx - 1):
+                a_, b_, c_, d_ = idx[j, i], idx[j, i + 1], idx[j + 1, i + 1], idx[j + 1, i]
+                if min(a_, b_, c_, d_) >= 0:
+                    Fc.append((a_, d_, c_)); Fc.append((a_, c_, b_))
+        if not Fc:
+            say("seal: holes too thin to patch at this step"); break
+        # a skin texel for the base texture (the overlay paints the real colour)
+        j0, i0 = np.argwhere(good)[len(np.argwhere(good)) // 2]
+        wx, wz = _px_world(cam, GX[j0, i0], GY[j0, i0])
+        hit = g.bvh.ray_cast(g.Vector(g.to_local((wx, g.y_far, wz)).tolist()), g.dback, 1e6)
+        uv0 = (0.5, 0.5)
+        if hit[0] is not None and uvl is not None:
+            ls_ = me.polygons[hit[2]].loop_start
+            uv0 = tuple(np.mean([np.array(uvl.data[ls_ + q].uv) for q in range(3)], axis=0))
+        pm = bpy.data.meshes.new("face_seal")
+        pm.from_pydata(V, [], Fc); pm.update()
+        nz = np.empty(len(pm.polygons) * 3, dtype=np.float32); pm.polygons.foreach_get("normal", nz)
+        if np.mean((nz.reshape(-1, 3) @ g.A.T)[:, 1]) > 0:
+            for p_ in pm.polygons:
+                p_.flip()
+            pm.update()
+        ul = pm.uv_layers.new(name=uvname)
+        ul.data.foreach_set("uv", np.tile(np.array(uv0, np.float32), len(pm.loops)))
+        pm.shade_smooth()
+        for m in me.materials:
+            pm.materials.append(m)
+        try:
+            _ra = pm.attributes.new("rebuilt", "FLOAT", "POINT")
+            _ra.data.foreach_set("value", np.ones(len(pm.vertices), dtype=np.float32))
+        except Exception:
+            pass
+        po = bpy.data.objects.new("face_seal", pm)
+        bpy.context.scene.collection.objects.link(po)
+        po.matrix_world = ob.matrix_world.copy()
+        bpy.ops.object.select_all(action="DESELECT")
+        po.select_set(True); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+        bpy.ops.object.join()
+        bpy.context.view_layer.update()
+        me = ob.data; uvl = me.uv_layers.active
+        total += len(Fc)
+        say("seal: closed", int(hole.sum()), "hole samples with", len(Fc), "faces")
+    return total

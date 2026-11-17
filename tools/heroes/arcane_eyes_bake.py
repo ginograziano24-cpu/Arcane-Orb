@@ -46,7 +46,7 @@ try:
         bpy.context.view_layer.update()
         eyeproj.clear_right_eye(ob, say)
         bpy.context.view_layer.update()
-        eyeproj.build_face_patch(ob, say, win=[(1330, 1716, 584, 900), (1330, 1412, 318, 600), (1330, 1710, 500, 606)], smooth=False, overlap=True)
+        eyeproj.build_face_patch(ob, say, win=[(1330, 1740, 584, 932), (1330, 1412, 318, 600), (1330, 1740, 500, 612)], smooth=False, overlap=True)
         bpy.context.view_layer.update()
         if add_forehead:
             add_forehead()

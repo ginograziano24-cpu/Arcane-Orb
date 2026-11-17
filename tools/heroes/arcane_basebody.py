@@ -155,40 +155,7 @@ try:
     bodyo = lay["Body"]
     btree = tree_of([bodyo])
     ctree = tree_of([o for k, o in lay.items() if o and k in ("Robe", "Armor")])
-    skinf = np.ones(len(bodyo.data.polygons), dtype=bool)
-    try:
-        img = None
-        for m in bodyo.data.materials:
-            if m and m.node_tree:
-                bs = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
-                if bs and bs.inputs["Base Color"].links:
-                    nd = bs.inputs["Base Color"].links[0].from_node
-                    if nd.type == "TEX_IMAGE" and nd.image:
-                        img = nd.image; break
-        me = bodyo.data
-        W_, H_ = img.size
-        px = np.empty(W_ * H_ * 4, dtype=np.float32); img.pixels.foreach_get(px)
-        px = px.reshape(H_, W_, 4)[:, :, :3]
-        uv = np.empty(len(me.loops) * 2, dtype=np.float32); me.uv_layers.active.data.foreach_get("uv", uv); uv = uv.reshape(-1, 2)
-        ls = np.empty(len(me.polygons), dtype=np.int32); me.polygons.foreach_get("loop_start", ls)
-        xi = np.clip((uv[ls, 0] % 1.0) * (W_ - 1), 0, W_ - 1).astype(np.int32)
-        yi = np.clip((uv[ls, 1] % 1.0) * (H_ - 1), 0, H_ - 1).astype(np.int32)
-        col = px[yi, xi]
-        r, g, b = col[:, 0], col[:, 1], col[:, 2]
-        mx_, mn_ = col.max(1), col.min(1)
-        sat = np.where(mx_ > 1e-4, (mx_ - mn_) / np.maximum(mx_, 1e-4), 0)
-        d = np.maximum(mx_ - mn_, 1e-6)
-        hue = np.where(mx_ == r, ((g - b) / d) % 6, np.where(mx_ == g, (b - r) / d + 2, (r - g) / d + 4)) * 60
-        skinf = (hue < 42) & (sat > 0.1) & (sat < 0.65) & (mx_ > 0.38) & (r > b * 1.05)
-        del px
-        say("skin faces", int(skinf.sum()), "of", len(skinf))
-    except Exception as e:
-        say("skin colour test skipped", e)
-    BW = wverts(bodyo)
-    tri3 = np.array([p[:3] for p in polys(bodyo)], dtype=np.int64)
-    SP = BW[tri3].mean(1)[skinf]                       # centres of her skin faces
-    # ---- landmarks measured on her own body (the game rig is a generic
-    # skeleton stretched over the hat and robe, so its joints are not used)
+    # ---- which of her Body faces are skin: colour learned from her own cheek
     import json
     cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
     ppx = cam["ortho_scale"] / cam["res"][0]
@@ -196,99 +163,259 @@ try:
     fx = cam["loc"][0] + (1767 - cam["res"][0] / 2) * ppx
     z_eye, z_chin = fz(694), fz(1236)
     Hhead = (z_eye - z_chin) / 0.45
-    m_ = (np.abs(SP[:, 0] - fx) < 0.03 * HH) & (np.abs(SP[:, 2] - z_eye) < 0.012 * HH)
-    yfront = float(np.percentile(SP[m_, 1], 3)) if m_.sum() > 10 else -0.06
+    ST = (z_chin + Hhead) - z0                           # her stature, crown to soles (the hat is not counted)
+    say("stature", round(ST, 4), "of total height", round(HH, 4))
+    BW = wverts(bodyo)
+    Bpol = polys(bodyo)
+    tri3 = np.array([p[:3] for p in Bpol], dtype=np.int64)
+    FC = BW[tri3].mean(1)                               # face centres
+    me = bodyo.data
+    col = None
+    try:
+        img = None
+        for m in me.materials:
+            if m and m.node_tree:
+                bs = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+                if bs and bs.inputs["Base Color"].links:
+                    nd = bs.inputs["Base Color"].links[0].from_node
+                    if nd.type == "TEX_IMAGE" and nd.image:
+                        img = nd.image; break
+        W_, H_ = img.size
+        px = np.empty(W_ * H_ * 4, dtype=np.float32); img.pixels.foreach_get(px)
+        px = px.reshape(H_, W_, 4)[:, :, :3]
+        uv = np.empty(len(me.loops) * 2, dtype=np.float32); me.uv_layers.active.data.foreach_get("uv", uv); uv = uv.reshape(-1, 2)
+        ls = np.empty(len(me.polygons), dtype=np.int32); me.polygons.foreach_get("loop_start", ls)
+        lt = np.empty(len(me.polygons), dtype=np.int32); me.polygons.foreach_get("loop_total", lt)
+        uc = np.zeros((len(ls), 2))
+        for q in range(3):                              # centre of each face in the texture
+            uc += uv[ls + np.minimum(q, lt - 1)]
+        uc /= 3.0
+        xi = np.clip((uc[:, 0] % 1.0) * (W_ - 1), 0, W_ - 1).astype(np.int32)
+        yi = np.clip((uc[:, 1] % 1.0) * (H_ - 1), 0, H_ - 1).astype(np.int32)
+        col = px[yi, xi].astype(np.float64)
+        del px
+    except Exception as e:
+        say("skin colour read failed", e)
+    skinf = np.zeros(len(Bpol), dtype=bool)
+    if col is not None:
+        ssum = np.maximum(col.sum(1), 1e-6)
+        feat = np.stack([col[:, 0] / ssum, col[:, 1] / ssum], 1)
+        val = col.max(1)
+        cx_ = fx + 0.045 * ST
+        cz_ = z_eye - 0.03 * ST
+        box = (np.abs(FC[:, 0] - cx_) < 0.014 * ST) & (np.abs(FC[:, 2] - cz_) < 0.012 * ST)
+        if box.sum() > 20:
+            ymin = np.percentile(FC[box, 1], 5)
+            box &= FC[:, 1] < ymin + 0.012 * ST
+        cheek = feat[box]
+        if len(cheek) < 20:
+            say("cheek sample too small", len(cheek)); cheek = feat[(val > 0.4)]
+        mu = np.median(cheek, 0); C = np.cov((cheek - mu).T) + np.eye(2) * 1e-5
+        Ci = np.linalg.inv(C)
+        dm = np.sqrt(np.einsum("ij,jk,ik->i", feat - mu, Ci, feat - mu))
+        skinf = (dm < 3.2) & (val > 0.22)
+        say("skin model from", len(cheek), "cheek faces: chroma", np.round(mu, 3), "spread", np.round(np.sqrt(np.diag(C)), 4), "-> skin faces", int(skinf.sum()), "of", len(skinf))
+    # ---- weld, erode once, connected pieces of skin
+    _, vid = np.unique(np.round(BW / (1e-4 * HH)).astype(np.int64), axis=0, return_inverse=True)
+    vid = vid.ravel()
+    T_all = vid[tri3]
+    nonskin_v = np.zeros(vid.max() + 1, dtype=bool); nonskin_v[T_all[~skinf].ravel()] = True
+    skin_e = skinf & ~nonskin_v[T_all].any(1)
+    T = T_all[skin_e]
+    labv = np.arange(vid.max() + 1)
+    for _it in range(400):
+        m_ = labv[T].min(1); old = labv.copy()
+        np.minimum.at(labv, T.ravel(), np.repeat(m_, 3))
+        labv = labv[labv]
+        if (labv == old).all():
+            break
+    compf = np.full(len(Bpol), -1); compf[skin_e] = labv[T[:, 0]]
+    ids, cnt = np.unique(compf[skin_e], return_counts=True)
+    order = np.argsort(-cnt)
+    keepc = set(); comps = []
+    for k in order[:40]:
+        cid = ids[k]; P_ = FC[compf == cid]
+        if cnt[k] < max(60, 0.002 * skin_e.sum()):
+            continue
+        c_ = P_.mean(0); ev = np.sort(np.linalg.eigvalsh(np.cov((P_ - c_).T)))[::-1]
+        elong = math.sqrt(ev[0] / max(ev[1], 1e-12))
+        ok = elong < 8.0
+        comps.append((cid, int(cnt[k]), c_, elong, ok))
+        if ok:
+            keepc.add(cid)
+    for cid, n_, c_, el_, ok in comps[:16]:
+        say("  skin piece", n_, "faces at", np.round((c_ - np.array([fx, 0, z0])) / ST, 3), "elongation", round(el_, 1), "kept" if ok else "dropped")
+    kept = np.isin(compf, list(keepc)) & skin_e
+    SP = FC[kept]
+    SPc = compf[kept]
+    say("skin faces used for landmarks", len(SP))
+    # ---- head (from the face camera)
+    m_ = (np.abs(SP[:, 0] - fx) < 0.03 * ST) & (np.abs(SP[:, 2] - z_eye) < 0.012 * ST)
+    yfront = float(np.percentile(SP[m_, 1], 3)) if m_.sum() > 10 else float(np.percentile(FC[:, 1], 1))
     depth = 0.886 * Hhead
     head_y = yfront + 0.5 * depth
-    say("head: eye z", round(z_eye / HH, 3), "chin z", round(z_chin / HH, 3), "height", round(Hhead / HH, 3), "front y", round(yfront / HH, 3))
+    say("head: eye z", round((z_eye - z0) / ST, 3), "chin z", round((z_chin - z0) / ST, 3), "height", round(Hhead / ST, 3))
     TJ = {}
     Hd = np.array([fx, head_y, z_chin + 0.22 * Hhead]); top = np.array([fx, head_y, z_chin + Hhead])
     Nk = np.array([fx, head_y + 0.12 * depth, Hd[2] - 0.40 * Hhead])
     TJ["head"] = (Hd, top); TJ["neck"] = (Nk, Hd)
-    # legs: centre lines from slices of her visible skin
-    leg = (SP[:, 2] > z0 + 0.1 * HH) & (SP[:, 2] < z0 + 0.62 * HH) & (np.abs(SP[:, 0] - fx) < 0.24 * HH)
-    LPts = SP[leg]
-    cxb = 0.5 * (np.percentile(LPts[:, 0], 1) + np.percentile(LPts[:, 0], 99))
-    rows = {+1: [], -1: []}; gaps = []
-    for zf in np.arange(0.12, 0.62, 0.02):
-        zz = z0 + zf * HH
-        sl = LPts[np.abs(LPts[:, 2] - zz) < 0.01 * HH]
-        info = {}
+    # ---- inner surface of her (skin + robe + armour), with the layer of every face
+    iv = [BW]; ifc = [[p for p, sk in zip(Bpol, skinf) if sk]]; ilay = [0] * len(ifc[0]); off = len(BW)
+    for li_, k_ in ((1, "Robe"), (2, "Armor")):
+        o = lay.get(k_)
+        if o:
+            V_ = wverts(o); P_ = polys(o)
+            iv.append(V_); ifc.append([tuple(i + off for i in p) for p in P_]); ilay += [li_] * len(P_); off += len(V_)
+    IV = np.vstack(iv); IF = [f for fl in ifc for f in fl]; ILAY = np.array(ilay)
+    itree = BVHTree.FromPolygons([tuple(p) for p in IV], IF)
+    # all of her (for inside / outside tests): every Body face too
+    av = [BW]; af = list(Bpol); off = len(BW)
+    for k_ in ("Robe", "Armor"):
+        o = lay.get(k_)
+        if o:
+            V_ = wverts(o); av.append(V_); af += [tuple(i + off for i in p) for p in polys(o)]; off += len(V_)
+    atree = BVHTree.FromPolygons([tuple(p) for p in np.vstack(av)], af)
+
+    def inside(p):
+        """Signed distance to her nearest surface: negative inside."""
+        h = atree.find_nearest(Vector(p))
+        if h[0] is None:
+            return 1.0
+        d = np.asarray(p) - np.array(h[0])
+        return float(np.linalg.norm(d)) * (1.0 if float(d @ np.array(h[1])) > 0 else -1.0)
+
+    def circle(P2):
+        """Kasa least-squares circle with two trimmed re-fits: centre, radius."""
+        Q = P2.copy()
+        for _ in range(3):
+            A_ = np.c_[2 * Q, np.ones(len(Q))]; b_ = (Q ** 2).sum(1)
+            sol = np.linalg.lstsq(A_, b_, rcond=None)[0]
+            c_ = sol[:2]; r_ = math.sqrt(max(sol[2] + c_ @ c_, 1e-12))
+            res = np.abs(np.linalg.norm(P2 - c_, axis=1) - r_)
+            Q = P2[res <= np.percentile(res, 80)] if len(P2) > 12 else P2
+        return c_, r_
+    # ---- legs: two clusters per slice, a circle through each
+    legpts = SP[(SP[:, 2] > z0 + 0.1 * ST) & (SP[:, 2] < z0 + 0.6 * ST) & (np.abs(SP[:, 0] - fx) < 0.2 * ST)]
+    cx0 = float(np.median(legpts[:, 0])) if len(legpts) else fx
+    rows = {+1: [], -1: []}; joined = []
+    for zf in np.arange(0.14, 0.58, 0.012):
+        zz = z0 + zf * ST
+        sl = legpts[np.abs(legpts[:, 2] - zz) < 0.006 * ST]
+        if len(sl) < 30:
+            continue
+        xs_ = np.sort(sl[:, 0]); gaps_ = np.diff(xs_); mid = (xs_[:-1] + xs_[1:]) / 2
+        cen = np.abs(mid - cx0) < 0.08 * ST
+        if not cen.any():
+            continue
+        k = int(np.argmax(np.where(cen, gaps_, -1)))
+        if gaps_[k] < 0.004 * ST:
+            joined.append(zz); continue
+        cut = mid[k]
         for sgn in (+1, -1):
-            q = sl[(sl[:, 0] - cxb) * sgn > 0]
-            if len(q) < 25:
+            q = sl[(sl[:, 0] - cut) * sgn > 0]
+            if len(q) < 15:
                 continue
-            x0_, x1_ = np.percentile(q[:, 0], 2), np.percentile(q[:, 0], 98)
-            yf_ = np.percentile(q[:, 1], 2)
-            wd_ = x1_ - x0_
-            info[sgn] = (x0_, x1_)
-            rows[sgn].append((zz, 0.5 * (x0_ + x1_), yf_ + 0.5 * wd_, wd_))
-        if +1 in info and -1 in info:
-            gaps.append((zz, info[+1][0] - info[-1][1]))
-        say("  slice z", round(zf, 2), {k: (round((v[0] - cxb) / HH, 3), round((v[1] - cxb) / HH, 3)) for k, v in info.items()})
-    gz = [g_ for g_ in gaps if z0 + 0.3 * HH < g_[0] < z0 + 0.6 * HH]
-    z_crotch = min(gz, key=lambda g_: g_[1])[0] if gz else z0 + 0.47 * HH
-    say("centre x", round(cxb, 4), "crotch z", round((z_crotch - z0) / HH, 3))
-    z_hip = z_crotch + 0.055 * HH; z_ank = z0 + 0.075 * HH; z_knee = z_ank + 0.5 * (z_hip - z_ank)
+            c_, r_ = circle(q[:, :2])
+            if 0.02 * ST < r_ < 0.12 * ST and abs(c_[0] - cut) < 0.16 * ST:
+                rows[sgn].append((zz, c_[0], c_[1], r_))
+    for sgn in (+1, -1):
+        say("  leg", "L" if sgn > 0 else "R", "circles", [(round((r[0] - z0) / ST, 3), round((r[1] - fx) / ST, 3), round(r[3] / ST, 3)) for r in rows[sgn]])
+    jz = [z for z in joined if z > z0 + 0.4 * ST]
+    z_crotch = min(jz) if jz else z0 + 0.48 * ST
+    z_crotch = float(np.clip(z_crotch, z0 + 0.45 * ST, z0 + 0.52 * ST))
+    say("crotch z", round((z_crotch - z0) / ST, 3), "centre x", round((cx0 - fx) / ST, 3))
+    z_hip = z_crotch + 0.05 * ST; z_ank = z0 + 0.07 * ST; z_knee = z_ank + 0.5 * (z_hip - z_ank)
 
-    def leg_line(sgn):
-        R = np.array(rows[sgn])
-        wmax = R[:, 3].max()
-        R = R[(R[:, 3] > 0.6 * wmax) & (R[:, 0] < z_crotch + 0.005 * HH)]
-        cxp = np.polyfit(R[:, 0], R[:, 1], 1); cyp = np.polyfit(R[:, 0], R[:, 2], 1)
-
-        def at(z):
-            zc = np.clip(z, R[:, 0].min(), R[:, 0].max())
-            x = np.interp(zc, R[:, 0], R[:, 1]); y = np.interp(zc, R[:, 0], R[:, 2])
-            if z < R[:, 0].min():                         # below the boot tops: carry the line on
-                x = x + 0.5 * (np.polyval(cxp, z) - np.polyval(cxp, zc)); y = y + 0.5 * (np.polyval(cyp, z) - np.polyval(cyp, zc))
-            return np.array([x, y, z])
-        return at, float(np.median(R[:, 3]))
+    def side_pts(zlo, zhi, sgn):
+        out = []
+        for k_ in ("Robe", "Armor"):
+            o = lay.get(k_)
+            if o:
+                V_ = wverts(o)
+                m2 = (V_[:, 2] > zlo) & (V_[:, 2] < zhi) & ((V_[:, 0] - cx0) * sgn > 0.03 * ST) & ((V_[:, 0] - cx0) * sgn < 0.2 * ST)
+                out.append(V_[m2])
+        return np.vstack(out) if out else np.zeros((0, 3))
     for sd, sgn in ((".L", +1), (".R", -1)):
-        at, wth = leg_line(sgn)
-        hip = at(z_crotch - 0.02 * HH); hip[2] = z_hip
-        hip[0] = cxb + sgn * max(abs(hip[0] - cxb) * 0.85, 0.045 * HH)
-        knee = at(z_knee); ank = at(z_ank)
-        toe = ank + np.array([0.0, -0.085 * HH, 0.0]); toe[2] = z0 + 0.012 * HH
+        R_ = np.array([r for r in rows[sgn] if r[0] < z_crotch]) if rows[sgn] else np.zeros((0, 4))
+        if len(R_) >= 3:
+            cxp = np.polyfit(R_[:, 0], R_[:, 1], 1); cyp = np.polyfit(R_[:, 0], R_[:, 2], 1)
+        else:
+            cxp = np.array([0.0, cx0 + sgn * 0.06 * ST]); cyp = np.array([0.0, head_y])
+        at = lambda z: np.array([np.polyval(cxp, z), np.polyval(cyp, z), z])
+        hip = at(z_hip); hip[0] = cx0 + sgn * max(abs(hip[0] - cx0) * 0.9, 0.04 * ST)
+        knee = at(z_knee)
+        # the ankle: centre of the boot just above the heel, near the line carried down
+        bp = side_pts(z_ank - 0.02 * ST, z_ank + 0.03 * ST, sgn)
+        guess = at(z_ank)
+        if len(bp) > 40:
+            near_ = bp[np.linalg.norm(bp[:, :2] - guess[:2], axis=1) < 0.07 * ST]
+            if len(near_) > 20:
+                c_, r_ = circle(near_[:, :2])
+                if np.linalg.norm(c_ - guess[:2]) < 0.06 * ST:
+                    guess[:2] = c_
+        ank = guess
+        toe = ank + np.array([0.0, -0.085 * ST, 0.0]); toe[2] = z0 + 0.012 * ST
         TJ["legU" + sd] = (hip, knee); TJ["legL" + sd] = (knee, ank); TJ["foot" + sd] = (ank, toe)
-    # shoulders, then the arms from where her hands are
-    cxt = 0.5 * (cxb + fx)
+    cxb = cx0
+    # ---- shoulders from her width just below the neck
+    cxt = 0.5 * (cx0 + fx)
     Nk[0] = cxt
+    zs = Nk[2] - 0.035 * ST
+    hw = {}
+    for sgn in (+1, -1):
+        o_ = np.array([cxt, head_y + 0.05 * depth, zs])
+        h_ = itree.ray_cast(Vector(o_), Vector((sgn, 0, 0)), 0.4 * ST)
+        hw[sgn] = h_[3] if h_[0] is not None and h_[3] > 0.05 * ST else 0.1 * ST
     for sd, sgn in ((".L", +1), (".R", -1)):
-        TJ["armU" + sd] = [np.array([cxt + sgn * 0.078 * HH, Nk[1], Nk[2] - 0.018 * HH]), None]
+        TJ["armU" + sd] = [np.array([cxt + sgn * 0.8 * hw[sgn], Nk[1], zs]), None]
+    say("shoulder half widths", round(hw[1] / ST, 3), round(hw[-1] / ST, 3))
     torso(TJ, TJ["legU.L"][0], TJ["legU.R"][0], TJ["armU.L"][0], TJ["armU.R"][0], Nk)
     TJ["neck"] = (Nk, Hd)
     ln = lambda d, keys: sum(np.linalg.norm(d[k][1] - d[k][0]) for k in keys)
     chain = ("hips", "spine", "chest", "legU.L", "legL.L", "legU.R", "legL.R")
     G = ln(TJ, chain) / ln(BJ, chain)
     say("overall scale", round(G, 4))
+    # ---- hands: a compact piece of skin within reach of each shoulder; elbow chosen to lie inside her
+    head_c = 0.5 * (Hd + top)
     for sd, sgn in ((".L", +1), (".R", -1)):
         sh = TJ["armU" + sd][0]
         LA = np.linalg.norm(BJ["armU" + sd][1] - BJ["armU" + sd][0]) * G
         LB = np.linalg.norm(BJ["armL" + sd][1] - BJ["armL" + sd][0]) * G
         Lh = np.linalg.norm(BJ["hand" + sd][1] - BJ["hand" + sd][0]) * G
-        hm = (SP[:, 2] > z0 + 0.4 * HH) & ((SP[:, 0] - cxb) * sgn > 0.17 * HH)
-        if hm.sum() > 30:
-            hc = np.median(SP[hm], axis=0)
-        else:
-            hc = sh + np.array([sgn * 0.2, 0.0, -0.25]) * HH
-        say("hand", sd, "skin faces", int(hm.sum()), "at", np.round((hc - np.array([cxb, 0, z0])) / HH, 3))
+        best_ = None
+        for cid, n_, c_, el_, ok in comps:
+            if not ok or (c_[0] - cx0) * sgn < 0.13 * ST or c_[2] < z0 + 0.5 * ST:     # hands are out beside her, not on her body
+                continue
+            if np.linalg.norm(c_ - head_c) < 0.12 * ST or np.linalg.norm(c_ - sh) > LA + LB + Lh:
+                continue
+            if best_ is None or n_ > best_[1]:
+                best_ = (cid, n_, c_)
+        hc = best_[2] if best_ else sh + np.array([sgn * 0.2, -0.05, -0.25]) * ST
+        say("hand", sd, "piece", best_[1] if best_ else None, "at", np.round((hc - np.array([fx, 0, z0])) / ST, 3))
         u_ = (hc - sh) / max(np.linalg.norm(hc - sh), 1e-9)
         wr = hc - u_ * 0.4 * Lh
-        for _ in range(2):
-            dv_ = wr - sh; d_ = np.linalg.norm(dv_)
-            if d_ >= 0.98 * (LA + LB):
-                el = sh + dv_ * (LA / (LA + LB))
-            else:
-                a_ = (LA * LA - LB * LB + d_ * d_) / (2 * d_)
-                hgt_ = math.sqrt(max(LA * LA - a_ * a_, 0.0))
-                bend = np.array([0.0, 0.35, -1.0]); bend = bend - dv_ * (bend @ dv_) / (d_ * d_); bend /= max(np.linalg.norm(bend), 1e-9)
-                el = sh + dv_ * (a_ / d_) + bend * hgt_
-            u_ = (hc - el) / max(np.linalg.norm(hc - el), 1e-9)
-            wr = hc - u_ * 0.4 * Lh
+        dv_ = wr - sh; d_ = np.linalg.norm(dv_)
+        if d_ >= 0.98 * (LA + LB):
+            el = sh + dv_ * (LA / (LA + LB)); sc_best = None
+        else:
+            a_ = (LA * LA - LB * LB + d_ * d_) / (2 * d_)
+            hgt_ = math.sqrt(max(LA * LA - a_ * a_, 0.0))
+            ax_ = dv_ / d_
+            e1_ = np.cross(ax_, [0, 0, 1.0]); e1_ /= max(np.linalg.norm(e1_), 1e-9); e2_ = np.cross(ax_, e1_)
+            sc_best = None; el = None
+            for th in np.linspace(0, 2 * math.pi, 24, endpoint=False):
+                cand = sh + ax_ * a_ + hgt_ * (math.cos(th) * e1_ + math.sin(th) * e2_)
+                pts = [sh + (cand - sh) * t for t in (0.25, 0.5, 0.75, 1.0)] + [cand + (wr - cand) * t for t in (0.25, 0.5, 0.75)]
+                scv = sum(inside(p) for p in pts)
+                if sc_best is None or scv < sc_best:
+                    sc_best, el = scv, cand
+        u_ = (hc - el) / max(np.linalg.norm(hc - el), 1e-9)
+        wr = hc - u_ * 0.4 * Lh
         TJ["armU" + sd] = (sh, el); TJ["armL" + sd] = (el, wr); TJ["hand" + sd] = (wr, wr + u_ * Lh)
     for s in SEG:
-        say("her joint", s, np.round((TJ[s][0] - np.array([cxb, 0, z0])) / HH, 3), np.round((TJ[s][1] - np.array([cxb, 0, z0])) / HH, 3))
+        mid = 0.5 * (TJ[s][0] + TJ[s][1])
+        say("her joint", s, np.round((TJ[s][0] - np.array([fx, 0, z0])) / ST, 3), np.round((TJ[s][1] - np.array([fx, 0, z0])) / ST, 3),
+            "middle inside her" if inside(mid) < 0 else "MIDDLE OUTSIDE HER (%.3f)" % (inside(mid) / ST))
     # ------------------------------------------------------------ C. pose by segment
     Pn = np.zeros_like(BV)
     for s in SEG:
@@ -307,114 +434,194 @@ try:
         say("segment", s, "length x", round(sL, 3), "girth x", round(sR, 3), "turn deg", round(math.degrees(math.acos(np.clip(np.dot(d0, d1) / (L0 * L1), -1, 1))), 1))
 
     # ------------------------------------------------------------ E. her shape, without the clothing
-    # Her visible skin and the clothing that sits tight on her body (corset,
-    # bodysuit, boots, fitted sleeves) already have her exact shape. Loose
-    # cloth (cape, skirt panels, hanging sleeves), the hat, staff and orb are
-    # left out. A slimmed copy of the posed mannequin fills only what is
-    # hidden (her back under the cape, the scalp under the hair). Both are
-    # fused into one closed shell with a voxel remesh and smoothed to clay.
-    def seg_dist(Q, s):
-        h, t = TJ[s]; d = t - h; L2_ = float(d @ d)
-        u = np.clip(((Q - h) @ d) / L2_, 0.0, 1.0)
-        return np.linalg.norm(Q - (h + u[:, None] * d), axis=1)
-    body_segs = [s for s in SEG if s.split(".")[0] not in ("hand",)]
-    BWv = wverts(bodyo); Bpol = polys(bodyo)
-    bcen = np.array([BWv[list(p)].mean(0) for p in Bpol])
-    skc = bcen[skinf]
-    Dsk = np.stack([seg_dist(skc, s) for s in body_segs], 1)
-    nsk = Dsk.argmin(1); dsk = Dsk.min(1)
-    Rs = {}
-    for j, s in enumerate(body_segs):
-        dd = dsk[nsk == j]
-        Rs[s] = float(np.percentile(dd, 88)) if len(dd) > 60 else None
-    # fall back to the posed mannequin's own radius where little skin shows
-    for j, s in enumerate(body_segs):
-        dm = seg_dist(Pn[lab == SI[s]], s) if (lab == SI[s]).any() else np.array([0.05 * HH])
-        mr = float(np.percentile(dm, 75)) * 1.25
-        Rs[s] = max(Rs[s] or 0.0, mr) if Rs[s] is None else max(Rs[s], 0.7 * mr)
-    say("radius by segment (% of height):", {s: round(Rs[s] / HH * 100, 1) for s in body_segs})
-    keep_v = []; keep_f = []; nk = 0
-    def add_faces(V_, F_):
-        base_ = len(keep_v)
-        keep_v.extend(V_.tolist()); keep_f.extend([tuple(i + base_ for i in f) for f in F_])
-    # skin faces
-    used = sorted({i for p, sk in zip(Bpol, skinf) if sk for i in p})
-    remap = {v: k for k, v in enumerate(used)}
-    add_faces(BWv[used], [tuple(remap[i] for i in p) for p, sk in zip(Bpol, skinf) if sk])
-    tally = {}
-    for k_, o in lay.items():
-        if not o or k_ not in ("Robe", "Armor"):
-            continue
-        V_ = wverts(o); F_ = polys(o)
-        cen = np.array([V_[list(p)].mean(0) for p in F_])
-        Dc = np.stack([seg_dist(cen, s) for s in body_segs], 1)
-        j = Dc.argmin(1); d = Dc.min(1)
-        lim = np.array([1.12 * Rs[body_segs[q]] + 0.006 * HH for q in j])
-        hand_d = np.minimum(seg_dist(cen, "hand.L"), seg_dist(cen, "hand.R"))
-        ok = (d <= lim) & (hand_d > 0.03 * HH)
-        sel = [f for f, o_ in zip(F_, ok) if o_]
-        tally[k_] = (int(ok.sum()), len(F_))
-        used = sorted({i for p in sel for i in p}); remap = {v: k for k, v in enumerate(used)}
-        if used:
-            add_faces(V_[used], [tuple(remap[i] for i in p) for p in sel])
-    say("kept as body shape: skin", int(skinf.sum()), "faces; tight clothing", tally)
-    tight = bpy.data.meshes.new("tight"); tight.from_pydata(keep_v, [], keep_f); tight.update()
-    to = bpy.data.objects.new("tight", tight); sc.collection.objects.link(to)
-    so_ = to.modifiers.new("solid", "SOLIDIFY"); so_.thickness = 0.007 * HH; so_.offset = 0.0
-    # slimmed mannequin as the filler
+    # Station fit: along every bone, at 12 cross-sections, rays go out from the
+    # bone to her innermost surface (skin, or clothing lying on it, minus its
+    # thickness) and to the posed mannequin. Their ratio becomes a smooth
+    # profile per cross-section: one number for limbs, a low Fourier series
+    # (up to the 2nd harmonic) for the torso, so the result stays smooth and
+    # featureless by construction. Loose cloth only ever adds radius, so where
+    # rays hit the robe a low percentile is used. Cross-sections nobody can see
+    # (under the skirt) are interpolated and logged as estimates. The fit is
+    # repeated with a girth correction until the base matches her.
+    THK = np.array([0.0, 0.003 * HH, 0.009 * HH])           # skin, robe, armour thickness taken off
+    NA = 64; NS = 12
+    TH = np.linspace(0, 2 * math.pi, NA, endpoint=False)
+    US = np.linspace(0.1, 0.9, NS)
+    FIT = [s for s in SEG if s.split(".")[0] not in ("hand", "head")]
+    TORSO = ("hips", "spine", "chest")
+
+    def frame(s):
+        h, t = TJ[s]; d = t - h; L_ = np.linalg.norm(d); d = d / L_
+        e1 = np.cross(d, [0, 1.0, 0])
+        if np.linalg.norm(e1) < 0.3:
+            e1 = np.cross(d, [0, 0, 1.0])
+        e1 /= np.linalg.norm(e1); e2 = np.cross(d, e1)
+        return h, d, L_, e1, e2
+
+    def rays(tree, c, e1, e2, cap, lay_of=None):
+        r = np.full(NA, np.nan); ly = np.zeros(NA, int)
+        for k, a_ in enumerate(TH):
+            v = math.cos(a_) * e1 + math.sin(a_) * e2
+            hit = tree.ray_cast(Vector(c), Vector(v), cap if np.isscalar(cap) else (cap[k] if np.isfinite(cap[k]) else 0.6 * HH))
+            if hit[0] is not None:
+                r[k] = hit[3]
+                if lay_of is not None:
+                    ly[k] = lay_of[hit[2]]
+        return r, ly
+
+    def fill_periodic(r):
+        ok = np.isfinite(r)
+        if ok.sum() < 3:
+            return None
+        idx = np.arange(NA)
+        return np.interp(idx, idx[ok], r[ok], period=NA)
+
+    def perim(c, e1, e2, r):
+        pts = c + r[:, None] * (np.cos(TH)[:, None] * e1 + np.sin(TH)[:, None] * e2)
+        return float(np.linalg.norm(np.roll(pts, -1, 0) - pts, axis=1).sum())
+
+    def mtree(P):
+        return BVHTree.FromPolygons([tuple(p) for p in P], BP)
+    mt0 = mtree(Pn)
+    # her side, measured once
+    HER = {}
+    for s in FIT:
+        h, d, L_, e1, e2 = frame(s)
+        st = []
+        for u in US:
+            c = h + d * L_ * u
+            rm, _ = rays(mt0, c, e1, e2, 0.6 * HH)
+            cap = 1.6 * rm
+            rh, ly = rays(itree, c, e1, e2, cap, ILAY)
+            rh = rh - THK[ly]
+            ok = np.isfinite(rh) & (rh > 0.004 * HH)
+            if s not in TORSO and ok.sum() > 8:
+                skin_ok = ok & (ly == 0)
+                ref = np.median(rh[skin_ok]) if skin_ok.sum() >= 8 else np.percentile(rh[ok], 40)
+                ok &= rh < 1.3 * ref
+            st.append(dict(c=c, rm=rm, rh=np.where(ok, rh, np.nan), ly=ly, n=int(ok.sum()), robe=float((ly[ok] > 0).mean()) if ok.any() else 1.0))
+        HER[s] = st
+
+    def harm(n):
+        return np.stack([np.ones(NA)] + [f(k * TH) for k in range(1, n + 1) for f in (np.cos, np.sin)], 1)
+    B0, B2 = harm(0), harm(2)
+
+    def station_coef(s, stt):
+        ok = np.isfinite(stt["rh"]) & np.isfinite(stt["rm"]) & (stt["rm"] > 1e-6)
+        if ok.sum() < 16:
+            return None
+        q = stt["rh"][ok] / stt["rm"][ok]
+        if s in TORSO and ok.sum() >= 32:
+            # robust low-order fit; loose cloth handled by trimming the high side
+            keep = np.ones(ok.sum(), bool)
+            for _ in range(3):
+                c_ = np.linalg.lstsq(B2[ok][keep], q[keep], rcond=None)[0]
+                res = q - B2[ok] @ c_
+                keep = res < np.percentile(res, 75) + 0.02
+            return c_
+        a0 = np.percentile(q, 30) if stt["robe"] > 0.3 else np.median(q)
+        return np.r_[a0, np.zeros(4)]
+    COEF = {}; EST = {}
+    for s in FIT:
+        cs = [station_coef(s, stt) for stt in HER[s]]
+        okk = [c_ is not None for c_ in cs]
+        EST[s] = [not k for k in okk]
+        if not any(okk):
+            cs = [np.r_[1.0, np.zeros(4)]] * NS
+        else:
+            iu = np.array([i for i, k in enumerate(okk) if k])
+            M_ = np.array([cs[i] for i in iu])
+            cs = [np.array([np.interp(i, iu, M_[:, j]) for j in range(5)]) for i in range(NS)]
+        C_ = np.array(cs)
+        for _ in range(2):                                      # smooth along the bone
+            C_[1:-1] = 0.25 * C_[:-2] + 0.5 * C_[1:-1] + 0.25 * C_[2:]
+        C_[:, 0] = np.clip(C_[:, 0], 0.55, 2.4)
+        COEF[s] = C_
+    say("fit: stations measured / estimated", {s: "%d/%d" % (NS - sum(EST[s]), sum(EST[s])) for s in FIT})
+    # vertex -> (segment, u, theta) once
+    FR = {s: frame(s) for s in SEG}
+    UTH = {}
+    for s in FIT:
+        h, d, L_, e1, e2 = FR[s]
+        rel = Pn - h
+        u = np.clip((rel @ d) / L_, 0.0, 1.0)
+        rad = rel - (rel @ d)[:, None] * d
+        th = np.arctan2(rad @ e2, rad @ e1) % (2 * math.pi)
+        UTH[s] = (u, th)
     Vbar = np.zeros_like(Pn)
     for s in SEG:
-        w_ = Wt[:, SI[s]]
-        h, t = TJ[s]; d = t - h; L2_ = float(d @ d)
-        u = np.clip(((Pn - h) @ d) / L2_, 0.0, 1.0)
-        Vbar += w_[:, None] * (Pn - (h + u[:, None] * d))
-    hand_w = Wt[:, [SI["hand.L"], SI["hand.R"]]].sum(1)
-    P = Pn - (0.14 * (1 - hand_w))[:, None] * Vbar
-    tmp = bpy.data.meshes.new("filler"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
-    fo = bpy.data.objects.new("filler", tmp); sc.collection.objects.link(fo)
-    bpy.ops.object.select_all(action="DESELECT")
-    bpy.context.view_layer.objects.active = to; to.select_set(True)
-    bpy.ops.object.modifier_apply(modifier=so_.name)
-    fo.select_set(True)
-    bpy.ops.object.join()
-    bo = bpy.context.view_layer.objects.active
-    rm = bo.modifiers.new("remesh", "REMESH"); rm.mode = "VOXEL"; rm.voxel_size = 0.0032 * HH; rm.adaptivity = 0.0
-    bpy.ops.object.modifier_apply(modifier=rm.name)
-    say("fused shell faces", len(bo.data.polygons))
-    sm = bo.modifiers.new("smooth", "SMOOTH"); sm.factor = 0.8; sm.iterations = 10
-    bpy.ops.object.modifier_apply(modifier=sm.name)
-    dc = bo.modifiers.new("dec", "DECIMATE"); dc.ratio = min(1.0, 120000 / max(1, len(bo.data.polygons)))
-    bpy.ops.object.modifier_apply(modifier=dc.name)
-    tmp = bo.data; tmp.name = "Arcanist_BaseForm"
+        h, d, L_, e1, e2 = FR[s]
+        u = np.clip(((Pn - h) @ d) / L_, 0.0, 1.0)
+        Vbar += Wt[:, SI[s], None] * (Pn - (h + (u * L_)[:, None] * d))
+    keepw = Wt[:, [SI[x] for x in SEG if x.split(".")[0] in ("hand", "head")]].sum(1)
+
+    def qfield():
+        num = keepw * 1.0; den = keepw.copy()
+        for s in FIT:
+            w_ = Wt[:, SI[s]]
+            sel = w_ > 1e-3
+            u, th = UTH[s]
+            pos = np.clip((u[sel] - US[0]) / (US[1] - US[0]), 0, NS - 1)
+            i0 = np.floor(pos).astype(int); i1 = np.minimum(i0 + 1, NS - 1); f_ = pos - i0
+            C_ = COEF[s]
+            cc = C_[i0] * (1 - f_)[:, None] + C_[i1] * f_[:, None]
+            t_ = th[sel]
+            q = cc[:, 0] + cc[:, 1] * np.cos(t_) + cc[:, 2] * np.sin(t_) + cc[:, 3] * np.cos(2 * t_) + cc[:, 4] * np.sin(2 * t_)
+            num[sel] += w_[sel] * q; den[sel] += w_[sel]
+        return num / np.maximum(den, 1e-9)
+
+    def taubin(P, it, mask=None):
+        for _ in range(it):
+            for lam in (0.5, -0.53):
+                dlt = navg(P) - P
+                P = P + lam * (dlt if mask is None else mask[:, None] * dlt)
+        return P
+    tw = Wt[:, [SI["hips"], SI["spine"], SI["chest"]]].sum(1)
+    NR = 5
+    for rnd in range(NR):
+        q = qfield()
+        for _ in range(6):
+            q = 0.5 * q + 0.5 * navg(q)
+        P = Pn + (q - 1.0)[:, None] * Vbar
+        P = taubin(P, 6)
+        P = taubin(P, 10, tw)                                   # the torso stays smooth and featureless
+        if rnd == NR - 1:
+            break
+        bt = mtree(P)
+        corr = []
+        for s in FIT:                                           # girth correction per station
+            h, d, L_, e1, e2 = FR[s]
+            for i, stt in enumerate(HER[s]):
+                if EST[s][i]:
+                    continue
+                rh = fill_periodic(stt["rh"])
+                rb, _ = rays(bt, stt["c"], e1, e2, 0.6 * HH)
+                rb = fill_periodic(rb)
+                if rh is None or rb is None:
+                    continue
+                k = float(np.clip(perim(stt["c"], e1, e2, rh) / perim(stt["c"], e1, e2, rb), 0.8, 1.3))
+                COEF[s][i] *= k; corr.append(k)
+        say("fit round", rnd + 1, "girth corrections: median %.3f, range %.3f..%.3f" % (np.median(corr), min(corr), max(corr)) if corr else "none")
+    tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
     for p_ in tmp.polygons:
         p_.use_smooth = True
-    say("base form faces", len(tmp.polygons))
-    # ---- measurements: girth of her (skin and tight clothing) vs the new base, slice by slice
-    PB = wverts(bo); btree2 = BVHTree.FromPolygons([tuple(p) for p in PB], polys(bo))
-    ttree = BVHTree.FromPolygons([tuple(v) for v in keep_v], keep_f)
-
-    def girth(tree, s, frac, n=72):
-        h, t = TJ[s]; d = t - h; d = d / np.linalg.norm(d)
-        c = h + frac * (t - h)
-        e1 = np.cross(d, [0, 1, 0]); e1 /= max(np.linalg.norm(e1), 1e-9); e2 = np.cross(d, e1)
-        pts = []
-        for a_ in np.linspace(0, 2 * math.pi, n, endpoint=False):
-            v = math.cos(a_) * e1 + math.sin(a_) * e2
-            hit = tree.ray_cast(Vector(c), Vector(v), 2.5 * Rs[s])
-            if hit[0] is not None:
-                pts.append(np.array(hit[0]))
-        if len(pts) < 0.6 * n:
-            return None, len(pts)
-        pts = np.array(pts)
-        return float(np.linalg.norm(np.roll(pts, -1, 0) - pts, axis=1).sum()), len(pts)
-    say("measurements (girth, % of her height): her skin + tight clothing vs base form")
-    for nm_, s, fr in (("chest", "chest", 0.35), ("under chest", "chest", 0.05), ("waist", "spine", 0.45), ("hips", "hips", 0.2),
-                       ("thigh L", "legU.L", 0.2), ("thigh R", "legU.R", 0.2), ("knee L", "legU.L", 0.95), ("calf L", "legL.L", 0.35),
-                       ("calf R", "legL.R", 0.35), ("upper arm L", "armU.L", 0.5), ("upper arm R", "armU.R", 0.5), ("neck", "neck", 0.4)):
-        gh, nh = girth(ttree, s, fr); gb, nb_ = girth(btree2, s, fr)
-        say("  %-12s her %6s (%2d rays)  base %6s  %s" % (nm_, "-" if gh is None else "%.1f" % (gh / HH * 100), nh,
-            "-" if gb is None else "%.1f" % (gb / HH * 100), "" if (gh is None or gb is None) else "diff %+.1f%%" % ((gb - gh) / gh * 100)))
-    bpy.data.objects.remove(bo, do_unlink=True)
+    # ---- measurements: her vs the base, at named cross-sections
+    bt = mtree(P)
+    say("measurements (girth, % of her stature): her innermost surface vs base form")
+    for nm_, s, u in (("neck", "neck", 0.5), ("chest", "chest", 0.35), ("under chest", "chest", 0.12), ("waist", "spine", 0.5),
+                      ("hips", "hips", 0.3), ("thigh L", "legU.L", 0.25), ("thigh R", "legU.R", 0.25), ("knee L", "legU.L", 0.9),
+                      ("calf L", "legL.L", 0.35), ("calf R", "legL.R", 0.35), ("upper arm L", "armU.L", 0.5), ("upper arm R", "armU.R", 0.5),
+                      ("forearm L", "armL.L", 0.4), ("forearm R", "armL.R", 0.4)):
+        h, d, L_, e1, e2 = FR[s]
+        i = int(np.argmin(np.abs(US - u))); stt = HER[s][i] if s in HER else None
+        c = h + d * L_ * US[i]
+        rb = fill_periodic(rays(bt, c, e1, e2, 0.6 * HH)[0])
+        rh = fill_periodic(stt["rh"]) if stt else None
+        gb = perim(c, e1, e2, rb) if rb is not None else None
+        gh = perim(c, e1, e2, rh) if rh is not None else None
+        tag = "estimate (hidden)" if (s in EST and EST[s][i]) else "%d rays" % (stt["n"] if stt else 0)
+        say("  %-12s her %6s  base %6s  %s  [%s]" % (nm_, "-" if gh is None else "%.1f" % (gh / ST * 100), "-" if gb is None else "%.1f" % (gb / ST * 100),
+            "" if (gh is None or gb is None) else "diff %+.1f%%" % ((gb - gh) / gh * 100), tag))
     # ------------------------------------------------------------ F. into the layered file
     old = bpy.data.objects.get("Arcanist_BaseForm")
     if old:
