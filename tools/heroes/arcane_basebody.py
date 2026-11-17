@@ -1220,7 +1220,7 @@ try:
                 gz.append(zz); gl.append(hl[3]); gr.append(hr[3])
     # the thighs part higher than her model's (which touch): up to 0.555 of
     # stature, a narrow round-topped gap that meets her own gap lower down
-    apex_t = z0 + 0.52 * ST                                    # where her thighs part (the point of her V)
+    apex_t = z0 + 0.55 * ST                                    # where her thighs part (the point of her V, as marked)
     if apex is not None and len(gz) > 5:
         gz = np.array(gz); gl = np.array(gl); gr = np.array(gr)
         for _ in range(3):
@@ -1352,7 +1352,11 @@ try:
         len(csz_), sorted([csz_[c_] for c_ in bodyc], reverse=True)[:8], int(sum(n_ for c_, n_ in csz_.items() if c_ not in bodyc))))
     okB &= np.array([c_ in bodyc for c_ in compF.tolist()])
     z_lw = z_waist + 0.06 * ST
-    lowF = [Bpol[i_] for i_ in np.where(okB & (BC_[:, 2] < z_lw))[0]]
+    # waist down: every face of her body piece, whatever it is painted (dark
+    # shading and unpainted areas are her body too; colour no longer decides)
+    okLow = (BC_[:, 2] > zlo_) & (BC_[:, 2] < z_lw) & np.array([c_ in bodyc for c_ in compF.tolist()])
+    say("waist down: %d dark-painted body faces kept that the colour rule would have dropped" % int((okLow & ~notacc).sum()))
+    lowF = [Bpol[i_] for i_ in np.where(okLow)[0]]
     okB &= BC_[:, 2] >= z_lw                                    # waist down is handled exactly, below
     for f_, ok_ in zip(Bpol, okB):
         if ok_:
@@ -1458,6 +1462,33 @@ try:
     HFw = [tuple(wmap.get(v, v) for v in f) for f in HFw]
     HFw = [f for f in HFw if len(set(f)) == len(f)]
     say("waist down: %d touching edge points of her pieces joined" % len(wmap))
+    z_ll = knee_z0 - 0.05 * ST
+    # loose fragments (stray bits above the boots and at the cut edges) go
+    parh = {}
+    def fh(a_):
+        while parh.get(a_, a_) != a_:
+            parh[a_] = parh.get(parh[a_], parh[a_]); a_ = parh[a_]
+        return a_
+    for f in HFw:
+        r0_ = fh(f[0])
+        for v in f[1:]:
+            r1_ = fh(v)
+            if r1_ != r0_:
+                parh[r1_] = r0_
+    chs = _Cc(fh(f[0]) for f in HFw)
+    nfr = len(HFw)
+    HFw = [f for f in HFw if chs[fh(f[0])] >= 300]
+    # her ragged cut edges: two rows of faces come off them (not at the cuts
+    # this pass makes itself at the waist and above the boots)
+    for _ in range(1):
+        ecx = _Cc()
+        for f in HFw:
+            for q in range(len(f)):
+                a_, b_ = f[q], f[(q + 1) % len(f)]
+                ecx[(a_, b_) if a_ < b_ else (b_, a_)] += 1
+        bvx = {v for e, c in ecx.items() if c == 1 for v in e if z_ll + 0.015 * ST < Vw[v, 2] < z_lw - 0.015 * ST}
+        HFw = [f for f in HFw if not any(v in bvx for v in f)]
+    say("waist down: %d fragment faces dropped, cut edges trimmed to %d faces" % (nfr - len(HFw) , len(HFw)))
     Htree = BVHTree.FromPolygons([tuple(v) for v in Vw], HFw)
     ecw = _Cc()
     for f in HFw:
@@ -1477,7 +1508,7 @@ try:
         h_ = Htree.find_nearest(Vector(P2[i_]), 0.04 * ST)
         if h_[0] is not None:
             dH[i_] = h_[3]; nearP[i_] = np.array(h_[0])
-    covered = dH < 0.012 * ST
+    covered = dH < 0.007 * ST
     hole = rb & ~covered
     isP = [any(hole[v] for v in f) for f in BP2]
     pv = sorted({v for f, k_ in zip(BP2, isP) if k_ for v in f})
@@ -1498,10 +1529,16 @@ try:
             if u not in pvs and covered[u]:
                 P2[u] = nearP[u]                              # a second ring on her surface: the fill leaves at her tangent
     free = np.zeros(len(P2), bool); free[[v for v in pv if hole[v]]] = True
-    for _ in range(600):
+    P_start = P2.copy()
+    for _ in range(800):
         Lx = navg2(P2) - P2
         LL = navg2(Lx) - Lx
-        P2[free] -= 0.2 * LL[free]
+        stp = np.clip(0.1 * LL[free], -0.002 * ST, 0.002 * ST)     # small, bounded steps: stable
+        P2[free] -= stp
+    bad_ = ~np.isfinite(P2).all(1) | (np.linalg.norm(P2 - P_start, axis=1) > 0.08 * ST)
+    if bad_.any():
+        P2[bad_] = P_start[bad_]
+    say("fill smoothing: %d points reset (unstable)" % int(bad_.sum()))
     nb0 = len(BP2)
     BP2 = [f for f, k_ in zip(BP2, isP) if k_ or not all(rb[v] for v in f)]
     say("waist down: %d of her faces as modelled, %d hole-edge points, fill pieces of %d faces (%d points smoothed), %d base faces dropped" % (
@@ -1579,18 +1616,18 @@ try:
         np.add.at(o_, Eall[:, 0], X[Eall[:, 1]]); np.add.at(o_, Eall[:, 1], X[Eall[:, 0]])
         return o_ / np.maximum(dga, 1)[(...,) + (None,) * (X.ndim - 1)]
     sw = seam.astype(float)
-    for _ in range(3):
+    for _ in range(5):
         sw = np.maximum(sw, navgA(sw))
-    for _ in range(2):
+    for _ in range(3):
         sw = 0.5 * sw + 0.5 * navgA(sw)
     sw[P2[:, 2] > z_lw + 0.01 * ST] = 0.0
-    for _ in range(4):
+    for _ in range(6):
         for lam in (0.45, -0.47):
             P2 = P2 + lam * sw[:, None] * (navgA(P2) - P2)
     say("waist down: stitches blended over %d points" % int((sw > 0.05).sum()))
     # under her, from the point of the V in front to the bottom of the cleft
     # behind: one smooth, closed, shaded surface with no anatomical detail
-    zc_lo, zc_hi = z0 + 0.47 * ST, z0 + 0.59 * ST
+    zc_lo, zc_hi = z0 + 0.50 * ST, z0 + 0.62 * ST
     cw_ = np.clip(1 - np.abs(P2[:, 0] - cxh) / (0.03 * ST), 0, 1) * np.clip(np.minimum((P2[:, 2] - zc_lo) / (0.02 * ST), (zc_hi - P2[:, 2]) / (0.02 * ST)), 0, 1)
     under_ = cw_ * np.clip((P2[:, 1] - (ymid - 0.03 * ST)) / (0.02 * ST), 0, 1)   # the underside and the back, not the front of the pelvis
     for _ in range(8):                                          # shape-keeping smoothing: her outline does not move
@@ -1598,7 +1635,7 @@ try:
             P2 = P2 + lam * (0.7 * under_)[:, None] * (navgA(P2) - P2)
     # her V in front: two soft creases from the hips meeting just above where
     # the thighs part, pressed gently into the front of the pelvis
-    apexV = np.array([cxh, z0 + 0.52 * ST]); topL = np.array([cxh - 0.052 * ST, z0 + 0.575 * ST]); topR = np.array([cxh + 0.052 * ST, z0 + 0.575 * ST])
+    apexV = np.array([cxh, z0 + 0.55 * ST]); topL = np.array([cxh - 0.04 * ST, z0 + 0.61 * ST]); topR = np.array([cxh + 0.04 * ST, z0 + 0.61 * ST])
     xz_ = P2[:, [0, 2]]
     def segd(a_, b_):
         ab = b_ - a_; t_ = np.clip(((xz_ - a_) @ ab) / (ab @ ab), 0, 1)
@@ -1632,6 +1669,32 @@ try:
     say("hip dips at %.3f of stature" % ((zdip - z0) / ST))
     say("belly: navel pressed on %d points (front centre y %.3f), tone lines on %d" % (int((dent * front_ > 0.003 * ST).sum()), cyb, int(((lineA + sideL) * front_ > 0.0008 * ST).sum())))
     P, BP = P2, BP2
+    badP = ~np.isfinite(P).all(1)
+    if badP.any():
+        say("broken points before the mesh: %d (their faces are left out)" % int(badP.sum()))
+        BP = [f for f in BP if not any(badP[v] for v in f)]
+        P = np.where(badP[:, None], 0.0, P)
+    # weld here (Blender's own weld stalled on this mesh): points on the same
+    # fine grid cell become one; faces that collapse are dropped
+    usedV = sorted({v for f in BP for v in f})
+    keyv = np.round(P[usedV] / (0.0004 * HH)).astype(np.int64)
+    _, inv_ = np.unique(keyv, axis=0, return_inverse=True); inv_ = inv_.ravel()
+    newP = np.zeros((inv_.max() + 1, 3)); cnt_ = np.zeros(inv_.max() + 1)
+    np.add.at(newP, inv_, P[usedV]); np.add.at(cnt_, inv_, 1); newP /= cnt_[:, None]
+    vmapw = dict(zip(usedV, inv_.tolist()))
+    nb_before = len(BP)
+    BPw = []
+    for f in BP:
+        g_ = [vmapw[v] for v in f]
+        g2 = [x for i_, x in enumerate(g_) if x != g_[i_ - 1]]
+        if len(g2) >= 3 and len(set(g2)) == len(g2):
+            BPw.append(tuple(g2))
+    BPw = list(dict.fromkeys(tuple(f) for f in BPw))
+    say("weld: %d points -> %d, %d faces -> %d" % (len(usedV), len(newP), nb_before, len(BPw)))
+    cvf = np.zeros(len(P), bool); cvf[:len(cran_v)] = cran_v[:len(P)]
+    cran_new = np.zeros(len(newP), bool); cran_new[inv_[cvf[usedV]]] = True
+    cran_v = cran_new
+    P, BP = newP, BPw
     tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
     for p_ in tmp.polygons:
         p_.use_smooth = True
@@ -1690,13 +1753,42 @@ try:
         # last: weld points that sit on top of each other and close tiny cracks
         bmw = bmesh.new(); bmw.from_mesh(tmp)
         nvb = len(bmw.verts)
-        bmesh.ops.remove_doubles(bmw, verts=bmw.verts[:], dist=0.0004 * HH)
-        bmw.edges.ensure_lookup_table()
-        holes_ = bmesh.ops.holes_fill(bmw, edges=[e for e in bmw.edges if e.is_boundary], sides=10)
+        nbad = 0
+        for v_ in bmw.verts:
+            if not all(math.isfinite(c_) for c_ in v_.co):
+                v_.co = (0.0, 0.0, z0); nbad += 1
+        if nbad:
+            say("clean-up: %d broken points found" % nbad)
+        say("clean-up: closing tiny cracks")
+        # tiny cracks only (3 to 8 edges), found by walking the open edges:
+        # bounded work, unlike the general hole filler that stalled here
+        bmw.verts.ensure_lookup_table(); bmw.edges.ensure_lookup_table()
+        bnb = {}
+        for e in bmw.edges:
+            if e.is_boundary:
+                a_, b_ = e.verts
+                bnb.setdefault(a_.index, []).append(b_.index); bnb.setdefault(b_.index, []).append(a_.index)
+        seen = set(); nclosed = 0
+        for v0 in list(bnb.keys()):
+            if v0 in seen or len(bnb[v0]) != 2:
+                continue
+            loop = [v0]; prev = v0; cur = bnb[v0][0]; ok_ = True
+            while cur != v0:
+                if len(bnb.get(cur, ())) != 2 or len(loop) > 8:
+                    ok_ = False; break
+                loop.append(cur)
+                nx = bnb[cur][0] if bnb[cur][0] != prev else bnb[cur][1]
+                prev, cur = cur, nx
+            seen.update(loop)
+            if ok_ and 3 <= len(loop) <= 8:
+                try:
+                    bmw.faces.new([bmw.verts[i] for i in loop]); nclosed += 1
+                except Exception:
+                    pass
         bmw.to_mesh(tmp); bmw.free(); tmp.update()
         for p_ in tmp.polygons:
             p_.use_smooth = True
-        say("clean-up: %d points welded, %d tiny cracks closed" % (nvb - len(tmp.vertices), len(holes_.get("faces", []))))
+        say("clean-up: %d points welded, %d tiny cracks closed" % (nvb - len(tmp.vertices), nclosed))
     except Exception as e:
         say("colour failed", e)
     # ---- measurements: the same cross-sections the fit used
