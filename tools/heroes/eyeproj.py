@@ -314,6 +314,11 @@ def build_face_patch(ob, say=print, win=None, smooth=True, overlap=False):
         pass
     for m in me.materials:
         pm.materials.append(m)
+    try:
+        _ra = pm.attributes.new("rebuilt", "FLOAT", "POINT")
+        _ra.data.foreach_set("value", np.ones(len(pm.vertices), dtype=np.float32))
+    except Exception:
+        pass
     po = bpy.data.objects.new("face_patch", pm)
     bpy.context.scene.collection.objects.link(po)
     po.matrix_world = ob.matrix_world.copy()
@@ -325,7 +330,7 @@ def build_face_patch(ob, say=print, win=None, smooth=True, overlap=False):
     return len(faces)
 
 
-EYE_WINS = ((1344, 1690, 598, 872), (1344, 1400, 330, 598), (1344, 1764, 514, 600))     # her right eye and temple, rebuilt as a mirror of the left
+EYE_WINS = ((1344, 1690, 598, 872), (1344, 1400, 330, 598), (1344, 1706, 514, 600))     # her right eye and temple, rebuilt as a mirror of the left
 
 
 def clear_right_eye(ob, say=print):
@@ -626,7 +631,12 @@ def project_bake(ob, base_img, base_uv_name, say=print, src_from_world=None, fix
     m2 = nt.nodes.new("ShaderNodeMath"); m2.operation = "MULTIPLY"
     nt.links.new(m1.outputs[0], m2.inputs[0]); nt.links.new(dep.outputs["Fac"], m2.inputs[1])
     mix = nt.nodes.new("ShaderNodeMix"); mix.data_type = "RGBA"
-    nt.links.new(m2.outputs[0], mix.inputs["Factor"]); nt.links.new(tb.outputs["Color"], mix.inputs[6]); nt.links.new(tf.outputs["Color"], mix.inputs[7])
+    rb = nt.nodes.new("ShaderNodeAttribute"); rb.attribute_name = "rebuilt"
+    rbi = nt.nodes.new("ShaderNodeMath"); rbi.operation = "SUBTRACT"; rbi.inputs[0].default_value = 1.0; rbi.use_clamp = True
+    nt.links.new(rb.outputs["Fac"], rbi.inputs[1])
+    m3 = nt.nodes.new("ShaderNodeMath"); m3.operation = "MULTIPLY"
+    nt.links.new(m2.outputs[0], m3.inputs[0]); nt.links.new(rbi.outputs[0], m3.inputs[1])
+    nt.links.new(m3.outputs[0], mix.inputs["Factor"]); nt.links.new(tb.outputs["Color"], mix.inputs[6]); nt.links.new(tf.outputs["Color"], mix.inputs[7])
     em = nt.nodes.new("ShaderNodeEmission"); nt.links.new(mix.outputs[2], em.inputs["Color"])
     nt.links.new(em.outputs[0], out.inputs["Surface"])
     W, H = base_img.size
@@ -683,7 +693,7 @@ def satin(materials, say=print):
 # ---------------------------------------------------------------------------
 # New fringe: the sculpted front slab is removed and replaced by tapered
 # strands, side-swept ("swept") or hanging over her right eye ("over").
-FR_WIN = (1300, 1810, 232, 830)          # where the old fringe slab is removed
+FR_WIN = (1300, 1810, 196, 830)          # where the old fringe slab is removed
 
 
 def _px_world(cam, px, py):
@@ -709,6 +719,13 @@ def remove_fringe(ob, say=print, ymax=None):
     inwin = (g.pxu > FR_WIN[0]) & (g.pxu < FR_WIN[1]) & (g.pxv > FR_WIN[2]) & (g.pxv < FR_WIN[3]) & (g.wco[:, 1] < g.depth_lim) & ~other
     if ymax is not None:
         inwin &= g.pxv < ymax
+    try:
+        _rb = np.zeros(len(me.vertices), dtype=np.float32)
+        if "rebuilt" in me.attributes:
+            me.attributes["rebuilt"].data.foreach_get("value", _rb)
+        inwin &= _rb < 0.5
+    except Exception:
+        pass
     slab = np.zeros(len(g.co), dtype=bool)
     for i in np.where(inwin)[0]:
         y = g.wco[i, 1]
@@ -786,6 +803,7 @@ def _fh_region(px, py):
     mx = np.where(left, 2 * PART_X - px, px)
     my = np.where(left, py + EYE_DROP, py)
     r = (mx > FH_X0) & (mx <= PART_X + 0.5) & (my > FH_Y0) & (my < FH_Y1)
+    r |= (mx > 1714) & (mx <= PART_X + 0.5) & (my >= FH_Y1 - 4) & (my < 622)       # nose bridge between the brows
     r &= ~((mx < 1494) & (my < 324))                     # corner under the hat brim
     return r
 
@@ -815,7 +833,7 @@ def rebuild_forehead(ob, say=print):
         return np.stack([u ** i * v ** j for i in range(4) for j in range(5 - i)], -1)
     P = []; D = []
     for px in range(PART_X, 2146, 9):                    # her left forehead and the strip under it
-        for py in range(250, 548, 9):
+        for py in range(250, 548 if px > 1840 else 640, 9):
             h = depth(px, py)
             if h is not None:
                 P.append((px, py)); D.append(h)
@@ -836,7 +854,7 @@ def rebuild_forehead(ob, say=print):
         w = np.clip((PART_X - px) / 150.0, 0, 1)
         return w * (g.fit[0] + g.fit[1] * (wx - g.xmid) + g.fit[2] * wz)
     step = 6.0
-    xs = np.arange(FH_X0 - 22, FH_X1 + 24, step); ys = np.arange(FH_Y0 - 26, FH_Y1 + 30, step)
+    xs = np.arange(FH_X0 - 22, FH_X1 + 24, step); ys = np.arange(FH_Y0 - 26, 650, step)        # down past the nose bridge
     GX, GY = np.meshgrid(xs, ys)
     core = _fh_region(GX, GY)
     inside = core.copy()
@@ -921,6 +939,11 @@ def rebuild_forehead(ob, say=print):
         pm.shade_smooth()
         for m in ob.data.materials:
             pm.materials.append(m)
+        try:
+            _ra = pm.attributes.new("rebuilt", "FLOAT", "POINT")
+            _ra.data.foreach_set("value", np.ones(len(pm.vertices), dtype=np.float32))
+        except Exception:
+            pass
         po = bpy.data.objects.new("forehead_fill", pm)
         bpy.context.scene.collection.objects.link(po)
         po.matrix_world = ob.matrix_world.copy()
@@ -942,7 +965,7 @@ def add_backing(ob, say=print):
     g = _Geo(ob, cam, None)
     g.mirror_fit(lambda *a: None)
     step = 8.0
-    xs = np.arange(1282, 1430, step); ys = np.arange(296, 830, step)
+    xs = np.arange(1282, 1430, step); ys = np.arange(200, 830, step)
     GX, GY = np.meshgrid(xs, ys)
     D = np.full(GX.shape, np.nan)
     WX = np.zeros_like(GX); WZ = np.zeros_like(GX)
@@ -995,6 +1018,11 @@ def add_backing(ob, say=print):
     pm.shade_smooth()
     for m in me.materials:
         pm.materials.append(m)
+    try:
+        _ra = pm.attributes.new("rebuilt", "FLOAT", "POINT")
+        _ra.data.foreach_set("value", np.ones(len(pm.vertices), dtype=np.float32))
+    except Exception:
+        pass
     po = bpy.data.objects.new("backing", pm)
     bpy.context.scene.collection.objects.link(po)
     po.matrix_world = ob.matrix_world.copy()
@@ -1021,19 +1049,13 @@ def _fringe_paths(mode):
         E1 = A([(1690, 224), (1576, 252), (1476, 316), (1412, 436), (1388, 586), (1378, 722)])
         out += _bundle(E0, E1, 20, rng, 0, 54, clump=4, s0=0.04, s1=0.96)
         out += _bundle(E0, E1, 32, rng, 1, 40, clump=6, tip=(0.66, 1.0))
-    else:  # middle part, curtain bangs framing both sides
-        E0 = A([(1762, 238), (1746, 262), (1704, 296), (1630, 330), (1540, 372), (1460, 440), (1404, 540), (1378, 650), (1368, 810)])
-        E1 = A([(1760, 230), (1690, 236), (1600, 248), (1504, 278), (1430, 340), (1386, 440), (1360, 560), (1348, 680), (1344, 810)])
-        # short crown strands fanning out from the part, so the parting reads as full hair
-        C0 = A([(1763, 234), (1748, 262), (1722, 298), (1688, 328), (1650, 350)])
-        C1 = A([(1761, 226), (1728, 238), (1680, 256), (1626, 280), (1574, 306)])
+    else:  # middle part, curtain bangs framing both sides; roots start up in her hair
+        E0 = A([(1764, 168), (1762, 214), (1748, 256), (1706, 294), (1630, 330), (1540, 372), (1460, 440), (1404, 540), (1378, 650), (1368, 810)])
+        E1 = A([(1730, 150), (1700, 186), (1650, 216), (1590, 240), (1504, 276), (1430, 340), (1386, 440), (1360, 560), (1348, 680), (1344, 810)])
         for side in (0, 1):
             e0, e1 = (E0, E1) if side == 0 else (_mir(E0), _mir(E1))
-            c0, c1 = (C0, C1) if side == 0 else (_mir(C0), _mir(C1))
-            out += _bundle(e0, e1, 10, rng, 0, 46, clump=4, s0=0.04, s1=0.96)
-            out += _bundle(c0, c1, 8, rng, 0, 44, clump=4, N=24)
-            out += _bundle(e0, e1, 18, rng, 1, 34, clump=5)
-            out += _bundle(c0, c1, 10, rng, 1, 34, clump=5, N=24)
+            out += _bundle(e0, e1, 12, rng, 0, 46, clump=4, s0=0.03, s1=0.97, N=52)
+            out += _bundle(e0, e1, 22, rng, 1, 34, clump=5, N=52)
     return out
 
 
@@ -1068,12 +1090,12 @@ def add_fringe(ob, mode, say=print):
         P[:, 1] = np.minimum(yy, P[:, 1])
         t = idx / (n - 1)
         # root tucked into her hair, a little volume, tips resting close to the skin
-        rise = np.clip(t / 0.14, 0, 1) ** 0.6
-        lift = (0.0030 if layer else 0.0019) * rise * (1 - t) ** 1.4 + (0.0007 if layer else 0.00045)
-        lift = lift * hgt - (1 - rise) * 0.0012 * hgt
+        rise = np.clip(t / 0.2, 0, 1) ** 0.8
+        lift = (0.0030 if layer else 0.0019) * rise * (1 - t) ** 1.4 + (0.0011 if layer else 0.0008)
+        lift = lift * hgt - (1 - rise) * 0.0018 * hgt
         P[:, 1] -= lift
-        width = (wd * px) * np.clip((1 - t ** 1.7) ** 0.75, 0.05, 1) * (0.3 + 0.7 * rise)
-        thick = width * 0.28 + 0.00025 * hgt
+        width = (wd * px) * np.clip((1 - t ** 1.7) ** 0.75, 0.05, 1) * (0.12 + 0.88 * rise)
+        thick = width * 0.2 + 0.0002 * hgt
         T = np.gradient(P, axis=0); T /= np.maximum(np.linalg.norm(T, axis=1, keepdims=True), 1e-12)
         N0 = np.array([0.0, -1.0, 0.0])
         base = len(V)

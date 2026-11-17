@@ -46,13 +46,15 @@ try:
         bpy.context.view_layer.update()
         eyeproj.clear_right_eye(ob, say)
         bpy.context.view_layer.update()
-        eyeproj.build_face_patch(ob, say, win=[(1330, 1716, 584, 900), (1330, 1412, 318, 600), (1330, 1767, 500, 606)], smooth=False, overlap=True)
+        eyeproj.build_face_patch(ob, say, win=[(1330, 1716, 584, 900), (1330, 1412, 318, 600), (1330, 1710, 500, 606)], smooth=False, overlap=True)
         bpy.context.view_layer.update()
         if add_forehead:
             add_forehead()
         eyeproj.remove_fringe(ob, say, ymax=590)        # leftovers that only now have face behind them
         bpy.context.view_layer.update()
         eyeproj.add_backing(ob, say)
+        bpy.context.view_layer.update()
+        eyeproj.remove_fringe(ob, say, ymax=340)        # old pieces under the hat brim, now in front of the backing
         bpy.context.view_layer.update()
         eyeproj.add_fringe(ob, FRINGE, say)
     else:

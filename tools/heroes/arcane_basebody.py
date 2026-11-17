@@ -264,8 +264,8 @@ try:
     say("overall scale", round(G, 4))
     for sd, sgn in ((".L", +1), (".R", -1)):
         sh = TJ["armU" + sd][0]
-        L1 = np.linalg.norm(BJ["armU" + sd][1] - BJ["armU" + sd][0]) * G
-        L2 = np.linalg.norm(BJ["armL" + sd][1] - BJ["armL" + sd][0]) * G
+        LA = np.linalg.norm(BJ["armU" + sd][1] - BJ["armU" + sd][0]) * G
+        LB = np.linalg.norm(BJ["armL" + sd][1] - BJ["armL" + sd][0]) * G
         Lh = np.linalg.norm(BJ["hand" + sd][1] - BJ["hand" + sd][0]) * G
         hm = (SP[:, 2] > z0 + 0.4 * HH) & ((SP[:, 0] - cxb) * sgn > 0.17 * HH)
         if hm.sum() > 30:
@@ -277,11 +277,11 @@ try:
         wr = hc - u_ * 0.4 * Lh
         for _ in range(2):
             dv_ = wr - sh; d_ = np.linalg.norm(dv_)
-            if d_ >= 0.98 * (L1 + L2):
-                el = sh + dv_ * (L1 / (L1 + L2))
+            if d_ >= 0.98 * (LA + LB):
+                el = sh + dv_ * (LA / (LA + LB))
             else:
-                a_ = (L1 * L1 - L2 * L2 + d_ * d_) / (2 * d_)
-                hgt_ = math.sqrt(max(L1 * L1 - a_ * a_, 0.0))
+                a_ = (LA * LA - LB * LB + d_ * d_) / (2 * d_)
+                hgt_ = math.sqrt(max(LA * LA - a_ * a_, 0.0))
                 bend = np.array([0.0, 0.35, -1.0]); bend = bend - dv_ * (bend @ dv_) / (d_ * d_); bend /= max(np.linalg.norm(bend), 1e-9)
                 el = sh + dv_ * (a_ / d_) + bend * hgt_
             u_ = (hc - el) / max(np.linalg.norm(hc - el), 1e-9)
@@ -306,70 +306,115 @@ try:
         Pn += Wt[:, SI[s], None] * (h1 + (BV - h0) @ M.T)
         say("segment", s, "length x", round(sL, 3), "girth x", round(sR, 3), "turn deg", round(math.degrees(math.acos(np.clip(np.dot(d0, d1) / (L0 * L1), -1, 1))), 1))
 
-    # ------------------------------------------------------------ E. pull onto her
-    tmp = bpy.data.meshes.new("Arcanist_BaseForm")
-    tmp.from_pydata([tuple(p) for p in Pn], [], BP)
-    tmp.update()
-
-    def normals(P):
-        tmp.vertices.foreach_set("co", P.astype(np.float32).ravel())
-        tmp.update()
-        n = np.empty(len(P) * 3, dtype=np.float32)
-        tmp.vertices.foreach_get("normal", n)
-        return n.reshape(-1, 3).astype(np.float64)
-    #            rin    rout   cloth-out (0 = ignore clothing)
-    PAR = {"hips": (0.04, 0.08, 0.045), "spine": (0.04, 0.07, 0.045), "chest": (0.04, 0.10, 0.05), "neck": (0.02, 0.03, 0.0),
-           "head": (0.03, 0.04, 0.0), "armU": (0.015, 0.035, 0.0), "armL": (0.015, 0.03, 0.0), "hand": None,
-           "legU": (0.035, 0.08, 0.03), "legL": (0.025, 0.045, 0.03), "foot": (0.02, 0.03, 0.03)}
-    segname = [SEG[i].split(".")[0] for i in lab]
-    THICK = 0.004 * HH
-
-    def first(tree, o, n, maxd, okidx=None):
-        org = Vector(o); nv = Vector(n); done = 0.0
-        for _ in range(5):
-            hit, hn, idx, dist = tree.ray_cast(org, nv, maxd - done)
-            if hit is None:
-                return None
-            done += dist
-            if hn.dot(nv) > 0.2 and (okidx is None or okidx[idx]):
-                return done
-            org = hit + nv * 1e-5; done += 1e-5
-        return None
-    P = Pn.copy()
-    for it in range(3):
-        N = normals(P)
-        sk = np.zeros(len(P)); w = np.zeros(len(P)); cnt = [0, 0]
-        for i in range(len(P)):
-            par = PAR[segname[i]]
-            if par is None:
-                continue
-            rin, rout, rc = (x * HH for x in par)
-            o = P[i] - N[i] * rin
-            t = first(btree, o, N[i], rin + rout, skinf)
-            if t is not None:
-                sk[i] = t - rin; w[i] = 4.0; cnt[0] += 1
-                continue
-            if rc > 0:
-                if N[i][1] > 0.3:
-                    rc = min(rc, 0.02 * HH)          # her back: the cape hangs away from the body
-                t = first(ctree, o, N[i], rin + rc)
-                if t is not None:
-                    sk[i] = t - rin - THICK; w[i] = 0.8; cnt[1] += 1
-        s = np.zeros(len(P))
-        for _ in range(300):
-            s = (w * sk + navg(s)) / (w + 1.0)
-        P = P + N * s[:, None]
-        say("pass", it + 1, "skin hits", cnt[0], "cloth hits", cnt[1], "of", len(P), "| mean move", round(float(np.abs(s).mean()) / HH, 4))
-    # keep the torso smooth and featureless
-    tw = Wt[:, [SI["hips"], SI["spine"], SI["chest"]]].sum(1)[:, None]
-    for _ in range(4):
-        P = P + 0.5 * tw * (navg(P) - P)
-    for _ in range(2):
-        P = P + 0.3 * (navg(P) - P)
-    tmp.vertices.foreach_set("co", P.astype(np.float32).ravel())
-    tmp.update()
+    # ------------------------------------------------------------ E. her shape, without the clothing
+    # Her visible skin and the clothing that sits tight on her body (corset,
+    # bodysuit, boots, fitted sleeves) already have her exact shape. Loose
+    # cloth (cape, skirt panels, hanging sleeves), the hat, staff and orb are
+    # left out. A slimmed copy of the posed mannequin fills only what is
+    # hidden (her back under the cape, the scalp under the hair). Both are
+    # fused into one closed shell with a voxel remesh and smoothed to clay.
+    def seg_dist(Q, s):
+        h, t = TJ[s]; d = t - h; L2_ = float(d @ d)
+        u = np.clip(((Q - h) @ d) / L2_, 0.0, 1.0)
+        return np.linalg.norm(Q - (h + u[:, None] * d), axis=1)
+    body_segs = [s for s in SEG if s.split(".")[0] not in ("hand",)]
+    BWv = wverts(bodyo); Bpol = polys(bodyo)
+    bcen = np.array([BWv[list(p)].mean(0) for p in Bpol])
+    skc = bcen[skinf]
+    Dsk = np.stack([seg_dist(skc, s) for s in body_segs], 1)
+    nsk = Dsk.argmin(1); dsk = Dsk.min(1)
+    Rs = {}
+    for j, s in enumerate(body_segs):
+        dd = dsk[nsk == j]
+        Rs[s] = float(np.percentile(dd, 88)) if len(dd) > 60 else None
+    # fall back to the posed mannequin's own radius where little skin shows
+    for j, s in enumerate(body_segs):
+        dm = seg_dist(Pn[lab == SI[s]], s) if (lab == SI[s]).any() else np.array([0.05 * HH])
+        mr = float(np.percentile(dm, 75)) * 1.25
+        Rs[s] = max(Rs[s] or 0.0, mr) if Rs[s] is None else max(Rs[s], 0.7 * mr)
+    say("radius by segment (% of height):", {s: round(Rs[s] / HH * 100, 1) for s in body_segs})
+    keep_v = []; keep_f = []; nk = 0
+    def add_faces(V_, F_):
+        base_ = len(keep_v)
+        keep_v.extend(V_.tolist()); keep_f.extend([tuple(i + base_ for i in f) for f in F_])
+    # skin faces
+    used = sorted({i for p, sk in zip(Bpol, skinf) if sk for i in p})
+    remap = {v: k for k, v in enumerate(used)}
+    add_faces(BWv[used], [tuple(remap[i] for i in p) for p, sk in zip(Bpol, skinf) if sk])
+    tally = {}
+    for k_, o in lay.items():
+        if not o or k_ not in ("Robe", "Armor"):
+            continue
+        V_ = wverts(o); F_ = polys(o)
+        cen = np.array([V_[list(p)].mean(0) for p in F_])
+        Dc = np.stack([seg_dist(cen, s) for s in body_segs], 1)
+        j = Dc.argmin(1); d = Dc.min(1)
+        lim = np.array([1.12 * Rs[body_segs[q]] + 0.006 * HH for q in j])
+        hand_d = np.minimum(seg_dist(cen, "hand.L"), seg_dist(cen, "hand.R"))
+        ok = (d <= lim) & (hand_d > 0.03 * HH)
+        sel = [f for f, o_ in zip(F_, ok) if o_]
+        tally[k_] = (int(ok.sum()), len(F_))
+        used = sorted({i for p in sel for i in p}); remap = {v: k for k, v in enumerate(used)}
+        if used:
+            add_faces(V_[used], [tuple(remap[i] for i in p) for p in sel])
+    say("kept as body shape: skin", int(skinf.sum()), "faces; tight clothing", tally)
+    tight = bpy.data.meshes.new("tight"); tight.from_pydata(keep_v, [], keep_f); tight.update()
+    to = bpy.data.objects.new("tight", tight); sc.collection.objects.link(to)
+    so_ = to.modifiers.new("solid", "SOLIDIFY"); so_.thickness = 0.007 * HH; so_.offset = 0.0
+    # slimmed mannequin as the filler
+    Vbar = np.zeros_like(Pn)
+    for s in SEG:
+        w_ = Wt[:, SI[s]]
+        h, t = TJ[s]; d = t - h; L2_ = float(d @ d)
+        u = np.clip(((Pn - h) @ d) / L2_, 0.0, 1.0)
+        Vbar += w_[:, None] * (Pn - (h + u[:, None] * d))
+    hand_w = Wt[:, [SI["hand.L"], SI["hand.R"]]].sum(1)
+    P = Pn - (0.14 * (1 - hand_w))[:, None] * Vbar
+    tmp = bpy.data.meshes.new("filler"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
+    fo = bpy.data.objects.new("filler", tmp); sc.collection.objects.link(fo)
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = to; to.select_set(True)
+    bpy.ops.object.modifier_apply(modifier=so_.name)
+    fo.select_set(True)
+    bpy.ops.object.join()
+    bo = bpy.context.view_layer.objects.active
+    rm = bo.modifiers.new("remesh", "REMESH"); rm.mode = "VOXEL"; rm.voxel_size = 0.0032 * HH; rm.adaptivity = 0.0
+    bpy.ops.object.modifier_apply(modifier=rm.name)
+    say("fused shell faces", len(bo.data.polygons))
+    sm = bo.modifiers.new("smooth", "SMOOTH"); sm.factor = 0.8; sm.iterations = 10
+    bpy.ops.object.modifier_apply(modifier=sm.name)
+    dc = bo.modifiers.new("dec", "DECIMATE"); dc.ratio = min(1.0, 120000 / max(1, len(bo.data.polygons)))
+    bpy.ops.object.modifier_apply(modifier=dc.name)
+    tmp = bo.data; tmp.name = "Arcanist_BaseForm"
     for p_ in tmp.polygons:
         p_.use_smooth = True
+    say("base form faces", len(tmp.polygons))
+    # ---- measurements: girth of her (skin and tight clothing) vs the new base, slice by slice
+    PB = wverts(bo); btree2 = BVHTree.FromPolygons([tuple(p) for p in PB], polys(bo))
+    ttree = BVHTree.FromPolygons([tuple(v) for v in keep_v], keep_f)
+
+    def girth(tree, s, frac, n=72):
+        h, t = TJ[s]; d = t - h; d = d / np.linalg.norm(d)
+        c = h + frac * (t - h)
+        e1 = np.cross(d, [0, 1, 0]); e1 /= max(np.linalg.norm(e1), 1e-9); e2 = np.cross(d, e1)
+        pts = []
+        for a_ in np.linspace(0, 2 * math.pi, n, endpoint=False):
+            v = math.cos(a_) * e1 + math.sin(a_) * e2
+            hit = tree.ray_cast(Vector(c), Vector(v), 2.5 * Rs[s])
+            if hit[0] is not None:
+                pts.append(np.array(hit[0]))
+        if len(pts) < 0.6 * n:
+            return None, len(pts)
+        pts = np.array(pts)
+        return float(np.linalg.norm(np.roll(pts, -1, 0) - pts, axis=1).sum()), len(pts)
+    say("measurements (girth, % of her height): her skin + tight clothing vs base form")
+    for nm_, s, fr in (("chest", "chest", 0.35), ("under chest", "chest", 0.05), ("waist", "spine", 0.45), ("hips", "hips", 0.2),
+                       ("thigh L", "legU.L", 0.2), ("thigh R", "legU.R", 0.2), ("knee L", "legU.L", 0.95), ("calf L", "legL.L", 0.35),
+                       ("calf R", "legL.R", 0.35), ("upper arm L", "armU.L", 0.5), ("upper arm R", "armU.R", 0.5), ("neck", "neck", 0.4)):
+        gh, nh = girth(ttree, s, fr); gb, nb_ = girth(btree2, s, fr)
+        say("  %-12s her %6s (%2d rays)  base %6s  %s" % (nm_, "-" if gh is None else "%.1f" % (gh / HH * 100), nh,
+            "-" if gb is None else "%.1f" % (gb / HH * 100), "" if (gh is None or gb is None) else "diff %+.1f%%" % ((gb - gh) / gh * 100)))
+    bpy.data.objects.remove(bo, do_unlink=True)
     # ------------------------------------------------------------ F. into the layered file
     old = bpy.data.objects.get("Arcanist_BaseForm")
     if old:
@@ -382,8 +427,7 @@ try:
     clay = bpy.data.materials.new("Arcanist_Clay"); clay.use_nodes = True
     bs = next(n for n in clay.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
     bs.inputs["Base Color"].default_value = (0.62, 0.6, 0.58, 1); bs.inputs["Roughness"].default_value = 0.7
-    tmp.materials.append(clay)
-    sub = bf.modifiers.new("Smooth", "SUBSURF"); sub.levels = 1; sub.render_levels = 2
+    tmp.materials.clear(); tmp.materials.append(clay)
     # ------------------------------------------------------------ G. check renders
     for eng in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"):
         try:
@@ -399,10 +443,11 @@ try:
     sc.render.resolution_x, sc.render.resolution_y = 700, 1000
     ctr = Vector((0.5 * (allP[:, 0].min() + allP[:, 0].max()), 0.5 * (allP[:, 1].min() + allP[:, 1].max()), z0 + 0.5 * HH))
     sets = (("base", ("Base Form",)), ("base_body", ("Base Form", "Body")), ("all", ("Body", "Robe", "Armor", "Hat")))
+    say("renders: base_<set>_<view>.png, views 0 front, 1 three-quarter, 2 side, 3 back")
     for tag, show in sets:
         for c in sc.collection.children:
             c.hide_render = c.name not in show
-        for k, ang in enumerate((-90, -50, 0, 90)):
+        for k, ang in enumerate((-90, -50, 0, 90)):  # front, 3/4, side, back
             a = math.radians(ang)
             cam.location = ctr + Vector((math.cos(a), math.sin(a), 0)) * HH * 3
             cam.rotation_euler = (ctr - cam.location).to_track_quat("-Z", "Y").to_euler()

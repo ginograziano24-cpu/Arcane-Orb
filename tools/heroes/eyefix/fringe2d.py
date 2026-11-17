@@ -53,6 +53,27 @@ bc=src*0.88
 B=B*(1-bw[...,None])+bc*bw[...,None]; m2=np.maximum(m2,bw)
 bwm=bw[np.clip(ys-8,0,H_-1),np.clip(2*1767-xs,0,W_-1)]; bcm=bc[np.clip(ys-8,0,H_-1),np.clip(2*1767-xs,0,W_-1)]
 B=B*(1-bwm[...,None])+bcm*bwm[...,None]; m2=np.maximum(m2,bwm)
+# clear the dark smudges under both eyes (keep the lower lid line and lower lashes)
+qB=np.polyfit([93,-3,-107],[7,26,23],2)
+for (ex,ey,f) in ((1530,698,-1),(2004,690,1)):
+    u=f*(xx-ex); lid=ey+np.polyval(qB,np.clip(u,-112,124))
+    inx=(u>-118)&(u<128)
+    d=yy-lid
+    band=inx&(d>2.0)&(d<36)
+    refm=inx&(d>34)&(d<54)
+    lum=B.mean(2)
+    # skin colour per column, from just below the band, smoothed
+    num=ndimage.gaussian_filter(B*refm[...,None],(0,10,0)); den=ndimage.gaussian_filter(refm.astype(np.float32),(0,10))
+    colref=np.zeros_like(B)
+    for c in range(3):
+        sm=num[...,c].sum(0)/np.maximum(den.sum(0),1e-6)
+        colref[...,c]=sm[None,:]
+    rlum=colref.mean(2)
+    dark=np.clip((rlum-lum)/0.08,0,1)*(lum>0.24)
+    fade=np.clip((d-2.0)/4.0,0,1)*np.clip((36-d)/16.0,0,1)
+    w=np.clip(ndimage.gaussian_filter(dark*band*fade,1.2)*1.4,0,1)*band
+    B=B*(1-w[...,None])+colref*w[...,None]
+    m2=np.maximum(m2,np.clip(ndimage.gaussian_filter(band.astype(np.float32),2)*1.5,0,1))
 # beauty mark just under her right eye (where the stray speck was)
 bmx,bmy=1446,792
 rr=np.sqrt((xx-bmx)**2+((yy-bmy)*1.08)**2)
