@@ -31,4 +31,36 @@ for o in sc.objects:
     o.select_set(True)
 bpy.ops.export_scene.gltf(filepath=OUT, export_format="GLB", use_selection=True, export_image_format="JPEG", export_jpeg_quality=95)
 say("wrote", OUT)
+# close-up check render of her face with the fixed texture (flat colour)
+import json, math
+cam = json.load(open(os.path.join(eyeproj.L2, "eyes_cam.json")))
+mat_ = ob.data.materials[0]
+nt_ = mat_.node_tree
+outn = next(n for n in nt_.nodes if n.type == "OUTPUT_MATERIAL")
+em = nt_.nodes.new("ShaderNodeEmission")
+nt_.links.new(texn.outputs["Color"], em.inputs["Color"])
+nt_.links.new(em.outputs[0], outn.inputs["Surface"])
+cd = bpy.data.cameras.new("chk"); cd.type = "ORTHO"; cd.ortho_scale = cam["ortho_scale"]
+co_ = bpy.data.objects.new("chk", cd); sc.collection.objects.link(co_); sc.camera = co_
+co_.location = cam["loc"]; co_.rotation_euler = (math.pi / 2, 0, 0)
+for eng in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"):
+    try:
+        sc.render.engine = eng
+        break
+    except Exception:
+        pass
+try:
+    sc.view_settings.view_transform = "Standard"
+except Exception:
+    pass
+sc.render.resolution_x, sc.render.resolution_y = cam["res"]
+for ang, tag in ((0.0, "front"), (0.5, "turn")):
+    co_.location = cam["loc"]
+    if ang:
+        r_ = 0.5 * cam["hgt"]
+        cx, cy, cz = cam["loc"]
+        co_.location = (cx + math.sin(ang) * r_, cy + r_ - math.cos(ang) * r_, cz)
+        co_.rotation_euler = (math.pi / 2, 0, ang)
+    sc.render.filepath = os.path.join(eyeproj.L2, "check_%s.png" % tag)
+    bpy.ops.render.render(write_still=True)
 open(os.path.join(eyeproj.L2, "eyes_done.txt"), "w").write("ok")

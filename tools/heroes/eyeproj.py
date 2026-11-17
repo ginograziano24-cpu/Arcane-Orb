@@ -40,9 +40,9 @@ def project_bake(ob, base_img, base_uv_name, say=print, src_from_world=None):
     u = (wco[:, 0] - cx) / os_ + 0.5
     v = (wco[:, 2] - cz) / (os_ * ry / rx) + 0.5
     # the face's front: nearest skin to the camera inside the eye window
-    win = (u > 0.58) & (u < 0.92) & (v > 0.33) & (v < 0.56)    # around the eyes only
-    face_y = float(np.median(wco[win, 1])) if win.any() else float(cyy + 0.5 * hgt)
-    depth_lim = face_y + 0.03 * hgt
+    win = (u > 0.62) & (u < 0.86) & (v > 0.38) & (v < 0.5)     # eyes and nose bridge
+    face_y = float(np.percentile(wco[win, 1], 3)) if win.any() else float(cyy + 0.5 * hgt)
+    depth_lim = face_y + 0.045 * hgt
     say("eye projection: face front y", round(face_y, 4), "limit", round(depth_lim, 4))
     ok = (wco[:, 1] < depth_lim).astype(np.float32)
     at = me.color_attributes.new(name="eyeok", type="FLOAT_COLOR", domain="POINT")
