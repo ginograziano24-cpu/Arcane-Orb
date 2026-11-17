@@ -1192,12 +1192,20 @@ try:
         pinw = np.maximum(pinw, navg2(pinw))
     for _ in range(3):
         pinw = 0.5 * pinw + 0.5 * navg2(pinw)
-    P2 = P2 - (0.006 * ST * pinw * zone2)[:, None] * vnorm2(P2)
+    P2 = P2 - (0.003 * ST * pinw * zone2)[:, None] * vnorm2(P2)
     pidx = np.where(pin2)[0]
     kd = KDTree(len(pidx))
     for j_, i_ in enumerate(pidx):
         kd.insert(Vector(P2[i_]), j_)
     kd.balance()
+    # the edges of her skin patches are where the clothes were cut out, ragged
+    # in her mesh: keep only skin a little way in from them, so the base's
+    # smooth form takes over at the edge instead of a torn line
+    uidx = np.where((zone2 > 0.5) & ~pin2)[0]
+    kdu = KDTree(max(1, len(uidx)))
+    for j_, i_ in enumerate(uidx):
+        kdu.insert(Vector(P2[i_]), j_)
+    kdu.balance()
     BWa = np.asarray(BW)
     keepF = []
     for f, sk in zip(Bpol, skin_wide):
@@ -1207,7 +1215,7 @@ try:
         zc_ = (c_[2] - z0) / ST
         if zc_ < 0.15 or zc_ > 0.84:
             continue
-        if kd.find(Vector(c_))[2] < 0.012 * ST:
+        if kd.find(Vector(c_))[2] < 0.012 * ST and (len(uidx) == 0 or kdu.find(Vector(c_))[2] > 0.02 * ST):
             keepF.append(f)
     used = sorted({v for f in keepF for v in f})
     remap = {v: k_ + len(P2) for k_, v in enumerate(used)}
