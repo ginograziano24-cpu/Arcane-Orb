@@ -629,6 +629,9 @@ try:
     LOWK = [k for k in range(NK["torso"]) if US[int(round(KPOS["torso"][k]))] < 0.33]
     for k in LOWK:
         X["torso"][k] = min(X["torso"][k], legx)
+    HIGHK = [k for k in range(NK["torso"]) if US[int(round(KPOS["torso"][k]))] > 0.72]
+    for k in HIGHK:
+        X["torso"][k] = min(X["torso"][k], 0.0)
     for sd_ in (".L", ".R"):                                    # upper arms hidden in the sleeves: start from the forearm's scale
         if np.isfinite(TG["armU" + sd_]).sum() < 3:
             X["armU" + sd_][:] = min(float(np.median(X["armL" + sd_])), math.log(1.2))
@@ -749,6 +752,9 @@ try:
             legx = float(np.mean([np.median(X[x]) for x in ("legU.L", "legU.R")]))
             for k in LOWK:
                 row = np.zeros(len(PAR)); row[PI[("torso", k)]] = 1.0; PR.append(row[live]); pb.append(legx - X["torso"][k])
+            for k in HIGHK:                                     # shoulder-top knots held at the mannequin's size
+                if PI[("torso", k)] < len(live) and live[PI[("torso", k)]]:
+                    row = np.zeros(len(PAR)); row[PI[("torso", k)]] = 1.0; PR.append(row[live]); pb.append(0.0 - X["torso"][k])
             PR = np.array(PR).reshape(-1, int(live.sum())); pb = np.array(pb)
             A_ = np.vstack([J[:, live] * okr[:, None], math.sqrt(0.3) * D2[:, live], math.sqrt(0.05) * np.eye(int(live.sum())), 1.0 * PR])
             b_ = np.r_[r, np.zeros(len(D2)), np.zeros(int(live.sum())), pb]
@@ -756,6 +762,8 @@ try:
             full = np.zeros(len(PAR)); full[live] = dx
             for (s, k), j in PI.items():
                 X[s][k] = float(np.clip(X[s][k] + full[j], math.log(0.5), math.log(2.2)))
+                if s == "torso" and k in HIGHK:
+                    X[s][k] = min(X[s][k], 0.05)
             P = forward(X); g = girths(P)
     okr = np.isfinite(g)
     r = np.log(GT[okr] / g[okr])
@@ -811,6 +819,63 @@ try:
         say("using the vertex fit")
     else:
         say("using the knot fit")
+    # ---- final pass: wherever her bare skin can be seen just outside the base
+    # (thighs, hips, chest, arms), the base is pushed out onto it, outward
+    # only, and the push fades smoothly into the surface around
+    TRI_ = np.array([(f[0], f[i], f[i + 1]) for f in BP for i in range(1, len(f) - 1)], dtype=np.int64)
+    fn_ = np.cross(P[TRI_[:, 1]] - P[TRI_[:, 0]], P[TRI_[:, 2]] - P[TRI_[:, 0]])
+    vn_ = np.zeros_like(P)
+    for j in range(3):
+        np.add.at(vn_, TRI_[:, j], fn_)
+    vn_ /= np.maximum(np.linalg.norm(vn_, axis=1, keepdims=True), 1e-12)
+    if np.mean(np.einsum("ij,ij->i", vn_, P - P.mean(0))) < 0:
+        vn_ = -vn_
+    skin_tree = BVHTree.FromPolygons([tuple(p) for p in BW], [p for p, sk in zip(Bpol, skinf) if sk])
+    band = (P[:, 2] > z0 + 0.20 * ST) & (P[:, 2] < z0 + 0.80 * ST) & (keepw < 0.5)
+    disp = np.zeros(len(P)); pin = np.zeros(len(P), bool)
+    for i_ in np.where(band)[0]:
+        hit = skin_tree.ray_cast(Vector(P[i_]), Vector(vn_[i_]), 0.07 * ST)
+        if hit[0] is not None and hit[1].dot(Vector(vn_[i_])) > 0.5:
+            disp[i_] = hit[3]; pin[i_] = True
+    dfield = disp.copy()
+    for _ in range(80):
+        dfield = navg(dfield); dfield[pin] = disp[pin]
+    for _ in range(12):                                          # then soften it all, so patches of skin don't leave ridges
+        dfield = 0.5 * dfield + 0.5 * navg(dfield)
+    fade = np.clip(np.minimum((P[:, 2] - (z0 + 0.16 * ST)) / (0.04 * ST), ((z0 + 0.90 * ST) - P[:, 2]) / (0.04 * ST)), 0, 1) * (1 - keepw)
+    P = P + (dfield * fade)[:, None] * vn_
+    P = taubin(P, 2)
+    # the crotch: between the hip joints, below them, the base should be a plain smooth
+    # join of the two thighs, never a bump. Shrink-smooth that small region.
+    hipL, hipR = TJ["legU.L"][0], TJ["legU.R"][0]
+    cxh = 0.5 * (hipL[0] + hipR[0]); zh = 0.5 * (hipL[2] + hipR[2]); hwh = 0.5 * abs(hipL[0] - hipR[0])
+    cm = np.clip(1 - np.abs(P[:, 0] - cxh) / (0.9 * hwh), 0, 1) * np.clip(1 - np.abs(P[:, 2] - (zh - 0.05 * ST)) / (0.08 * ST), 0, 1)
+    cm = np.clip(cm * 2.0, 0, 1) * (1 - keepw)
+    # lift the bottom of the pelvis between the legs to where the inner thighs meet,
+    # so it reads as a smooth join, not a hanging lobe
+    zc = zh - 0.055 * ST
+    tw = Wt[:, [SI["hips"], SI["spine"]]].sum(1)
+    mid = np.clip(1 - np.abs(P[:, 0] - cxh) / (0.6 * hwh), 0, 1) ** 0.7 * np.clip(tw * 1.5, 0, 1) * (1 - keepw)
+    low = np.clip(zc - P[:, 2], 0, None)
+    P[:, 2] += mid * low
+    for _ in range(25):
+        P = P + 0.5 * cm[:, None] * (navg(P) - P)
+    say("crotch smoothing over %d vertices" % int((cm > 0.05).sum()))
+    # shoulders: nothing wider than her own shoulder line (her sleeves puff out, she doesn't)
+    shL, shR = TJ["armU.L"][0], TJ["armU.R"][0]
+    zsh = 0.5 * (shL[2] + shR[2]); cxs = 0.5 * (shL[0] + shR[0])
+    rsh = 0.060 * ST                                             # deltoid radius around the shoulder joint
+    for sh_ in (shL, shR):
+        d_ = P - sh_
+        dist = np.linalg.norm(d_, axis=1)
+        sgn_ = 1.0 if sh_[0] > cxs else -1.0
+        side_ = np.clip((sgn_ * d_[:, 0] + 0.6 * rsh) / (1.2 * rsh), 0, 1) * np.clip((d_[:, 2] + 1.6 * rsh) / (1.6 * rsh), 0, 1)
+        near_ = (dist < 2.2 * rsh) & (keepw < 0.5) * (side_ > 0)
+        over = np.clip(dist - rsh, 0, None)
+        wgt = np.clip(1 - (dist - rsh) / (1.2 * rsh), 0, 1) * near_ * side_
+        P = P - (wgt * over * 0.6)[:, None] * (d_ / np.maximum(dist, 1e-9)[:, None])
+    P = taubin(P, 3)
+    say("skin snap: %d of %d vertices pushed out onto her visible skin" % (int(pin.sum()), int(band.sum())))
     tmp = bpy.data.meshes.new("Arcanist_BaseForm"); tmp.from_pydata([tuple(p) for p in P], [], BP); tmp.update()
     for p_ in tmp.polygons:
         p_.use_smooth = True
