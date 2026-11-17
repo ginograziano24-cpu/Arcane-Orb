@@ -21,4 +21,4 @@ Image.fromarray((np.clip(mask,0,1)*255).astype(np.uint8)).save('eyes_mask.png')
 f=Image.open('eyes_fixed.png').convert('RGB'); o=Image.open('/tmp/eyes_front_v1.png').convert('RGB')
 f.crop((1330,480,2230,1220)).save('face.png')
 A=o.crop((1380,540,2200,800)); Bm=f.crop((1380,540,2200,800))
-cc=Image.new('RGB',(820,524),(30,30,30)); cc.paste(A,(0,0)); cc.paste(Bm,(0,264)); cc.resize((1640,1048),Image.LANCZOS).save('compare.png')
+
