@@ -1991,7 +1991,7 @@ func (L *Level) gainGold(n int, x, z float64, asCoin bool) {
 	if r.Cursed {
 		v *= 2
 	}
-	if L.hasOmen("gilded") || L.hasOmen("vault") {
+	if L.hasOmen("gilded") || L.hasOmen("vault") || L.hasOmen("hoard") {
 		v *= 2
 	}
 	v = max(v, 1)

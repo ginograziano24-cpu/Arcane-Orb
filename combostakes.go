@@ -15,6 +15,9 @@ var comboStakeAt = [...]int{25, 50, 100}
 // nextComboStake is the next milestone this chamber hasn't paid yet (0: all paid).
 func (L *Level) nextComboStake() int {
 	for _, m := range comboStakeAt {
+		if L.hasOmen("resonant") {
+			m /= 2 // 12, 25, 50
+		}
 		if m > L.comboPaid {
 			return m
 		}

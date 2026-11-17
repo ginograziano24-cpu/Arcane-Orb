@@ -67,6 +67,9 @@ var omens = []omen{
 			g.run.Gold += 40
 			return "+40 gold"
 		}},
+	// Tier 1 #3 (docs/ENJOYMENT_1_5X.md): twists that make a path a decision
+	{ID: "hoard", Name: "Dragon's Hoard", Desc: "Bricks have 60% more health but shed twice the gold.", Glyph: "coinstack", Col: rgba(255, 170, 70, 255)},
+	{ID: "resonant", Name: "Resonant", Desc: "Combo rewards come at half the hits: 12, 25 and 50.", Glyph: "chain", Col: rgba(200, 160, 255, 255)},
 	// added for ROADMAP-50 #28
 	{ID: "starlit", Name: "Starlit", Desc: "Lucky stars overhead: +15% critical chance in this chamber.", Glyph: "star", Col: rgba(255, 240, 170, 255)},
 	{ID: "critters", Name: "Critter Catcher", Desc: "Challenge: pop 3 critters to win 45 gold.", Glyph: "feather", Col: rgba(170, 255, 190, 255), Challenge: true,
@@ -177,10 +180,11 @@ func (g *Game) drawOmenTag(screen *ebiten.Image, L *Level, y float64) {
 func (L *Level) applyOmen(o *omen) {
 	L.omen = o
 	switch o.ID {
-	case "fortified":
+	case "fortified", "hoard":
+		f := omenHPScale(o.ID)
 		for _, b := range L.Bricks {
 			if b.Kind != levelgen.Steel && !b.BossPart {
-				b.MaxHP = math.Ceil(b.MaxHP * 1.4)
+				b.MaxHP = math.Ceil(b.MaxHP * f)
 				b.HP = b.MaxHP
 			}
 		}
@@ -191,4 +195,15 @@ func (L *Level) applyOmen(o *omen) {
 	if o.Setup != nil {
 		o.Setup(L)
 	}
+}
+
+// omenHPScale is how much tougher an omen makes the chamber's bricks.
+func omenHPScale(id string) float64 {
+	switch id {
+	case "fortified":
+		return 1.4
+	case "hoard":
+		return 1.6
+	}
+	return 1
 }

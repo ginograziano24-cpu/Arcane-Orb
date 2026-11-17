@@ -236,10 +236,10 @@ func (L *Level) nextWave() {
 		b.FallY = 6 + float64(b.R)*0.35
 	}
 	if o := L.omen; o != nil {
-		if o.ID == "fortified" {
+		if f := omenHPScale(o.ID); f > 1 {
 			for _, b := range L.Bricks {
 				if b.Kind != levelgen.Steel {
-					b.MaxHP = math.Ceil(b.MaxHP * 1.4)
+					b.MaxHP = math.Ceil(b.MaxHP * f)
 					b.HP = b.MaxHP
 				}
 			}
