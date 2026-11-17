@@ -377,8 +377,12 @@ try:
         o_ = np.array([cxt, head_y + 0.05 * depth, zs])
         h_ = itree.ray_cast(Vector(o_), Vector((sgn, 0, 0)), 0.4 * ST)
         hw[sgn] = h_[3] if h_[0] is not None and h_[3] > 0.05 * ST else 0.1 * ST
+    # her two sides read differently through the sleeves (a puffed sleeve
+    # widens one side): both shoulders take the narrower, so the base is
+    # symmetric and doesn't inherit the sleeve
+    hwm = min(hw[1], hw[-1])
     for sd, sgn in ((".L", +1), (".R", -1)):
-        TJ["armU" + sd] = [np.array([cxt + sgn * 0.8 * hw[sgn], Nk[1], zs]), None]
+        TJ["armU" + sd] = [np.array([cxt + sgn * 0.8 * hwm, Nk[1], zs]), None]
     say("shoulder half widths", round(hw[1] / ST, 3), round(hw[-1] / ST, 3))
     torso(TJ, TJ["legU.L"][0], TJ["legU.R"][0], TJ["armU.L"][0], TJ["armU.R"][0], Nk)
     TJ["neck"] = (Nk, Hd)
