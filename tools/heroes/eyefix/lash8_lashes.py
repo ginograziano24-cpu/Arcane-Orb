@@ -89,7 +89,7 @@ WHITE=np.percentile(_w[_w.max(1)>0.85],80,axis=0); IRISDK=samp(np.array([[0.0]])
 IRISRIM=samp(np.array([[-57.0]]),np.array([[0.0]]))[0,0]
 WHITE=np.clip(WHITE*1.06,0,1)
 print('rim',IRISRIM,'white',WHITE,'iris top',IRISDK)
-RI=59.0
+RI=59.0; IRIS_OUT=10.0
 def build(im, mask, cx, cy, f):
     x0,x1,y0,y1 = cx-210,cx+210,cy-175,cy+95
     sl=(slice(y0,y1),slice(x0,x1))
@@ -99,21 +99,23 @@ def build(im, mask, cx, cy, f):
     mx_=loc.max(2); st=(mx_-loc.min(2))/np.maximum(mx_,1e-3)
     if f<0: hair = Y < E(X)+2
     else:   hair = ndimage.binary_dilation(ndimage.binary_opening((st<0.16)&(mx_>0.4)&(u>138),iterations=2),iterations=3)
-    keep = 1-np.clip(ndimage.gaussian_filter(hair.astype(np.float32),1.0)*2,0,1) if f>0 else np.clip((Y-E(X)-1)/2.0,0,1)
+    keep = 1-np.clip(ndimage.gaussian_filter(hair.astype(np.float32),1.0)*2,0,1) if f>0 else np.ones_like(u)
     # 1) clean skin above the lid and around the outer corner
     zt=Uv-np.interp(u,[-128,-60,20,160],[58,76,92,92])
-    zone=((v<Uv+3)&(v>zt)&(u>-128)&(u<162))|((u>110)&(u<162)&(v<Bv+40)&(v>zt))
+    zone=((v<Uv+3)&(v>zt)&(u>-128)&(u<(162 if f>0 else 185)))|((u>110)&(u<(162 if f>0 else 185))&(v<Bv+40)&(v>zt))
     zone&=~((v>Bv-2)&(u<UMAX))
-    zone|=(u>74)&(u<162)&(v>Bv+1.5)&(v<Bv+30)
+    zone|=(u>74)&(u<(162 if f>0 else 185))&(v>Bv+1.5)&(v<Bv+30)
     full=np.zeros((H,W),bool); full[sl]=zone; badf=np.zeros((H,W),bool); badf[sl]=hair
     est=smooth_skin(im,full,badf)[sl]
     zw=np.clip(ndimage.gaussian_filter(zone.astype(np.float32),5)*1.5-0.25,0,1)
+    if f<0: zw=np.maximum(zw*(Y>E(X)), np.clip(ndimage.gaussian_filter(zone.astype(np.float32),11)*1.25-0.12,0,1))
     zw=np.maximum(zw,np.clip(ndimage.gaussian_filter((zone&(v>Uv-24)&(v<Uv+3)&(u>-112)&(u<UMAX+4)).astype(np.float32),1.0)*2,0,1))*keep
     loc=loc*(1-zw[...,None])+est*zw[...,None]
     cr=np.exp(-((v-(Tv-12-0.04*np.clip(u+60,0,200)))/2.6)**2)*np.clip((u+92)/40,0,1)*np.clip((UMAX-u)/30,0,1)*0.28*keep
     loc=loc*(1-cr[...,None])+loc*np.array([0.72,0.50,0.50])*cr[...,None]
     # 2) eye opening: her own iris; eye white in her own tone where the old lashes used to cover it
     op=(v>Uv)&(v<Bv)&(u>UMIN+2)&(u<UMAX)
+    uo=u; u=u-IRIS_OUT
     r=np.sqrt(u*u+v*v)
     direct=samp(u,v); refl=samp(-u,v)
     src_ok=(v>Uold(u)+2.5)&(v<Bold(u)+3)&(np.abs(u)<110)&~((SY+v)<E(SX-u)+4)      # painted eye visible in the source here
@@ -129,7 +131,19 @@ def build(im, mask, cx, cy, f):
     wi=np.clip((RI+1.2-r)/2.4,0,1)[...,None]
     fallback=IRISRIM[None,None,:]*wi*np.clip((r-RI+7)/6,0,1)[...,None]+fallback*wi*(1-np.clip((r-RI+7)/6,0,1)[...,None])+ext*(1-wi)
     eye=fallback*(1-cf[...,None])+pick*cf[...,None]
+    # nose-side white: her own pixels, unshifted, wherever the source shows white there
+    ro=np.sqrt(uo*uo+v*v)
+    d0=samp(uo,v); ok0=((v>Uold(uo)+2.5)&(v<Bold(uo)+3)&(np.abs(uo)<110)&(ro>RI+5)&(uo<0)&(r>RI+1)).astype(np.float32)
+    w0=np.clip(ndimage.gaussian_filter(ok0,1.5)*1.6-0.3,0,1)*ok0
+    okb=ok0*(d0.max(2)>0.7)
+    n0=ndimage.gaussian_filter(d0*okb[...,None],(7,7,0)); q0=ndimage.gaussian_filter(okb,7)
+    e0=np.where((q0>0.03)[...,None],n0/np.maximum(q0,1e-4)[...,None],ext)
+    wc=(w0*np.clip((-78-uo)/18,0,1))[...,None]                    # her own pixels only at the inner corner
+    scl=d0*wc+ext*(1-wc)
+    wi2=np.clip((r-RI+1.2)/2.4,0,1)*np.clip((20-uo)/12,0,1)
+    eye=eye*(1-wi2[...,None])+scl*wi2[...,None]
     # shading of the white: rounder toward the outer corner, soft shadow under the lash line
+    u=uo
     outer=np.clip((u-75)/65,0,1)*(r>RI)
     eye=eye*(1-0.20*outer[...,None]*np.array([0.85,1.0,1.0]))
     sh=np.clip(1-(v-Uv)/np.interp(u,[-110,0,136],[10,18,22]),0,1)**1.4*0.78
