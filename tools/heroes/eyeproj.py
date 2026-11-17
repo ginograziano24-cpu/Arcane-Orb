@@ -60,6 +60,8 @@ class _Geo:
         self.dv = Vector(d.tolist()); self.dback = Vector((-d).tolist())
         ext = max(float(np.ptp(self.co[:, 0])), float(np.ptp(self.co[:, 1])), float(np.ptp(self.co[:, 2]))) or 1.0
         self.eps = 4e-4 * ext
+        # a surface this close in front does not count as hiding a vertex (overlapping rebuilt pieces)
+        self.near = 0.003 * self.hgt / max(float(np.linalg.norm(A[:, 1])), 1e-12)
 
     def to_local(self, p):
         return self.Ai @ (np.asarray(p, dtype=np.float64) - self.t)
@@ -80,7 +82,7 @@ class _Geo:
         return out
 
     def hidden(self, i):
-        o = self.Vector(self.co[i].tolist()) + self.dv * self.eps
+        o = self.Vector(self.co[i].tolist()) + self.dv * max(self.eps, self.near)
         return self.bvh.ray_cast(o, self.dv, 1e6)[0] is not None
 
     def lockwin(self):
@@ -215,21 +217,26 @@ def flatten_lids(ob, say=print, k=0.7, iters=3):
     return moved_tot
 
 
-def build_face_patch(ob, say=print, win=None):
+def build_face_patch(ob, say=print, win=None, smooth=True, overlap=False):
     """Her model is one fused shell: where the hair lock crosses her right eye
     there is no face underneath. This copies the matching piece of the left
     side of her face, mirrors it over and adds it wherever the right side has
-    no face surface of its own."""
+    no face surface of its own. win: one window or a list of windows, in
+    right-side face-image pixels (x0, x1, y0, y1)."""
     cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
     me = ob.data
     g = _Geo(ob, cam, None)
     g.mirror_fit(say)
     mid_px = FACE_MID_X
-    # wider than the cut itself: the lock stands off her face, so from an angle you see past its edge
-    W_ = win or PATCH_WIN
-    lx0, lx1 = 2 * mid_px - W_[1], 2 * mid_px - W_[0]
-    ly0, ly1 = W_[2] - EYE_DROP, W_[3] - EYE_DROP
-    inwin = (g.pxu > lx0) & (g.pxu < lx1) & (g.pxv > ly0) & (g.pxv < ly1) & (g.wco[:, 1] < g.depth_lim)
+    wins = win or PATCH_WIN
+    if not isinstance(wins[0], (tuple, list)):
+        wins = [wins]
+    inwin = np.zeros(len(g.co), dtype=bool)
+    for W_ in wins:
+        lx0, lx1 = 2 * mid_px - W_[1], 2 * mid_px - W_[0]
+        ly0, ly1 = W_[2] - EYE_DROP, W_[3] - EYE_DROP
+        inwin |= (g.pxu > lx0) & (g.pxu < lx1) & (g.pxv > ly0) & (g.pxv < ly1)
+    inwin &= g.wco[:, 1] < g.depth_lim
     npoly = len(me.polygons)
     tot = np.empty(npoly, dtype=np.int32); me.polygons.foreach_get("loop_total", tot)
     st = np.empty(npoly, dtype=np.int32); me.polygons.foreach_get("loop_start", st)
@@ -263,8 +270,8 @@ def build_face_patch(ob, say=print, win=None):
                 if nbr[i]:
                     delta[i] = sum(delta[j] for j in nbr[i]) / len(nbr[i])
     for i in used:
-        newpos[i][1] += delta[i] + 0.00015 * g.hgt
-    keepf = [f for f in fsel if any(vis[i] for i in tri[f]) and not all(exists[i] for i in tri[f])]
+        newpos[i][1] += delta[i] + (0.0004 if overlap else 0.00015) * g.hgt
+    keepf = [f for f in fsel if any(vis[i] for i in tri[f]) and (overlap or not all(exists[i] for i in tri[f]))]
     if not keepf:
         say("patch: nothing to add"); return 0
     uvl = me.uv_layers.active
@@ -279,22 +286,23 @@ def build_face_patch(ob, say=print, win=None):
         faces.append((ids[0], ids[2], ids[1]))                     # mirrored, so the winding flips
         l0, l1, l2 = loops[f]
         fuv += [uv[l0], uv[l2], uv[l1]]
-    # smooth the rebuilt skin (the mirrored copy carries small wrinkles);
-    # vertices that meet her own face stay put
-    try:
-        V = np.array(verts, dtype=np.float64)
-        inv = {v: k for k, v in vmap.items()}
-        free = np.array([not exists[inv[n]] for n in range(len(verts))])
-        nb = [set() for _ in range(len(verts))]
-        for a_, b_, c_ in faces:
-            nb[a_] |= {b_, c_}; nb[b_] |= {a_, c_}; nb[c_] |= {a_, b_}
-        nbl = [list(x) for x in nb]
-        for _ in range(10):
-            avg = np.array([V[l].mean(0) if l else V[i] for i, l in enumerate(nbl)])
-            V[free] = V[free] * 0.35 + avg[free] * 0.65
-        verts = [tuple(v) for v in V]
-    except Exception as e:
-        say("patch: smoothing skipped", e)
+    if smooth:
+        # smooth the rebuilt skin (the mirrored copy carries small wrinkles);
+        # vertices that meet her own face stay put
+        try:
+            V = np.array(verts, dtype=np.float64)
+            inv = {v: k for k, v in vmap.items()}
+            freev = np.array([not exists[inv[n]] for n in range(len(verts))])
+            nb = [set() for _ in range(len(verts))]
+            for a_, b_, c_ in faces:
+                nb[a_] |= {b_, c_}; nb[b_] |= {a_, c_}; nb[c_] |= {a_, b_}
+            nbl = [list(x) for x in nb]
+            for _ in range(10):
+                avg = np.array([V[l].mean(0) if l else V[i] for i, l in enumerate(nbl)])
+                V[freev] = V[freev] * 0.35 + avg[freev] * 0.65
+            verts = [tuple(v) for v in V]
+        except Exception as e:
+            say("patch: smoothing skipped", e)
     pm = bpy.data.meshes.new("face_patch")
     pm.from_pydata(verts, [], faces)
     pm.update()
@@ -308,34 +316,37 @@ def build_face_patch(ob, say=print, win=None):
         pm.materials.append(m)
     po = bpy.data.objects.new("face_patch", pm)
     bpy.context.scene.collection.objects.link(po)
-    for m in me.materials:
-        pm.materials.append(m)
-    po = bpy.data.objects.new("face_patch", pm)
-    bpy.context.scene.collection.objects.link(po)
-    # smooth the rebuilt skin (the mirrored copy carries small wrinkles); the
-    # vertices that meet her own face stay where they are
-    try:
-        vg = po.vertex_groups.new(name="free")
-        inv = {v: k for k, v in vmap.items()}
-        free_ids = [n for n in range(len(verts)) if not exists[inv[n]]]
-        if free_ids:
-            vg.add(free_ids, 1.0, "REPLACE")
-            sm = po.modifiers.new("smooth", "LAPLACIANSMOOTH")
-            sm.iterations = 12; sm.lambda_factor = 0.8; sm.lambda_border = 0.0
-            sm.vertex_group = "free"; sm.use_volume_preserve = True
-            bpy.ops.object.select_all(action="DESELECT")
-            po.select_set(True); bpy.context.view_layer.objects.active = po
-            bpy.ops.object.modifier_apply(modifier=sm.name)
-        po.vertex_groups.remove(vg)
-    except Exception as e:
-        say("patch: smoothing skipped", e)
     po.matrix_world = ob.matrix_world.copy()
     bpy.ops.object.select_all(action="DESELECT")
     po.select_set(True); ob.select_set(True); bpy.context.view_layer.objects.active = ob
     bpy.ops.object.join()
     bpy.context.view_layer.update()
-    say("patch: added", len(faces), "faces of rebuilt face under the hair lock (from", len(fsel), "candidates)")
+    say("patch: added", len(faces), "faces of rebuilt face (from", len(fsel), "candidates)")
     return len(faces)
+
+
+EYE_WINS = ((1344, 1690, 598, 872), (1344, 1400, 330, 598), (1344, 1764, 514, 600))     # her right eye and temple, rebuilt as a mirror of the left
+
+
+def clear_right_eye(ob, say=print):
+    """Empties her right eye and temple area completely (face and every
+    leftover of the old hair lock), ready for a mirrored copy of the left."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    me = ob.data
+    g = _Geo(ob, cam, None)
+    inw = np.zeros(len(g.co), dtype=bool)
+    for (x0, x1, y0, y1) in EYE_WINS:
+        inw |= (g.pxu > x0) & (g.pxu < x1) & (g.pxv > y0) & (g.pxv < y1)
+    inw &= g.wco[:, 1] < g.depth_lim
+    tri = _tris(me)
+    if tri is None:
+        say("eye: mesh not all triangles, skipped"); return 0
+    sel = inw[tri].sum(1) >= 2
+    k = int(sel.sum())
+    if k:
+        _edit_faces(ob, sel, lambda: bpy.ops.mesh.delete(type="FACE"))
+    say("eye: cleared", k, "faces around her right eye and temple")
+    return k
 
 
 def _tris(me):
@@ -488,7 +499,7 @@ def attach_overlay(ob, say=print, src_from_world=None, fixed="eyes_fixed.png", m
     done = 0
     for slot in ob.material_slots:
         m = slot.material
-        if not m or not m.node_tree or m.get("eye_overlay"):
+        if not m or not m.node_tree or m.get("eye_overlay") or m.name.startswith("fringe_hair"):
             continue
         nt = m.node_tree
         bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
@@ -680,7 +691,7 @@ def _px_world(cam, px, py):
     return cam["loc"][0] + (px - rx / 2) * s_, cam["loc"][2] + (ry / 2 - py) * s_
 
 
-def remove_fringe(ob, say=print):
+def remove_fringe(ob, say=print, ymax=None):
     """Deletes the old fringe slab in front of her right forehead and eye
     (only where face is behind it, so no hole opens); hat and ornaments stay."""
     cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
@@ -696,11 +707,13 @@ def remove_fringe(ob, say=print):
     mx = col.max(1); st = (mx - col.min(1)) / np.maximum(mx, 1e-3)
     other = ((b > r * 1.02) & (b > gg * 1.12) & (st > 0.28)) | ((r > b * 1.4) & (gg > b * 1.25) & (st > 0.31))
     inwin = (g.pxu > FR_WIN[0]) & (g.pxu < FR_WIN[1]) & (g.pxv > FR_WIN[2]) & (g.pxv < FR_WIN[3]) & (g.wco[:, 1] < g.depth_lim) & ~other
+    if ymax is not None:
+        inwin &= g.pxv < ymax
     slab = np.zeros(len(g.co), dtype=bool)
     for i in np.where(inwin)[0]:
         y = g.wco[i, 1]
         hs = g.hits(g.wco[i, 0], g.wco[i, 2], 8, facing=True)
-        slab[i] = any(fc and (hh > y + 0.0012 * g.hgt) and (hh < y + 0.03 * g.hgt) for hh, fc in hs)
+        slab[i] = any(fc and (hh > y + 0.0012 * g.hgt) and (hh < y + 0.045 * g.hgt) for hh, fc in hs)
     tri = _tris(me)
     if tri is None:
         say("fringe: mesh not all triangles, skipped"); return 0
@@ -712,37 +725,315 @@ def remove_fringe(ob, say=print):
     return k
 
 
-def _fringe_paths(mode):
-    """Strand centre lines in face-image pixels: list of (points Nx2, root width px).
-    Each layout is a bundle between an inner edge (along her forehead) and an
-    outer edge (under the hat brim, toward her temple)."""
-    rng = np.random.RandomState(5 if mode == "swept" else 9)
-    if mode == "swept":
-        E0 = np.array([(1894, 226), (1848, 360), (1770, 468), (1648, 516), (1510, 546), (1412, 608), (1388, 724)], float)
-        E1 = np.array([(1604, 290), (1548, 338), (1490, 396), (1440, 452), (1405, 522), (1384, 604), (1372, 706)], float)
-        n = 34
-    else:
-        E0 = np.array([(1894, 226), (1852, 350), (1794, 468), (1750, 556), (1722, 636), (1708, 712)], float)
-        E1 = np.array([(1604, 290), (1528, 380), (1466, 478), (1426, 576), (1404, 676), (1396, 770)], float)
-        n = 32
-    out = []
+def _crom(ctrl, per=10):
+    P = np.vstack([ctrl[0] * 2 - ctrl[1], ctrl, ctrl[-1] * 2 - ctrl[-2]])
+    pts = []
+    for k in range(1, len(P) - 2):
+        p0, p1, p2, p3 = P[k - 1], P[k], P[k + 1], P[k + 2]
+        for t in np.linspace(0, 1, per, endpoint=False):
+            pts.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+    pts.append(ctrl[-1])
+    return np.array(pts)
+
+
+def _resample(pts, n):
+    d = np.r_[0, np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))]
+    t = np.linspace(0, d[-1], n)
+    return np.stack([np.interp(t, d, pts[:, 0]), np.interp(t, d, pts[:, 1])], 1)
+
+
+def _bundle(E0, E1, n, rng, layer, wd, clump=5, s0=0.0, s1=1.0, N=44, tip=(0.88, 1.0)):
+    """n strands filling the band between edge curves E0 (s=0) and E1 (s=1).
+    Tips gather into clumps; lengths vary a little."""
+    raw = []
     for i in range(n):
-        s = i / (n - 1)
+        s = s0 + (s1 - s0) * (i + rng.uniform(0.2, 0.8)) / n
         ctrl = E0 * (1 - s) + E1 * s
-        ctrl = ctrl + rng.uniform(-1, 1, ctrl.shape) * np.array([6.0, 5.0])
-        ctrl[0] += rng.uniform(-1, 1, 2) * np.array([10.0, 6.0])
-        if mode == "over":                      # staggered, slightly clumped ends
-            ctrl[-1, 1] += 40 * np.sin(s * 9.0) + rng.uniform(-20, 20)
-        # Catmull-Rom through the control points
-        P = np.vstack([ctrl[0] * 2 - ctrl[1], ctrl, ctrl[-1] * 2 - ctrl[-2]])
-        pts = []
-        for k in range(1, len(P) - 2):
-            p0, p1, p2, p3 = P[k - 1], P[k], P[k + 1], P[k + 2]
-            for t in np.linspace(0, 1, 8, endpoint=False):
-                pts.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
-        pts.append(ctrl[-1])
-        wd = (40 if mode == "swept" else 36) + 8 * (1 - abs(2 * s - 0.8)) + rng.uniform(-5, 5)
-        out.append((np.array(pts), wd))
+        ctrl = ctrl + rng.uniform(-1, 1, ctrl.shape) * np.array([2.2, 2.2])
+        raw.append((s, _resample(_crom(ctrl), N)))
+    out = []
+    groups = {}
+    for i, (s, p) in enumerate(raw):
+        groups.setdefault(int(i // clump), []).append(p)
+    t = np.linspace(0, 1, N)[:, None]
+    for i, (s, p) in enumerate(raw):
+        cm = np.mean(groups[int(i // clump)], axis=0)
+        w = np.clip((t - 0.5) / 0.5, 0, 1) ** 1.6 * 0.8
+        p = p + (cm - p) * w
+        keep = int(N * rng.uniform(*tip))
+        p = p[:max(keep, 8)]
+        out.append({"pts": p, "wd": wd * rng.uniform(0.82, 1.18), "layer": layer})
+    return out
+
+
+PART_X = 1767
+
+
+def _mir(E):
+    E = np.array(E, float).copy(); E[:, 0] = 2 * PART_X - E[:, 0]; E[:, 1] -= 8
+    return E
+
+
+FH_X0, FH_X1 = 1398, 2136          # forehead surface, temple to temple
+FH_Y0, FH_Y1 = 256, 522
+
+
+def _fh_region(px, py):
+    """Forehead region in face-image pixels (both sides; her left side is
+    tested through its mirror image, which sits 8 px higher)."""
+    px = np.asarray(px, float); py = np.asarray(py, float)
+    left = px > PART_X
+    mx = np.where(left, 2 * PART_X - px, px)
+    my = np.where(left, py + EYE_DROP, py)
+    r = (mx > FH_X0) & (mx <= PART_X + 0.5) & (my > FH_Y0) & (my < FH_Y1)
+    r &= ~((mx < 1494) & (my < 324))                     # corner under the hat brim
+    return r
+
+
+def rebuild_forehead(ob, say=print):
+    """Replaces her whole forehead, temple to temple, with one smooth surface.
+    Its shape is fitted to her clean left forehead and used for both sides, so
+    there is no seam down the middle and nothing left of the old fringe on
+    her right. Colour comes from the face overlay.
+    Returns a function that adds the surface (call it after the eye rebuild)."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    me = ob.data
+    g = _Geo(ob, cam, None)
+    g.mirror_fit(say)
+    hgt = g.hgt
+
+    def depth(px, py):
+        wx, wz = _px_world(cam, px, py)
+        for hh, fc in g.hits(wx, wz, 3, facing=True):
+            if fc:
+                return hh if hh < g.depth_lim else None
+        return None
+
+    def basis(px, py):
+        u = (np.abs(np.asarray(px, float) - PART_X) / 370.0) ** 2
+        v = (np.asarray(py, float) - 430.0) / 200.0
+        return np.stack([u ** i * v ** j for i in range(4) for j in range(5 - i)], -1)
+    P = []; D = []
+    for px in range(PART_X, 2146, 9):                    # her left forehead and the strip under it
+        for py in range(250, 548, 9):
+            h = depth(px, py)
+            if h is not None:
+                P.append((px, py)); D.append(h)
+    P = np.array(P, float); D = np.array(D, float)
+    if len(D) < 80:
+        say("forehead: too few samples", len(D)); return None
+    Bm = basis(P[:, 0], P[:, 1])
+    keep = np.ones(len(D), bool)
+    for _ in range(5):
+        c = np.linalg.lstsq(Bm[keep], D[keep], rcond=None)[0]
+        r = D - Bm @ c
+        mad = np.median(np.abs(r[keep])) + 1e-9
+        keep = np.abs(r) < 3.0 * mad + 0.0004 * hgt
+    say("forehead: fit from", int(keep.sum()), "of", len(D), "samples, residual", round(float(np.median(np.abs(r[keep]))) / hgt * 1000, 3), "permille")
+
+    def right_shift(px, wx, wz):
+        """Small left-to-right difference of her face (from the mirror fit), faded in away from the centre."""
+        w = np.clip((PART_X - px) / 150.0, 0, 1)
+        return w * (g.fit[0] + g.fit[1] * (wx - g.xmid) + g.fit[2] * wz)
+    step = 6.0
+    xs = np.arange(FH_X0 - 22, FH_X1 + 24, step); ys = np.arange(FH_Y0 - 26, FH_Y1 + 30, step)
+    GX, GY = np.meshgrid(xs, ys)
+    core = _fh_region(GX, GY)
+    inside = core.copy()
+    for _ in range(3):                                   # overlap the face around the cleared area (about 18 px)
+        p = np.pad(inside, 1, constant_values=False)
+        inside = inside | p[:-2, 1:-1] | p[2:, 1:-1] | p[1:-1, :-2] | p[1:-1, 2:]
+    inside &= ~((np.where(GX > PART_X, 2 * PART_X - GX, GX) < 1494) & (np.where(GX > PART_X, GY + EYE_DROP, GY) < 318))
+    DY = basis(GX, np.where(GX > PART_X, GY, GY - EYE_DROP)) @ c
+    nyy, nxx = GX.shape
+    WX = np.zeros_like(GX); WZ = np.zeros_like(GX)
+    for j in range(nyy):
+        for i in range(nxx):
+            WX[j, i], WZ[j, i] = _px_world(cam, GX[j, i], GY[j, i])
+    DY = DY + right_shift(GX, WX, WZ) - 0.0004 * hgt
+    # near its edges the surface settles exactly onto the face around it
+    dist = np.where(inside, 99, 0)
+    for _ in range(7):
+        p = np.pad(dist, 1, constant_values=0)
+        nb = np.minimum.reduce([p[:-2, 1:-1], p[2:, 1:-1], p[1:-1, :-2], p[1:-1, 2:]]) + 1
+        dist = np.where(inside, np.minimum(dist, nb), 0)
+    snapped = 0
+    for j in range(nyy):
+        for i in range(nxx):
+            if inside[j, i] and dist[j, i] <= 6:
+                px, py = GX[j, i], GY[j, i]
+                if px > PART_X:
+                    h = depth(px, py)
+                else:                                     # her right side takes the mirrored left
+                    h = depth(2 * PART_X - px, py - EYE_DROP)
+                    if h is not None:
+                        h += right_shift(px, WX[j, i], WZ[j, i])
+                if h is not None and abs(h - DY[j, i]) < 0.004 * hgt:
+                    w = (1 - (dist[j, i] - 1) / 6.0) ** 2
+                    DY[j, i] = DY[j, i] * (1 - w) + (h - 0.0004 * hgt) * w
+                    snapped += 1
+    # one forehead texel for the base texture (the overlay paints the real colour)
+    uvl = me.uv_layers.active
+    uvname = uvl.name if uvl else "UVMap"
+    wx, wz = _px_world(cam, 1950, 400)
+    hit = g.bvh.ray_cast(g.Vector(g.to_local((wx, g.y_far, wz)).tolist()), g.dback, 1e6)
+    uv0 = (0.5, 0.5)
+    if hit[0] is not None and uvl is not None:
+        ls_ = me.polygons[hit[2]].loop_start
+        uv0 = tuple(np.mean([np.array(uvl.data[ls_ + q].uv) for q in range(3)], axis=0))
+    # ---- clear the old forehead
+    tri = _tris(me)
+    if tri is None:
+        say("forehead: mesh not all triangles, skipped"); return None
+    reg = _fh_region(g.pxu, g.pxv)
+    fitted = basis(g.pxu, np.where(g.pxu > PART_X, g.pxv, g.pxv - EYE_DROP)) @ c
+    near = np.abs(g.wco[:, 1] - fitted) < 0.0028 * hgt
+    rightv = reg & ((g.pxu <= PART_X) | ((g.pxu < 1856) & (g.pxv < 522))) & (g.wco[:, 1] < g.depth_lim + 0.01 * hgt)   # right (and beside the part): skin and every leftover in front
+    leftv = reg & (g.pxu > PART_X) & near & (g.wno[:, 1] < -0.1)                    # left: the skin only, hair stays
+    sel = (rightv[tri].sum(1) >= 2) | leftv[tri].all(1)
+    k = int(sel.sum())
+    if k:
+        _edit_faces(ob, sel, lambda: bpy.ops.mesh.delete(type="FACE"))
+    say("forehead: cleared", k, "faces; edge nodes settled", snapped)
+    to_local = g.to_local; A_ = g.A.copy()
+
+    def add():
+        idx = -np.ones(GX.shape, int); V = []
+        for j in range(nyy):
+            for i in range(nxx):
+                if inside[j, i]:
+                    idx[j, i] = len(V); V.append(tuple(to_local((WX[j, i], DY[j, i], WZ[j, i])).tolist()))
+        F = []
+        for j in range(nyy - 1):
+            for i in range(nxx - 1):
+                a_, b_, c_, d_ = idx[j, i], idx[j, i + 1], idx[j + 1, i + 1], idx[j + 1, i]
+                if min(a_, b_, c_, d_) >= 0:
+                    F.append((a_, d_, c_)); F.append((a_, c_, b_))
+        pm = bpy.data.meshes.new("forehead_fill")
+        pm.from_pydata(V, [], F)
+        pm.update()
+        nz = np.empty(len(pm.polygons) * 3, dtype=np.float32); pm.polygons.foreach_get("normal", nz)
+        if np.mean((nz.reshape(-1, 3) @ A_.T)[:, 1]) > 0:
+            pm.flip_normals() if hasattr(pm, "flip_normals") else [p.flip() for p in pm.polygons]
+            pm.update()
+        ul = pm.uv_layers.new(name=uvname)
+        ul.data.foreach_set("uv", np.tile(np.array(uv0, np.float32), len(pm.loops)))
+        pm.shade_smooth()
+        for m in ob.data.materials:
+            pm.materials.append(m)
+        po = bpy.data.objects.new("forehead_fill", pm)
+        bpy.context.scene.collection.objects.link(po)
+        po.matrix_world = ob.matrix_world.copy()
+        bpy.ops.object.select_all(action="DESELECT")
+        po.select_set(True); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+        bpy.ops.object.join()
+        bpy.context.view_layer.update()
+        say("forehead: added", len(F), "faces, temple to temple")
+        return len(F)
+    return add
+
+
+def add_backing(ob, say=print):
+    """Closes the see-through gaps beside her right temple and eye corner:
+    a hair-coloured sheet just behind that area, shaped like the same area on
+    her left side (mirrored)."""
+    cam = json.load(open(os.path.join(L2, "eyes_cam.json")))
+    me = ob.data
+    g = _Geo(ob, cam, None)
+    g.mirror_fit(lambda *a: None)
+    step = 8.0
+    xs = np.arange(1282, 1430, step); ys = np.arange(296, 830, step)
+    GX, GY = np.meshgrid(xs, ys)
+    D = np.full(GX.shape, np.nan)
+    WX = np.zeros_like(GX); WZ = np.zeros_like(GX)
+    for j in range(GX.shape[0]):
+        for i in range(GX.shape[1]):
+            WX[j, i], WZ[j, i] = _px_world(cam, GX[j, i], GY[j, i])
+            lx, lz = _px_world(cam, 2 * PART_X - GX[j, i], GY[j, i] - EYE_DROP)
+            for hh, fc in g.hits(lx, lz, 3, facing=True):
+                if fc and hh < g.depth_lim + 0.02 * g.hgt:
+                    D[j, i] = hh + g.fit[0] + g.fit[1] * (WX[j, i] - g.xmid) + g.fit[2] * WZ[j, i]
+                    break
+    if np.isnan(D).all():
+        say("backing: no samples"); return 0
+    for _ in range(40):                                   # fill the blanks from their neighbours
+        bad = np.isnan(D)
+        if not bad.any():
+            break
+        p = np.pad(D, 1, constant_values=np.nan)
+        nb = np.stack([p[:-2, 1:-1], p[2:, 1:-1], p[1:-1, :-2], p[1:-1, 2:]])
+        cnt = (~np.isnan(nb)).sum(0)
+        avg = np.nansum(nb, 0) / np.maximum(cnt, 1)
+        D = np.where(bad & (cnt > 0), avg, D)
+    for _ in range(4):
+        p = np.pad(D, 1, mode="edge")
+        D = (p[:-2, 1:-1] + p[2:, 1:-1] + p[1:-1, :-2] + p[1:-1, 2:] + 4 * D) / 8.0
+    D = D + 0.0035 * g.hgt
+    V = [tuple(g.to_local((WX[j, i], D[j, i], WZ[j, i])).tolist()) for j in range(GX.shape[0]) for i in range(GX.shape[1])]
+    nx = GX.shape[1]
+    F = []
+    for j in range(GX.shape[0] - 1):
+        for i in range(nx - 1):
+            a_ = j * nx + i
+            F.append((a_, a_ + nx, a_ + nx + 1)); F.append((a_, a_ + nx + 1, a_ + 1))
+    pm = bpy.data.meshes.new("backing")
+    pm.from_pydata(V, [], F)
+    pm.update()
+    nz = np.empty(len(pm.polygons) * 3, dtype=np.float32); pm.polygons.foreach_get("normal", nz)
+    if np.mean((nz.reshape(-1, 3) @ g.A.T)[:, 1]) > 0:
+        pm.flip_normals()
+        pm.update()
+    uvl = me.uv_layers.active
+    uv0 = (0.5, 0.5)
+    wx, wz = _px_world(cam, 2250, 450)                    # dark hair on her left side
+    hit = g.bvh.ray_cast(g.Vector(g.to_local((wx, g.y_far, wz)).tolist()), g.dback, 1e6)
+    if hit[0] is not None and uvl is not None:
+        ls_ = me.polygons[hit[2]].loop_start
+        uv0 = tuple(np.mean([np.array(uvl.data[ls_ + q].uv) for q in range(3)], axis=0))
+    ul = pm.uv_layers.new(name=uvl.name if uvl else "UVMap")
+    ul.data.foreach_set("uv", np.tile(np.array(uv0, np.float32), len(pm.loops)))
+    pm.shade_smooth()
+    for m in me.materials:
+        pm.materials.append(m)
+    po = bpy.data.objects.new("backing", pm)
+    bpy.context.scene.collection.objects.link(po)
+    po.matrix_world = ob.matrix_world.copy()
+    bpy.ops.object.select_all(action="DESELECT")
+    po.select_set(True); ob.select_set(True); bpy.context.view_layer.objects.active = ob
+    bpy.ops.object.join()
+    bpy.context.view_layer.update()
+    say("backing: added", len(F), "faces behind her right temple")
+    return len(F)
+
+
+def _fringe_paths(mode):
+    """Strand centre lines in face-image pixels: list of dicts {pts, wd, layer}."""
+    rng = np.random.RandomState({"swept": 5, "over": 9, "middle": 13}[mode])
+    A = lambda L: np.array(L, float)
+    out = []
+    if mode == "swept":
+        E0 = A([(1882, 236), (1836, 330), (1748, 430), (1642, 484), (1528, 502), (1446, 534), (1400, 604), (1380, 700), (1372, 810)])
+        E1 = A([(1690, 224), (1596, 240), (1512, 266), (1446, 304), (1400, 372), (1372, 470), (1356, 590), (1346, 700), (1342, 810)])
+        out += _bundle(E0, E1, 22, rng, 0, 54, clump=4, s0=0.04, s1=0.96)
+        out += _bundle(E0, E1, 36, rng, 1, 40, clump=5)
+    elif mode == "over":
+        E0 = A([(1882, 236), (1840, 340), (1794, 450), (1758, 560), (1734, 660), (1722, 772)])
+        E1 = A([(1690, 224), (1576, 252), (1476, 316), (1412, 436), (1388, 586), (1378, 722)])
+        out += _bundle(E0, E1, 20, rng, 0, 54, clump=4, s0=0.04, s1=0.96)
+        out += _bundle(E0, E1, 32, rng, 1, 40, clump=6, tip=(0.66, 1.0))
+    else:  # middle part, curtain bangs framing both sides
+        E0 = A([(1762, 238), (1746, 262), (1704, 296), (1630, 330), (1540, 372), (1460, 440), (1404, 540), (1378, 650), (1368, 810)])
+        E1 = A([(1760, 230), (1690, 236), (1600, 248), (1504, 278), (1430, 340), (1386, 440), (1360, 560), (1348, 680), (1344, 810)])
+        # short crown strands fanning out from the part, so the parting reads as full hair
+        C0 = A([(1763, 234), (1748, 262), (1722, 298), (1688, 328), (1650, 350)])
+        C1 = A([(1761, 226), (1728, 238), (1680, 256), (1626, 280), (1574, 306)])
+        for side in (0, 1):
+            e0, e1 = (E0, E1) if side == 0 else (_mir(E0), _mir(E1))
+            c0, c1 = (C0, C1) if side == 0 else (_mir(C0), _mir(C1))
+            out += _bundle(e0, e1, 10, rng, 0, 46, clump=4, s0=0.04, s1=0.96)
+            out += _bundle(c0, c1, 8, rng, 0, 44, clump=4, N=24)
+            out += _bundle(e0, e1, 18, rng, 1, 34, clump=5)
+            out += _bundle(c0, c1, 10, rng, 1, 34, clump=5, N=24)
     return out
 
 
@@ -754,7 +1045,10 @@ def add_fringe(ob, mode, say=print):
     px = g.px; hgt = g.hgt
     V = []; F = []; UV = []
     K = 8
-    for si, (pts, wd) in enumerate(_fringe_paths(mode)):
+    paths = _fringe_paths(mode)
+    paths.sort(key=lambda d: d["layer"])
+    for si, d in enumerate(paths):
+        pts, wd, layer = d["pts"], d["wd"], d["layer"]
         n = len(pts)
         P = []
         for (x, y) in pts:
@@ -768,20 +1062,22 @@ def add_fringe(ob, mode, say=print):
             continue
         idx = np.arange(n)
         P[bad, 1] = np.interp(idx[bad], idx[~bad], P[~bad, 1])
-        # smooth the surface depth along the strand and lift it off the skin
         yy = P[:, 1].copy()
-        for _ in range(6):
+        for _ in range(16):
             yy[1:-1] = 0.25 * yy[:-2] + 0.5 * yy[1:-1] + 0.25 * yy[2:]
         P[:, 1] = np.minimum(yy, P[:, 1])
         t = idx / (n - 1)
-        lift = (0.0042 * (1 - t) ** 1.3 + 0.0011) * hgt * (1.0 + 0.15 * np.sin(si * 1.7))
+        # root tucked into her hair, a little volume, tips resting close to the skin
+        rise = np.clip(t / 0.14, 0, 1) ** 0.6
+        lift = (0.0030 if layer else 0.0019) * rise * (1 - t) ** 1.4 + (0.0007 if layer else 0.00045)
+        lift = lift * hgt - (1 - rise) * 0.0012 * hgt
         P[:, 1] -= lift
-        width = (wd * px) * np.clip((1 - t) ** 0.65, 0.06, 1)
-        thick = width * 0.32 + 0.0003 * hgt
+        width = (wd * px) * np.clip((1 - t ** 1.7) ** 0.75, 0.05, 1) * (0.3 + 0.7 * rise)
+        thick = width * 0.28 + 0.00025 * hgt
         T = np.gradient(P, axis=0); T /= np.maximum(np.linalg.norm(T, axis=1, keepdims=True), 1e-12)
         N0 = np.array([0.0, -1.0, 0.0])
         base = len(V)
-        u0 = (si * 0.137) % 0.8
+        u0 = (0.0 if layer else 0.5) + (si * 0.137) % 0.3
         for i in range(n):
             Nn = N0 - T[i] * T[i].dot(N0); Nn /= max(np.linalg.norm(Nn), 1e-12)
             Bn = np.cross(T[i], Nn)
@@ -789,7 +1085,7 @@ def add_fringe(ob, mode, say=print):
                 a = 2 * np.pi * k / K
                 q = P[i] + Bn * np.cos(a) * width[i] * 0.5 + Nn * np.sin(a) * thick[i] * 0.5
                 V.append(tuple(g.to_local(q).tolist()))
-                UV.append((u0 + 0.2 * k / K, t[i]))
+                UV.append((u0 + 0.18 * k / K, t[i]))
         for i in range(n - 1):
             for k in range(K):
                 a_ = base + i * K + k; b_ = base + i * K + (k + 1) % K
@@ -808,7 +1104,13 @@ def add_fringe(ob, mode, say=print):
     tx = m.node_tree.nodes.new("ShaderNodeTexImage")
     tx.image = bpy.data.images.load(os.path.join(L2, "fringe_tex.png"), check_existing=True)
     m.node_tree.links.new(tx.outputs["Color"], bs.inputs["Base Color"])
-    bs.inputs["Roughness"].default_value = 0.62
+    bs.inputs["Roughness"].default_value = 0.66
+    if "Coat Weight" in bs.inputs:
+        bs.inputs["Coat Weight"].default_value = 0.0
+    for nm in ("Specular IOR Level", "Specular"):
+        if nm in bs.inputs:
+            bs.inputs[nm].default_value = 0.3
+            break
     me.materials.append(m)
     fo = bpy.data.objects.new("fringe", me)
     bpy.context.scene.collection.objects.link(fo)

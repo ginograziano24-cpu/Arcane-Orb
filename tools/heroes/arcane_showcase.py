@@ -70,12 +70,15 @@ shots = [
     ("eyes", -90, None, 0.26, 85, (1600, 800)),
     ("eyes_34", -66, None, 0.26, 85, (1600, 800)),
     ("eyes_r34", -114, None, 0.26, 85, (1600, 800)),
+    ("forehead", -90, None, 0.20, 85, (1400, 900)),
     ("side_left", -24, None, 0.30, 85, (1200, 900)),
     ("side_right", -156, None, 0.30, 85, (1200, 900)),
 ]
 for name, ang, zf, dist, lens, res in shots:
     a = math.radians(ang)
     tgt = Vector((ctr.x, ctr.y, mn.z + zf * h)) if zf is not None else EYES
+    if name == "forehead":
+        tgt = EYES + Vector((0, 0, 0.016))
     cam.location = tgt + Vector((math.cos(a), math.sin(a), 0.03)) * h * dist
     cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
     cd.lens = lens

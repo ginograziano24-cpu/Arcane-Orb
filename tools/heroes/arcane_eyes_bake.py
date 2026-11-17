@@ -39,9 +39,20 @@ try:
     except Exception as e:
         say("normals reset skipped", e)
     FRINGE = os.environ.get("FRINGE", "").strip().lower()
-    if FRINGE in ("swept", "over"):
-        eyeproj.build_face_patch(ob, say, win=(1300, 1767, 236, 820))
+    if FRINGE in ("swept", "over", "middle"):
         eyeproj.remove_fringe(ob, say)
+        bpy.context.view_layer.update()
+        add_forehead = eyeproj.rebuild_forehead(ob, say)        # fits and clears; the surface goes on below
+        bpy.context.view_layer.update()
+        eyeproj.clear_right_eye(ob, say)
+        bpy.context.view_layer.update()
+        eyeproj.build_face_patch(ob, say, win=[(1330, 1716, 584, 900), (1330, 1412, 318, 600), (1330, 1767, 500, 606)], smooth=False, overlap=True)
+        bpy.context.view_layer.update()
+        if add_forehead:
+            add_forehead()
+        eyeproj.remove_fringe(ob, say, ymax=590)        # leftovers that only now have face behind them
+        bpy.context.view_layer.update()
+        eyeproj.add_backing(ob, say)
         bpy.context.view_layer.update()
         eyeproj.add_fringe(ob, FRINGE, say)
     else:
