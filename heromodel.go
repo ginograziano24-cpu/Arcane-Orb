@@ -302,7 +302,6 @@ func drawHero3D(dst *ebiten.Image, id string, fx, fy, w, h, sx, sy, yaw float64,
 	if m == nil || alpha <= 0 {
 		return m != nil
 	}
-	m.animate(heroClock)
 	const ss = 2 // supersample, resolved by the linear downscale below
 	W, H := int(math.Ceil(w*ss)), int(math.Ceil(h*ss))
 	if W < 8 || H < 8 {
@@ -322,6 +321,7 @@ func drawHero3D(dst *ebiten.Image, id string, fx, fy, w, h, sx, sy, yaw float64,
 		return true // nothing visible changed since the last render
 	}
 	st.key = shot
+	m.animate(heroClock) // only when a new picture is due
 	yaw = shot.yaw
 	st.rt.Clear()
 	// a long lens keeps the figure flat-ish, like the painted portraits

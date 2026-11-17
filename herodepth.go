@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -162,65 +164,98 @@ func drawHeroDepth(st *heroStage, m *heroMesh, rot Mat3, rim color.RGBA, dim flo
 	fill := V3{0.7, 0.1, -0.4}.Norm()
 	rimF := [3]float64{float64(rim.R) / 255, float64(rim.G) / 255, float64(rim.B) / 255}
 
-	// one vertex per triangle corner, front faces only
-	vs := k.vs[:0]
-	invNear, invFar := 0.0, math.Inf(1)
-	for i := 0; i+2 < len(m.pos); i += 3 {
-		var p [3]V3
-		for c := 0; c < 3; c++ {
-			p[c] = rot.Mul(m.pos[i+c])
-		}
-		fn := p[1].Sub(p[0]).Cross(p[2].Sub(p[0]))
-		if fn.Len() < 1e-12 {
-			continue
-		}
-		// no back-face culling: the depth test keeps the nearest surface
-		// whichever way a triangle is wound (some scans have flipped
-		// patches, which culling would punch holes in or show from inside)
-		ctr := p[0].Add(p[1]).Add(p[2]).Mul(1.0 / 3)
-		flip := 1.0
-		if fn.Dot(eye.Sub(ctr)) < 0 {
-			flip = -1
-		}
-		var sh [3]float64
-		rimAmt := 0.0
-		for c := 0; c < 3; c++ {
-			n := rot.Mul(m.nrm[i+c])
-			if n.Dot(eye.Sub(p[c])) < 0 && flip < 0 {
-				n = n.Mul(-1) // light the side we see
+	// one vertex per triangle corner. The corners are worked out in
+	// parallel: each triangle owns three fixed slots, so the workers never
+	// share a write; a degenerate triangle becomes a zero-area one (it draws
+	// no pixels) rather than being skipped, which keeps the slots fixed.
+	// This was the class select's frame spike: about 10 ms on one thread
+	// every pose (30 a second), now split across the cores.
+	nt := len(m.pos) / 3
+	if cap(k.vs) < 3*nt {
+		k.vs = make([]ebiten.Vertex, 3*nt)
+	}
+	vs := k.vs[:3*nt]
+	workers := min(8, max(1, runtime.GOMAXPROCS(0)), max(1, nt/2000))
+	type bounds struct{ near, far float64 }
+	bnd := make([]bounds, workers)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		lo, hi := w*nt/workers, (w+1)*nt/workers
+		wg.Add(1)
+		go func(w, lo, hi int) {
+			defer wg.Done()
+			invNear, invFar := 0.0, math.Inf(1)
+			for t := lo; t < hi; t++ {
+				i := 3 * t
+				var p [3]V3
+				for c := 0; c < 3; c++ {
+					p[c] = rot.Mul(m.pos[i+c])
+				}
+				fn := p[1].Sub(p[0]).Cross(p[2].Sub(p[0]))
+				if fn.Len() < 1e-12 {
+					vs[i], vs[i+1], vs[i+2] = ebiten.Vertex{}, ebiten.Vertex{}, ebiten.Vertex{}
+					continue
+				}
+				// no back-face culling: the depth test keeps the nearest surface
+				// whichever way a triangle is wound (some scans have flipped
+				// patches, which culling would punch holes in or show from inside)
+				ctr := p[0].Add(p[1]).Add(p[2]).Mul(1.0 / 3)
+				flip := 1.0
+				if fn.Dot(eye.Sub(ctr)) < 0 {
+					flip = -1
+				}
+				var sh [3]float64
+				rimAmt := 0.0
+				for c := 0; c < 3; c++ {
+					n := rot.Mul(m.nrm[i+c])
+					if n.Dot(eye.Sub(p[c])) < 0 && flip < 0 {
+						n = n.Mul(-1) // light the side we see
+					}
+					s := 0.5 + 0.55*math.Max(0, n.Dot(key)) + 0.16*math.Max(0, n.Dot(fill)) + 0.1*n.Y
+					sh[c] = math.Min(1.15, s)
+					rimAmt += math.Max(0, n.Dot(back)) / 3
+				}
+				r := rimAmt * rimAmt * 0.55
+				tc := [3]float64{
+					dim * math.Min(1, 1-r+r*rimF[0]*1.6),
+					dim * math.Min(1, 1-r+r*rimF[1]*1.6),
+					dim * math.Min(1, 1-r+r*rimF[2]*1.6)}
+				for c := 0; c < 3; c++ {
+					sx, sy, z := cam.Project(p[c])
+					iz := 1 / z
+					invNear = math.Max(invNear, iz)
+					invFar = math.Min(invFar, iz)
+					vs[i+c] = ebiten.Vertex{
+						DstX: float32(sx), DstY: float32(sy),
+						SrcX: m.uv[i+c][0], SrcY: m.uv[i+c][1],
+						ColorR: float32(tc[0] * sh[c]), ColorG: float32(tc[1] * sh[c]), ColorB: float32(tc[2] * sh[c]), ColorA: 1,
+						Custom0: float32(iz),
+					}
+				}
 			}
-			s := 0.5 + 0.55*math.Max(0, n.Dot(key)) + 0.16*math.Max(0, n.Dot(fill)) + 0.1*n.Y
-			sh[c] = math.Min(1.15, s)
-			rimAmt += math.Max(0, n.Dot(back)) / 3
-		}
-		r := rimAmt * rimAmt * 0.55
-		tc := [3]float64{
-			dim * math.Min(1, 1-r+r*rimF[0]*1.6),
-			dim * math.Min(1, 1-r+r*rimF[1]*1.6),
-			dim * math.Min(1, 1-r+r*rimF[2]*1.6)}
-		for c := 0; c < 3; c++ {
-			sx, sy, z := cam.Project(p[c])
-			iz := 1 / z
-			invNear = math.Max(invNear, iz)
-			invFar = math.Min(invFar, iz)
-			vs = append(vs, ebiten.Vertex{
-				DstX: float32(sx), DstY: float32(sy),
-				SrcX: m.uv[i+c][0], SrcY: m.uv[i+c][1],
-				ColorR: float32(tc[0] * sh[c]), ColorG: float32(tc[1] * sh[c]), ColorB: float32(tc[2] * sh[c]), ColorA: 1,
-				Custom0: float32(iz),
-			})
-		}
+			bnd[w] = bounds{invNear, invFar}
+		}(w, lo, hi)
+	}
+	wg.Wait()
+	invNear, invFar := 0.0, math.Inf(1)
+	for _, b := range bnd {
+		invNear = math.Max(invNear, b.near)
+		invFar = math.Min(invFar, b.far)
 	}
 	k.vs = vs
-	if len(vs) == 0 {
+	if len(vs) == 0 || math.IsInf(invFar, 1) {
 		return true
 	}
 	// normalise depth: 0 nearest, 1 farthest, with a little margin
+	// (a degenerate triangle's corners stay at zero: no area, no pixels)
 	span := invNear - invFar
 	if span < 1e-9 {
 		span = 1e-9
 	}
 	for i := range vs {
+		if vs[i].Custom0 == 0 {
+			continue
+		}
 		d := (invNear - float64(vs[i].Custom0)) / span
 		vs[i].Custom0 = float32(0.01 + 0.98*d)
 	}
