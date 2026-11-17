@@ -1,0 +1,158 @@
+diff --git a/third_party/ebiten/audio/player.go b/third_party/ebiten/audio/player.go
+index 16d9d43..c63ec05 100644
+--- a/third_party/ebiten/audio/player.go
++++ b/third_party/ebiten/audio/player.go
+@@ -172,7 +172,11 @@ func (f *playerFactory) initContextIfNeeded(vmGuest bool) (<-chan struct{}, erro
+ 
+ 	c, ready, err := newContext(f.sampleRate, vmGuest)
+ 	if err != nil {
+-		return nil, err
++		// ARCANE ORB PATCH: no device, no crash: carry on in silence (silent.go)
++		f.context = newSilentContext(f.sampleRate, err)
++		done := make(chan struct{})
++		close(done)
++		return done, nil
+ 	}
+ 	f.context = c
+ 	return ready, nil
+diff --git a/third_party/ebiten/audio/silent.go b/third_party/ebiten/audio/silent.go
+new file mode 100644
+index 0000000..72e3fb3
+--- /dev/null
++++ b/third_party/ebiten/audio/silent.go
+@@ -0,0 +1,135 @@
++// Copyright 2026 The Ebitengine Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package audio
++
++// ARCANE ORB PATCH (Nov 17, 2026): a silent stand-in for the audio device.
++//
++// When no audio device can be opened (no PulseAudio or ALSA device on Linux,
++// every output disabled or a bare remote session on Windows), upstream
++// Ebitengine returns the error from every update and the game quits on
++// start. With this patch the game keeps running without sound instead: the
++// players read their sources at the real-time rate and throw the samples
++// away, so positions advance and sounds finish just as they would aloud.
++
++import (
++	"io"
++	"log"
++	"sync"
++	"time"
++)
++
++type silentContext struct {
++	bytesPerSecond int
++}
++
++func newSilentContext(sampleRate int, cause error) *silentContext {
++	log.Printf("audio: no audio device could be opened (%v); the game continues without sound", cause)
++	return &silentContext{bytesPerSecond: sampleRate * channelCount * bitDepthInBytesFloat32}
++}
++
++func (c *silentContext) NewPlayer(r io.Reader) player {
++	return &silentPlayer{r: r, volume: 1, bytesPerSecond: c.bytesPerSecond}
++}
++
++func (c *silentContext) Suspend() error { return nil }
++func (c *silentContext) Resume() error  { return nil }
++func (c *silentContext) Err() error     { return nil }
++
++type silentPlayer struct {
++	r              io.Reader
++	bytesPerSecond int
++
++	playing bool
++	eof     bool
++	volume  float64
++	gen     int // bumped to stop the reading goroutine
++
++	mu sync.Mutex
++}
++
++func (p *silentPlayer) Play() {
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	if p.eof || p.playing {
++		return
++	}
++	p.playing = true
++	gen := p.gen
++	go p.drain(gen)
++}
++
++// drain reads the source at the real-time rate, 10 ms at a time.
++func (p *silentPlayer) drain(gen int) {
++	const tick = 10 * time.Millisecond
++	n := p.bytesPerSecond / 100
++	n -= n % (channelCount * bitDepthInBytesFloat32)
++	buf := make([]byte, n)
++	for {
++		p.mu.Lock()
++		if p.gen != gen || !p.playing {
++			p.mu.Unlock()
++			return
++		}
++		_, err := p.r.Read(buf)
++		if err != nil {
++			p.playing = false
++			if err == io.EOF {
++				p.eof = true
++			}
++			p.mu.Unlock()
++			return
++		}
++		p.mu.Unlock()
++		time.Sleep(tick)
++	}
++}
++
++func (p *silentPlayer) Pause() {
++	p.mu.Lock()
++	p.playing = false
++	p.gen++
++	p.mu.Unlock()
++}
++
++func (p *silentPlayer) PauseAndStopReading() { p.Pause() }
++
++func (p *silentPlayer) IsPlaying() bool {
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	return p.playing
++}
++
++func (p *silentPlayer) Volume() float64 {
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	return p.volume
++}
++
++func (p *silentPlayer) SetVolume(volume float64) {
++	p.mu.Lock()
++	p.volume = volume
++	p.mu.Unlock()
++}
++
++func (p *silentPlayer) BufferedSize() int            { return 0 }
++func (p *silentPlayer) Err() error                   { return nil }
++func (p *silentPlayer) SetBufferSize(bufferSize int) {}
++
++func (p *silentPlayer) Seek(offset int64, whence int) (int64, error) {
++	p.mu.Lock()
++	p.eof = false
++	p.mu.Unlock()
++	return 0, nil
++}
