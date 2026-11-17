@@ -129,4 +129,16 @@ Every change below passed `go vet`, `go test ./...` and `go build` on the PC (Go
 | 4 Per-frame garbage | Done: brick collision uses stack buffers; `near()` reuses pooled buffers (safe for chained blasts); HUD numbers are cached strings. |
 | 5 Stability | Saves verified fine. Dead `lostReal` code removed. Fixed-timestep check still needs a 60 vs 240 Hz bench run. |
 | 6 UX | Settings now has separate **Effects** and **Gameplay** tabs (translated into all 6 languages), so neither crowds Back. Text size at 1280×800 is still open. |
-| Bench | `Shots-Bench.cmd` on the PC runs the screenshot tour and the benchmark together on the Go-Check build. |
+| Bench | `Shots-Bench.cmd` (screenshots + bench) and `Bench-Clean.cmd` (bench only, fullscreen) on the PC; copies in `tools/pc/`. |
+
+### Bench, Nov 17 vs Nov 13 (PC, 2560×1440 fullscreen, High)
+
+| Scene | Nov 13 fps | Nov 17 fps | after fix | garbage/frame |
+|---|---|---|---|---|
+| Class select | 1255 | 377 | **672** | 394 KB → **5 KB** |
+| World 7 (dream) | 190 | 147 | 146 | 135 → 207 KB |
+| Others | — | within ±5% | — | — |
+
+- **Class select regression found and fixed.** The 3D hero's render target was resized every frame by the breathing animation, which reallocated three full-size images per frame. The breathing now scales the finished picture instead, so the target keeps one size.
+- **World 7** got heavier with the dream scenery (46k quads vs 34k; spinning orb rings and lanterns are transformed on the CPU each frame). Still 146 fps average, but the 1% low (66) is under 120 Hz. Candidate fix: bake the far orbs without spin, or drop the second ring past a distance. Left for a taste call since it changes the look.
+- 1% lows are about 10% lower on every scene, including the plain menu, so that is machine noise (other apps open), not code.

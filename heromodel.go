@@ -292,7 +292,12 @@ var heroClock float64
 // drawHero3D draws the hero standing with its feet at (fx, fy) on dst, h
 // pixels tall, turned by yaw radians. rim tints the back light; dim darkens a
 // locked hero. It reports false when the hero has no live model.
-func drawHero3D(dst *ebiten.Image, id string, fx, fy, w, h, yaw float64, rim color.RGBA, alpha, dim float64) bool {
+//
+// sx, sy scale the finished picture about the feet (the class select's
+// breathing). They are applied when compositing, so the render target keeps
+// one size: resizing it every frame reallocated three full-screen images
+// per frame and cost the class select two thirds of its frame rate.
+func drawHero3D(dst *ebiten.Image, id string, fx, fy, w, h, sx, sy, yaw float64, rim color.RGBA, alpha, dim float64) bool {
 	m := heroModel(id)
 	if m == nil || alpha <= 0 {
 		return m != nil
@@ -313,7 +318,7 @@ func drawHero3D(dst *ebiten.Image, id string, fx, fy, w, h, yaw float64, rim col
 	}
 	shot := heroShotKey{id: id, w: W, h: H, zoom: heroAuditZoom, pose: math.Floor(heroClock*30) / 30, yaw: math.Round(yaw*400) / 400, rim: rim, dim: dim, ok: true}
 	if st.key == shot {
-		heroComposite(dst, st.rt, fx, fy, w, h, ss, alpha)
+		heroComposite(dst, st.rt, fx, fy, w, h, sx, sy, ss, alpha)
 		return true // nothing visible changed since the last render
 	}
 	st.key = shot
@@ -336,7 +341,7 @@ func drawHero3D(dst *ebiten.Image, id string, fx, fy, w, h, yaw float64, rim col
 	b.fogNear, b.fogFar = 1e6, 2e6
 	rot := rotXYZ(0, yaw, 0)
 	if drawHeroDepth(st, m, rot, rim, dim) {
-		heroComposite(dst, st.rt, fx, fy, w, h, ss, alpha)
+		heroComposite(dst, st.rt, fx, fy, w, h, sx, sy, ss, alpha)
 		return true
 	}
 	key := V3{-0.55, 0.7, -0.75}.Norm()
@@ -378,14 +383,16 @@ func drawHero3D(dst *ebiten.Image, id string, fx, fy, w, h, yaw float64, rim col
 	aaOwn = false
 	b.Flush(st.rt)
 	aaOwn = own
-	heroComposite(dst, st.rt, fx, fy, w, h, ss, alpha)
+	heroComposite(dst, st.rt, fx, fy, w, h, sx, sy, ss, alpha)
 	return true
 }
 
-func heroComposite(dst, rt *ebiten.Image, fx, fy, w, h, ss, alpha float64) {
+func heroComposite(dst, rt *ebiten.Image, fx, fy, w, h, sx, sy, ss, alpha float64) {
 	op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
 	op.GeoM.Scale(1.0/ss, 1.0/ss)
-	op.GeoM.Translate(fx-w/2, fy-h)
+	op.GeoM.Translate(-w/2, -h)
+	op.GeoM.Scale(sx, sy)
+	op.GeoM.Translate(fx, fy)
 	op.ColorScale.ScaleAlpha(float32(alpha))
 	dst.DrawImage(rt, op)
 }

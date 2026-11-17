@@ -169,8 +169,7 @@ func (g *Game) drawArch(s *ebiten.Image) {
 			}
 			heroClock = g.stateT // the breathing idle
 			yaw := 0.3*math.Sin(g.stateT*0.35) - g.archPar[0]*0.025
-			hh := ph * S * 0.97 * xf.sy
-			drawHero3D(s, id, u.X(px+pw/2+xf.dx), u.Y(py+ph+xf.dy), pw*S*1.45*xf.sx, hh, yaw, lighten(classInfo[id].Col, 0.2), alpha, dim)
+			drawHero3D(s, id, u.X(px+pw/2+xf.dx), u.Y(py+ph+xf.dy), pw*S*1.45, ph*S*0.97, xf.sx, xf.sy, yaw, lighten(classInfo[id].Col, 0.2), alpha, dim)
 			return
 		}
 		op := &ebiten.DrawImageOptions{Filter: ebiten.FilterLinear}
